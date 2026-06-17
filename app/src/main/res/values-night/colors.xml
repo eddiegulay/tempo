@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Window background before Compose paints: true black (AMOLED theme). -->
+    <color name="tempo_window">#000000</color>
+</resources>

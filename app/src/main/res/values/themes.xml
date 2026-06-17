@@ -1,0 +1,14 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!--
+      Tempo runs edge-to-edge with no ActionBar; the whole UI is Compose and supplies its own
+      colours, so the platform theme only needs to be a transparent-bar, no-title shell. The
+      windowBackground is the paper cream (black at night) to avoid a flash before Compose draws.
+    -->
+    <style name="Theme.Tempo" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/tempo_window</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+</resources>

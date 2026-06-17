@@ -1,0 +1,57 @@
+# Built application files / Gradle
+.gradle/
+build/
+/captures
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Local configuration (machine-specific; never commit)
+local.properties
+
+# Kotlin
+.kotlin/
+
+# Native
+.externalNativeBuild
+.cxx
+
+# IntelliJ / Android Studio
+*.iml
+.idea/caches
+.idea/libraries
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+.idea/deploymentTargetSelector.xml
+.idea/deploymentTargetDropDown.xml
+
+# AI assistants & agent tooling (local-only; keep them out of the repo)
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+.claude.json
+.cursor/
+.cursorrules
+.cursorignore
+.cursorindexingignore
+.aider*
+.continue/
+.windsurf/
+.windsurfrules
+.codeium/
+.cline/
+.clinerules
+.roo/
+.roomodes
+.github/copilot-instructions.md
+AGENTS.md
+GEMINI.md
+.gemini/
+.idea/copilot/
+
+# OS / misc
+.DS_Store
+*.hprof
