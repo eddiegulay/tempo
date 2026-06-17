@@ -61,6 +61,12 @@ import io.eddiegulay.tempo.data.AppInfo
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+
+/** Japanese month/day for the app subtitle, e.g. "6月10日". */
+private val updatedFormatter = DateTimeFormatter.ofPattern("M月d日")
 
 /**
  * Search (検索): a bottom-ruled mincho input over a live-filtered list of every installed app.
@@ -241,10 +247,20 @@ private fun AppRow(viewModel: LauncherViewModel, app: AppInfo) {
                     text = app.label,
                     style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, letterSpacing = 1.sp, color = c.ink),
                 )
-                Text(
-                    text = app.packageName,
-                    style = TextStyle(fontFamily = Gothic, fontSize = 11.sp, letterSpacing = 2.sp, color = c.inkFaint),
-                )
+                // Subtitle: app category and last-updated date (e.g. "生産性 · 更新 6月10日"), each
+                // dropped when unavailable. Replaces the developer-facing package name.
+                val subtitle = remember(app.category, app.lastUpdated) {
+                    val date = app.lastUpdated.takeIf { it > 0L }?.let {
+                        "更新 " + Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).format(updatedFormatter)
+                    }
+                    listOfNotNull(app.category, date).joinToString(" · ")
+                }
+                if (subtitle.isNotEmpty()) {
+                    Text(
+                        text = subtitle,
+                        style = TextStyle(fontFamily = Gothic, fontSize = 11.sp, letterSpacing = 2.sp, color = c.inkFaint),
+                    )
+                }
             }
         }
 

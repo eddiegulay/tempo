@@ -6,6 +6,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherApps
 import android.net.Uri
 import android.os.Bundle
@@ -37,6 +38,10 @@ data class AppInfo(
     val user: UserHandle,
     /** Stable identity for list keys + the icon cache (component + user). */
     val key: String,
+    /** Localized app-category title (e.g. "生産性"), or null when the app declares none. */
+    val category: String?,
+    /** Epoch millis the package was last updated; 0 when unknown. */
+    val lastUpdated: Long,
 )
 
 /**
@@ -92,14 +97,23 @@ class AppRepository private constructor(private val appContext: Context) {
         val la = launcherApps ?: return@withContext
         val profiles = userManager?.userProfiles ?: listOf(Process.myUserHandle())
         val self = appContext.packageName
+        val pm = appContext.packageManager
+        // lastUpdateTime is per-package; memoize so multi-activity packages query PM only once.
+        val updatedCache = HashMap<String, Long>()
         val list = profiles.flatMap { user ->
             runCatching { la.getActivityList(null, user) }.getOrDefault(emptyList()).map { lai ->
+                val appInfo = lai.applicationInfo
+                val pkg = appInfo.packageName
                 AppInfo(
                     label = lai.label.toString(),
-                    packageName = lai.applicationInfo.packageName,
+                    packageName = pkg,
                     componentName = lai.componentName,
                     user = user,
                     key = keyFor(lai.componentName, user),
+                    category = ApplicationInfo.getCategoryTitle(appContext, appInfo.category)?.toString(),
+                    lastUpdated = updatedCache.getOrPut(pkg) {
+                        runCatching { pm.getPackageInfo(pkg, 0).lastUpdateTime }.getOrDefault(0L)
+                    },
                 )
             }
         }
