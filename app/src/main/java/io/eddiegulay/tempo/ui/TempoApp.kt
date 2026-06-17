@@ -1,6 +1,9 @@
 package io.eddiegulay.tempo.ui
 
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutLinearInEasing
@@ -17,10 +20,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.LauncherViewModel
 import io.eddiegulay.tempo.data.TempoTheme
@@ -47,9 +56,19 @@ fun TempoApp(
     val screen by viewModel.screen.collectAsStateWithLifecycle()
     val isDefaultLauncher by viewModel.isDefaultLauncher.collectAsStateWithLifecycle()
     val onboardingComplete by viewModel.onboardingComplete.collectAsStateWithLifecycle()
+    val pendingBlock by viewModel.pendingBlock.collectAsStateWithLifecycle()
 
     val isDark = theme == TempoTheme.Amoled
     val colors = if (isDark) AmoledColors else PaperColors
+
+    // All-files access can be toggled in Settings while we're away; re-check on resume and re-merge
+    // the durable blockade ledger so a freshly-granted permission immediately backs up existing blocks.
+    val context = LocalContext.current
+    var storageGranted by remember { mutableStateOf(viewModel.hasStorageAccess()) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        storageGranted = viewModel.hasStorageAccess()
+        viewModel.reconcileBlockade()
+    }
 
     // Keep the system bar icons legible against whichever theme is active.
     val view = LocalView.current
@@ -121,6 +140,24 @@ fun TempoApp(
                         frosted = screen != Screen.Home,
                     )
                 }
+            }
+
+            // Commitment gate for hiding an app — overlays whichever screen requested the block.
+            pendingBlock?.let { app ->
+                BlockConfirmDialog(
+                    appLabel = app.label,
+                    storageGranted = storageGranted,
+                    onGrantStorage = {
+                        val direct = Intent(
+                            Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            Uri.parse("package:${context.packageName}"),
+                        )
+                        runCatching { context.startActivity(direct) }
+                            .onFailure { context.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+                    },
+                    onConfirm = viewModel::confirmBlock,
+                    onDismiss = viewModel::cancelBlock,
+                )
             }
         }
     }

@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import io.eddiegulay.tempo.data.AppInfo
 import io.eddiegulay.tempo.data.AppRepository
+import io.eddiegulay.tempo.data.BlockadeRepository
 import io.eddiegulay.tempo.data.TempoTheme
 import io.eddiegulay.tempo.data.ThemeRepository
 import io.eddiegulay.tempo.notification.NotificationGroup
@@ -39,6 +40,7 @@ class LauncherViewModel(
     private val themeRepository: ThemeRepository,
     private val appRepository: AppRepository,
     private val notificationRepository: NotificationRepository,
+    private val blockadeRepository: BlockadeRepository,
 ) : ViewModel() {
 
     // Read once, synchronously, at construction so the first frame already reflects stored choices
@@ -62,18 +64,25 @@ class LauncherViewModel(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    /** The full inventory, including hidden apps — used by the hidden-apps filter page. */
+    /** The full inventory, including blocked apps — used by the hidden-apps filter page. */
     val apps: StateFlow<List<AppInfo>> = appRepository.apps
 
-    /** Packages the user has hidden from the launcher. */
-    val hiddenApps: StateFlow<Set<String>> = themeRepository.hiddenApps
-        .stateIn(viewModelScope, SharingStarted.Eagerly, initialSettings.hiddenApps)
+    /** Blocked packages mapped to their unlock time (epoch millis). Presence == hidden. */
+    val blockade: StateFlow<Map<String, Long>> = blockadeRepository.blockade
 
-    /** The inventory minus hidden apps — what Search shows. */
+    /** The inventory minus blocked apps — what Search shows. */
     val visibleApps: StateFlow<List<AppInfo>> =
-        combine(appRepository.apps, hiddenApps) { apps, hidden ->
-            apps.filterNot { it.packageName in hidden }
+        combine(appRepository.apps, blockade) { apps, blocked ->
+            apps.filterNot { it.packageName in blocked }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** The app awaiting block confirmation, driving the commitment dialog; null when none. */
+    private val _pendingBlock = MutableStateFlow<AppInfo?>(null)
+    val pendingBlock: StateFlow<AppInfo?> = _pendingBlock.asStateFlow()
+
+    /** A still-locked app the user tried to un-hide early; drives the countdown dialog. Null when none. */
+    private val _lockedTap = MutableStateFlow<AppInfo?>(null)
+    val lockedTap: StateFlow<AppInfo?> = _lockedTap.asStateFlow()
 
     val notifications: StateFlow<List<TempoNotification>> = notificationRepository.notifications
 
@@ -115,10 +124,51 @@ class LauncherViewModel(
         _screen.value = Screen.Filter
     }
 
-    /** Hide or unhide a package from the launcher. */
-    fun setAppHidden(packageName: String, hidden: Boolean) {
-        viewModelScope.launch { themeRepository.setHidden(packageName, hidden) }
+    // ----- app blockade (10-day hide) -----
+
+    /** Ask to block an app; surfaces the commitment confirmation dialog. */
+    fun requestBlock(app: AppInfo) {
+        _pendingBlock.value = app
     }
+
+    fun cancelBlock() {
+        _pendingBlock.value = null
+    }
+
+    /** Confirm the pending block: hide the app for [BlockadeRepository.BLOCK_DAYS] days. */
+    fun confirmBlock() {
+        val app = _pendingBlock.value ?: return
+        _pendingBlock.value = null
+        viewModelScope.launch { blockadeRepository.block(app.packageName) }
+    }
+
+    /** Attempt to un-hide a package; silently ignored while its block is still active. */
+    fun unblockApp(packageName: String) {
+        viewModelScope.launch { blockadeRepository.unblock(packageName) }
+    }
+
+    /** Show the "still locked" countdown dialog for an app whose block hasn't elapsed. */
+    fun showLocked(app: AppInfo) {
+        _lockedTap.value = app
+    }
+
+    fun dismissLocked() {
+        _lockedTap.value = null
+    }
+
+    /** Unlock time (epoch millis) for a package, or null if it isn't blocked. */
+    fun unlockAt(packageName: String): Long? = blockade.value[packageName]
+
+    /** Re-merge the durable ledger — call after All-files access may have just been granted. */
+    fun reconcileBlockade() {
+        viewModelScope.launch { blockadeRepository.reconcile() }
+    }
+
+    fun hasStorageAccess(): Boolean = blockadeRepository.hasStorageAccess()
+
+    fun blockadeNow(): Long = blockadeRepository.now()
+
+    fun canUnblock(packageName: String): Boolean = blockadeRepository.canUnblock(packageName)
 
     /** Called from MainActivity.onNewIntent — a HOME press always returns to a clean Home. */
     fun resetToHome() = goHome()
@@ -220,6 +270,7 @@ class LauncherViewModelFactory(context: Context) : ViewModelProvider.Factory {
             themeRepository = ThemeRepository(appContext),
             appRepository = AppRepository.getInstance(appContext),
             notificationRepository = NotificationRepository(),
+            blockadeRepository = BlockadeRepository.getInstance(appContext),
         ) as T
     }
 }

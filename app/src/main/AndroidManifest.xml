@@ -3,6 +3,13 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!--
+      The 10-day app blockade must survive the app being uninstalled and reinstalled. App-private
+      storage is wiped on uninstall, so the blockade ledger is mirrored to a file in shared storage,
+      which requires All-files access. The user grants this in system Settings.
+    -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
+    <!--
       A home app legitimately needs to see every launchable app to populate Search.
       The launcher intent below grants that visibility on Android 11+ without QUERY_ALL_PACKAGES.
     -->

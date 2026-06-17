@@ -7,7 +7,6 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -18,11 +17,7 @@ import kotlinx.coroutines.runBlocking
 enum class TempoTheme { Paper, Amoled }
 
 /** Stored settings read synchronously for the very first frame, before Compose draws. */
-data class InitialSettings(
-    val theme: TempoTheme,
-    val onboardingComplete: Boolean,
-    val hiddenApps: Set<String>,
-)
+data class InitialSettings(val theme: TempoTheme, val onboardingComplete: Boolean)
 
 private const val LEGACY_PREFS = "tempo"
 
@@ -41,12 +36,6 @@ class ThemeRepository(private val context: Context) {
 
     private val themeKey = stringPreferencesKey("theme")
     private val onboardingKey = booleanPreferencesKey("onboarding_complete")
-    private val hiddenAppsKey = stringSetPreferencesKey("hidden_apps")
-
-    /** Package names the user has hidden from the launcher (Search list). */
-    val hiddenApps: Flow<Set<String>> = context.tempoDataStore.data.map { prefs ->
-        prefs[hiddenAppsKey] ?: emptySet()
-    }
 
     val theme: Flow<TempoTheme> = context.tempoDataStore.data.map { prefs ->
         if (prefs[themeKey] == VALUE_AMOLED) TempoTheme.Amoled else TempoTheme.Paper
@@ -72,7 +61,6 @@ class ThemeRepository(private val context: Context) {
         InitialSettings(
             theme = if (prefs[themeKey] == VALUE_AMOLED) TempoTheme.Amoled else TempoTheme.Paper,
             onboardingComplete = prefs[onboardingKey] ?: false,
-            hiddenApps = prefs[hiddenAppsKey] ?: emptySet(),
         )
     }
 
@@ -85,14 +73,6 @@ class ThemeRepository(private val context: Context) {
     suspend fun setOnboardingComplete() {
         context.tempoDataStore.edit { prefs ->
             prefs[onboardingKey] = true
-        }
-    }
-
-    /** Add or remove a package from the hidden set. */
-    suspend fun setHidden(packageName: String, hidden: Boolean) {
-        context.tempoDataStore.edit { prefs ->
-            val current = prefs[hiddenAppsKey] ?: emptySet()
-            prefs[hiddenAppsKey] = if (hidden) current + packageName else current - packageName
         }
     }
 

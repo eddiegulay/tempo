@@ -273,7 +273,7 @@ private fun AppRow(viewModel: LauncherViewModel, app: AppInfo) {
                 text = { Text("非表示にする", style = TextStyle(fontFamily = Mincho, color = c.ink)) },
                 onClick = {
                     menuOpen = false
-                    viewModel.setAppHidden(app.packageName, true)
+                    viewModel.requestBlock(app)
                 },
             )
             DropdownMenuItem(
