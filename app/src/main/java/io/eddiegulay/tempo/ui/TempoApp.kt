@@ -3,14 +3,13 @@ package io.eddiegulay.tempo.ui
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
@@ -39,6 +38,7 @@ fun TempoApp(
     val theme by viewModel.theme.collectAsStateWithLifecycle()
     val screen by viewModel.screen.collectAsStateWithLifecycle()
     val isDefaultLauncher by viewModel.isDefaultLauncher.collectAsStateWithLifecycle()
+    val onboardingComplete by viewModel.onboardingComplete.collectAsStateWithLifecycle()
 
     val isDark = theme == TempoTheme.Amoled
     val colors = if (isDark) AmoledColors else PaperColors
@@ -59,24 +59,43 @@ fun TempoApp(
 
     CompositionLocalProvider(LocalTempoColors provides colors) {
         Box(Modifier.fillMaxSize().tempoBackground(colors)) {
-            Column(Modifier.fillMaxSize().systemBarsPadding()) {
-                Box(Modifier.weight(1f).fillMaxWidth()) {
-                    when (screen) {
-                        Screen.Home -> HomeScreen(showSeal = showSeal)
-                        Screen.Search -> SearchScreen(viewModel = viewModel)
-                        Screen.Notifications -> NotificationsScreen(viewModel = viewModel)
-                    }
-                }
-                Dock(
-                    current = screen,
-                    isDark = isDark,
+            // Seeded synchronously from DataStore, so this is already correct on the first frame —
+            // returning users land straight on Home with no flash of the onboarding gate.
+            if (!onboardingComplete) {
+                OnboardingScreen(
                     isDefaultLauncher = isDefaultLauncher,
-                    onHome = viewModel::goHome,
-                    onSearch = viewModel::goSearch,
-                    onNotifications = viewModel::goNotifications,
-                    onToggleTheme = viewModel::toggleTheme,
                     onRequestDefault = onRequestDefault,
+                    onComplete = viewModel::completeOnboarding,
+                    modifier = Modifier.systemBarsPadding(),
                 )
+            } else {
+                Box(Modifier.fillMaxSize().systemBarsPadding()) {
+                    // Content fills the layer; the floating dock overlays it, so reserve room at the
+                    // bottom for the pill plus its indicator.
+                    Box(Modifier.fillMaxSize()) {
+                        when (screen) {
+                            Screen.Home -> HomeScreen(showSeal = showSeal)
+                            Screen.Search -> SearchScreen(
+                                viewModel = viewModel,
+                                isDark = isDark,
+                                onToggleTheme = viewModel::toggleTheme,
+                            )
+                            Screen.Notifications -> NotificationsScreen(viewModel = viewModel)
+                        }
+                    }
+                    Dock(
+                        current = screen,
+                        isDefaultLauncher = isDefaultLauncher,
+                        onHome = viewModel::goHome,
+                        onSearch = viewModel::goSearch,
+                        onNotifications = viewModel::goNotifications,
+                        onRequestDefault = onRequestDefault,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                        // Over a sub-screen the dock becomes frosted "wet paper"; over Home it stays a
+                        // faint pill on the wallpaper.
+                        frosted = screen != Screen.Home,
+                    )
+                }
             }
         }
     }

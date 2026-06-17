@@ -41,8 +41,20 @@ class LauncherViewModel(
     private val notificationRepository: NotificationRepository,
 ) : ViewModel() {
 
+    // Read once, synchronously, at construction so the first frame already reflects stored choices
+    // (no theme flash, no blank Home for returning users). The flows below stay the live source of
+    // truth and update the UI whenever the values change later.
+    private val initialSettings = themeRepository.loadInitialSettings()
+
     val theme: StateFlow<TempoTheme> = themeRepository.theme
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TempoTheme.Paper)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, initialSettings.theme)
+
+    /**
+     * First-launch gate: true once the user has worked through the onboarding walkthrough. Seeded
+     * from the synchronous read so a returning user lands straight on Home with no flash of the gate.
+     */
+    val onboardingComplete: StateFlow<Boolean> = themeRepository.onboardingComplete
+        .stateIn(viewModelScope, SharingStarted.Eagerly, initialSettings.onboardingComplete)
 
     private val _screen = MutableStateFlow(Screen.Home)
     val screen: StateFlow<Screen> = _screen.asStateFlow()
@@ -119,6 +131,11 @@ class LauncherViewModel(
 
     fun setDefaultLauncher(isDefault: Boolean) {
         _isDefaultLauncher.value = isDefault
+    }
+
+    /** Mark the first-launch walkthrough finished; the gate gives way to Home from here on. */
+    fun completeOnboarding() {
+        viewModelScope.launch { themeRepository.setOnboardingComplete() }
     }
 
     // ----- notifications -----

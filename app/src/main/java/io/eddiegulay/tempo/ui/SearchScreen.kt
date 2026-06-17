@@ -5,7 +5,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,6 +47,10 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -64,7 +70,12 @@ import io.eddiegulay.tempo.ui.theme.Mincho
  * a minimal menu (app info / uninstall).
  */
 @Composable
-fun SearchScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifier) {
+fun SearchScreen(
+    viewModel: LauncherViewModel,
+    isDark: Boolean,
+    onToggleTheme: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val c = LocalTempoColors.current
     val context = LocalContext.current
 
@@ -97,10 +108,34 @@ fun SearchScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifier) {
 
     Column(modifier.fillMaxSize()) {
         Column(Modifier.padding(start = 26.dp, end = 26.dp, top = 20.dp)) {
-            Text(
-                text = "けんさく",
-                style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 6.sp, color = c.inkFaint),
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "けんさく",
+                    style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 6.sp, color = c.inkFaint),
+                )
+                // Theme toggle, relocated from the dock. Stays faint, mirroring the prototype.
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onToggleTheme,
+                        )
+                        .semantics {
+                            contentDescription = if (isDark) "ライトテーマに切り替え" else "ダークテーマに切り替え"
+                            role = Role.Button
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    LineIcon(paths = if (isDark) TempoIcons.Sun else TempoIcons.Moon, color = c.inkFaint, size = 23.dp)
+                }
+            }
             Box(Modifier.height(14.dp))
             BasicTextField(
                 value = query,
@@ -130,7 +165,8 @@ fun SearchScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifier) {
 
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f).imePadding(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 24.dp),
+            // Bottom inset clears the floating dock pill (capsule + indicator) so the last row is reachable.
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 96.dp),
         ) {
             if (loading || noResults) {
                 item {

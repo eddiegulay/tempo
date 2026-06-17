@@ -2,8 +2,10 @@ package io.eddiegulay.tempo
 
 import android.app.role.RoleManager
 import android.content.Intent
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.provider.Settings
+import io.eddiegulay.tempo.data.TempoTheme
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
@@ -30,6 +32,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Draw under the status/navigation bars; the UI applies its own system-bar insets.
         WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        // Paint the window in the *persisted* in-app theme before Compose's first frame. The XML
+        // windowBackground only tracks the system day/night setting, so a user whose chosen theme
+        // differs from the system would otherwise see a flash of the wrong colour on every launch.
+        val isDark = viewModel.theme.value == TempoTheme.Amoled
+        window.setBackgroundDrawable(ColorDrawable(if (isDark) WINDOW_AMOLED else WINDOW_PAPER))
 
         roleRequestLauncher = registerForActivityResult(
             ActivityResultContracts.StartActivityForResult(),
@@ -77,5 +85,11 @@ class MainActivity : ComponentActivity() {
             // Fallback: drop the user on the system's Home-app picker.
             startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
         }
+    }
+
+    private companion object {
+        // Pre-Compose window fills; mirror PaperColors.bgSolid / AmoledColors.bgSolid.
+        const val WINDOW_PAPER = 0xFFF2EEE4.toInt()
+        const val WINDOW_AMOLED = 0xFF000000.toInt()
     }
 }

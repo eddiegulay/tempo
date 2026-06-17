@@ -6,6 +6,7 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import io.eddiegulay.tempo.ui.theme.TempoColors
@@ -54,6 +55,48 @@ fun Modifier.tempoBackground(colors: TempoColors): Modifier = drawWithCache {
                 }
                 y += th
             }
+        }
+    }
+}
+
+/**
+ * Frosted "wet wrinkled paper" fill for the floating dock when it overlays a sub-screen. The capsule
+ * turns into a heavy-but-translucent paper panel: the list behind reads through, muted and diffused;
+ * a multiplied grain pass scores it with creases; and a soft top-down sheen gives the wet highlight.
+ *
+ * Meant to be applied after a `clip(shape)` so the texture is masked to the capsule. Reuses the same
+ * cached [noiseTile] as [tempoBackground] for a consistent paper tooth.
+ */
+fun Modifier.wetPaper(colors: TempoColors): Modifier = drawWithCache {
+    val grain = noiseTile()
+    // Heavy translucency: enough body to read as paper, sheer enough to see the content behind.
+    val base = (if (colors.isDark) colors.bgSolid else colors.bgStops[1]).copy(alpha = 0.60f)
+    // Wet sheen — a faint light wash fading from the top edge.
+    val sheen = Brush.verticalGradient(
+        0f to Color.White.copy(alpha = if (colors.isDark) 0.05f else 0.14f),
+        1f to Color.Transparent,
+    )
+
+    onDrawBehind {
+        drawRect(base)
+        drawRect(sheen)
+
+        // Wrinkle creases: the grain tile multiplied a touch heavier than the backdrop's.
+        val tw = grain.width.toFloat()
+        val th = grain.height.toFloat()
+        var y = 0f
+        while (y < size.height) {
+            var x = 0f
+            while (x < size.width) {
+                drawImage(
+                    image = grain,
+                    topLeft = Offset(x, y),
+                    alpha = if (colors.isDark) 0.08f else 0.14f,
+                    blendMode = BlendMode.Multiply,
+                )
+                x += tw
+            }
+            y += th
         }
     }
 }
