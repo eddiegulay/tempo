@@ -38,8 +38,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.boundsInWindow
@@ -99,13 +97,9 @@ fun SearchScreen(
     val noResults = query.isNotBlank() && filtered.isEmpty()
     val loading = apps.isEmpty() && query.isBlank()
 
-    // Focus the field and raise the keyboard on entry; drop the query when leaving Search.
-    val focusRequester = remember { FocusRequester() }
+    // Search doubles as the app drawer, so it opens unfocused — no keyboard pops up until the user
+    // taps the field. Submitting still launches the top hit.
     val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
-        keyboard?.show()
-    }
     val launchTop: () -> Unit = {
         filtered.firstOrNull()?.let { top ->
             keyboard?.hide()
@@ -148,7 +142,7 @@ fun SearchScreen(
                 cursorBrush = SolidColor(c.accent),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                 keyboardActions = KeyboardActions(onGo = { launchTop() }),
-                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+                modifier = Modifier.fillMaxWidth(),
                 decorationBox = { inner ->
                     Column {
                         Box(Modifier.padding(vertical = 8.dp, horizontal = 2.dp)) {
