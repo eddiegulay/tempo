@@ -2,6 +2,14 @@ package io.eddiegulay.tempo.ui
 
 import android.app.Activity
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -71,16 +79,29 @@ fun TempoApp(
             } else {
                 Box(Modifier.fillMaxSize().systemBarsPadding()) {
                     // Content fills the layer; the floating dock overlays it, so reserve room at the
-                    // bottom for the pill plus its indicator.
-                    Box(Modifier.fillMaxSize()) {
-                        when (screen) {
-                            Screen.Home -> HomeScreen(showSeal = showSeal)
-                            Screen.Search -> SearchScreen(
-                                viewModel = viewModel,
-                                isDark = isDark,
-                                onToggleTheme = viewModel::toggleTheme,
-                            )
-                            Screen.Notifications -> NotificationsScreen(viewModel = viewModel)
+                    // bottom for the pill plus its indicator. Screens cross-fade with a gentle
+                    // scale-settle so a page eases in rather than snapping into place.
+                    AnimatedContent(
+                        targetState = screen,
+                        transitionSpec = {
+                            val enter = fadeIn(tween(260, delayMillis = 40, easing = LinearOutSlowInEasing)) +
+                                scaleIn(initialScale = 0.97f, animationSpec = tween(300, delayMillis = 40, easing = LinearOutSlowInEasing))
+                            val exit = fadeOut(tween(80, easing = FastOutLinearInEasing))
+                            enter togetherWith exit
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                        label = "screen",
+                    ) { target ->
+                        Box(Modifier.fillMaxSize()) {
+                            when (target) {
+                                Screen.Home -> HomeScreen(showSeal = showSeal)
+                                Screen.Search -> SearchScreen(
+                                    viewModel = viewModel,
+                                    isDark = isDark,
+                                    onToggleTheme = viewModel::toggleTheme,
+                                )
+                                Screen.Notifications -> NotificationsScreen(viewModel = viewModel)
+                            }
                         }
                     }
                     Dock(
