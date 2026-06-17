@@ -11,6 +11,13 @@ import android.service.notification.StatusBarNotification
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.graphics.drawable.toBitmap
+import io.eddiegulay.tempo.data.BlockadeRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -25,13 +32,22 @@ import java.time.ZoneId
  */
 class TempoNotificationListener : NotificationListenerService() {
 
+    private var scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val blockade by lazy { BlockadeRepository.getInstance(applicationContext) }
+
     override fun onListenerConnected() {
         activeInstance = this
+        // A disconnected scope is cancelled for good, so start a fresh one on (re)connect.
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        // Re-suppress when the blocked set changes (e.g. an app is blocked while it has a live
+        // notification). `drop(1)` skips the seeded value — onListenerConnected already refreshes.
+        scope.launch { blockade.blockade.drop(1).collect { refresh() } }
         refresh()
     }
 
     override fun onListenerDisconnected() {
         activeInstance = null
+        scope.cancel()
         NotificationStore.clear()
     }
 
@@ -49,7 +65,17 @@ class TempoNotificationListener : NotificationListenerService() {
         }
 
         val active = runCatching { activeNotifications }.getOrNull() ?: emptyArray()
+
+        // Blocked apps are suppressed system-wide: clear any of their notifications from the shade
+        // (best effort — only clearable ones can be cancelled) and never surface them in Tempo.
+        val blocked = runCatching { blockade.blockade.value.keys }.getOrDefault(emptySet())
+        if (blocked.isNotEmpty()) {
+            active.filter { it.packageName in blocked && it.isClearable }
+                .forEach { runCatching { cancelNotification(it.key) } }
+        }
+
         val items = active
+            .filterNot { it.packageName in blocked }
             .filter { it.isClearable }
             // Collapse groups: drop the summary, keep the individual children.
             .filterNot { (it.notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0 }

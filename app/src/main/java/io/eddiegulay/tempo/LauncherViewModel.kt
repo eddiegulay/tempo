@@ -171,7 +171,12 @@ class LauncherViewModel(
     fun canUnblock(packageName: String): Boolean = blockadeRepository.canUnblock(packageName)
 
     /** Called from MainActivity.onNewIntent — a HOME press always returns to a clean Home. */
-    fun resetToHome() = goHome()
+    fun resetToHome() {
+        // A HOME press yields a genuinely clean Home: dismiss any transient blockade dialogs too.
+        _pendingBlock.value = null
+        _lockedTap.value = null
+        goHome()
+    }
 
     fun onSearchQueryChange(query: String) {
         _searchQuery.value = query

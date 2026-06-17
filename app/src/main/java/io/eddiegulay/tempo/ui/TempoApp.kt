@@ -57,6 +57,7 @@ fun TempoApp(
     val isDefaultLauncher by viewModel.isDefaultLauncher.collectAsStateWithLifecycle()
     val onboardingComplete by viewModel.onboardingComplete.collectAsStateWithLifecycle()
     val pendingBlock by viewModel.pendingBlock.collectAsStateWithLifecycle()
+    val lockedTap by viewModel.lockedTap.collectAsStateWithLifecycle()
 
     val isDark = theme == TempoTheme.Amoled
     val colors = if (isDark) AmoledColors else PaperColors
@@ -158,6 +159,19 @@ fun TempoApp(
                     onConfirm = viewModel::confirmBlock,
                     onDismiss = viewModel::cancelBlock,
                 )
+            }
+
+            // Tapping a still-locked app surfaces a live countdown to its unlock moment.
+            lockedTap?.let { app ->
+                val unlockAt = viewModel.unlockAt(app.packageName)
+                if (unlockAt != null) {
+                    BlockedInfoDialog(
+                        appLabel = app.label,
+                        unlockAt = unlockAt,
+                        nowProvider = viewModel::blockadeNow,
+                        onDismiss = viewModel::dismissLocked,
+                    )
+                }
             }
         }
     }
