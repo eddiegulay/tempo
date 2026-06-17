@@ -28,8 +28,8 @@ import io.eddiegulay.tempo.ui.theme.AmoledColors
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.PaperColors
 
-/** The three navigable layers of the launcher. */
-enum class Screen { Home, Search, Notifications }
+/** The navigable layers of the launcher. Filter is the hidden-apps page, reached from Search. */
+enum class Screen { Home, Search, Notifications, Filter }
 
 /**
  * Root of the Tempo launcher. State (screen, theme, search, default-home status) lives in
@@ -61,8 +61,10 @@ fun TempoApp(
         }
     }
 
-    // Back never leaves the launcher: from a sub-screen it returns home; on home it's a no-op.
-    BackHandler(enabled = screen != Screen.Home) { viewModel.goHome() }
+    // Back never leaves the launcher. Filter is a sub-page of Search, so it returns there; any other
+    // sub-screen returns home; on home it's a no-op.
+    BackHandler(enabled = screen == Screen.Filter) { viewModel.goSearch() }
+    BackHandler(enabled = screen != Screen.Home && screen != Screen.Filter) { viewModel.goHome() }
     BackHandler(enabled = screen == Screen.Home) { /* stay on home */ }
 
     CompositionLocalProvider(LocalTempoColors provides colors) {
@@ -99,8 +101,10 @@ fun TempoApp(
                                     viewModel = viewModel,
                                     isDark = isDark,
                                     onToggleTheme = viewModel::toggleTheme,
+                                    onOpenFilter = viewModel::goFilter,
                                 )
                                 Screen.Notifications -> NotificationsScreen(viewModel = viewModel)
+                                Screen.Filter -> FilterScreen(viewModel = viewModel)
                             }
                         }
                     }

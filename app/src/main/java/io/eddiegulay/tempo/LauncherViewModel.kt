@@ -62,7 +62,19 @@ class LauncherViewModel(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
+    /** The full inventory, including hidden apps — used by the hidden-apps filter page. */
     val apps: StateFlow<List<AppInfo>> = appRepository.apps
+
+    /** Packages the user has hidden from the launcher. */
+    val hiddenApps: StateFlow<Set<String>> = themeRepository.hiddenApps
+        .stateIn(viewModelScope, SharingStarted.Eagerly, initialSettings.hiddenApps)
+
+    /** The inventory minus hidden apps — what Search shows. */
+    val visibleApps: StateFlow<List<AppInfo>> =
+        combine(appRepository.apps, hiddenApps) { apps, hidden ->
+            apps.filterNot { it.packageName in hidden }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     val notifications: StateFlow<List<TempoNotification>> = notificationRepository.notifications
 
     /** Keys swiped/cleared but not yet committed — hidden from the UI during the undo window. */
@@ -96,6 +108,16 @@ class LauncherViewModel(
     fun goNotifications() {
         _screen.value = Screen.Notifications
         _searchQuery.value = "" // drop the search query whenever we leave Search
+    }
+
+    /** Open the hidden-apps filter page (launched from the Search header). */
+    fun goFilter() {
+        _screen.value = Screen.Filter
+    }
+
+    /** Hide or unhide a package from the launcher. */
+    fun setAppHidden(packageName: String, hidden: Boolean) {
+        viewModelScope.launch { themeRepository.setHidden(packageName, hidden) }
     }
 
     /** Called from MainActivity.onNewIntent — a HOME press always returns to a clean Home. */

@@ -80,13 +80,14 @@ fun SearchScreen(
     viewModel: LauncherViewModel,
     isDark: Boolean,
     onToggleTheme: () -> Unit,
+    onOpenFilter: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val c = LocalTempoColors.current
     val context = LocalContext.current
 
     val query by viewModel.searchQuery.collectAsStateWithLifecycle()
-    val apps by viewModel.apps.collectAsStateWithLifecycle()
+    val apps by viewModel.visibleApps.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { viewModel.ensureAppsLoaded() }
 
@@ -123,23 +124,19 @@ fun SearchScreen(
                     text = "けんさく",
                     style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 6.sp, color = c.inkFaint),
                 )
-                // Theme toggle, relocated from the dock. Stays faint, mirroring the prototype.
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onToggleTheme,
-                        )
-                        .semantics {
-                            contentDescription = if (isDark) "ライトテーマに切り替え" else "ダークテーマに切り替え"
-                            role = Role.Button
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    LineIcon(paths = if (isDark) TempoIcons.Sun else TempoIcons.Moon, color = c.inkFaint, size = 23.dp)
+                // Trailing controls: hidden-apps filter page, then the theme toggle (relocated from
+                // the dock). Both stay faint, mirroring the prototype's quiet chrome.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    HeaderIconButton(
+                        paths = TempoIcons.EyeOff,
+                        contentDescription = "非表示アプリ",
+                        onClick = onOpenFilter,
+                    )
+                    HeaderIconButton(
+                        paths = if (isDark) TempoIcons.Sun else TempoIcons.Moon,
+                        contentDescription = if (isDark) "ライトテーマに切り替え" else "ダークテーマに切り替え",
+                        onClick = onToggleTheme,
+                    )
                 }
             }
             Box(Modifier.height(14.dp))
@@ -273,6 +270,13 @@ private fun AppRow(viewModel: LauncherViewModel, app: AppInfo) {
                 },
             )
             DropdownMenuItem(
+                text = { Text("非表示にする", style = TextStyle(fontFamily = Mincho, color = c.ink)) },
+                onClick = {
+                    menuOpen = false
+                    viewModel.setAppHidden(app.packageName, true)
+                },
+            )
+            DropdownMenuItem(
                 text = { Text("アンインストール", style = TextStyle(fontFamily = Mincho, color = c.ink)) },
                 onClick = {
                     menuOpen = false
@@ -280,5 +284,32 @@ private fun AppRow(viewModel: LauncherViewModel, app: AppInfo) {
                 },
             )
         }
+    }
+}
+
+/** A faint, 48dp-target line-icon button used in the Search header (filter + theme toggle). */
+@Composable
+private fun HeaderIconButton(
+    paths: List<String>,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    val c = LocalTempoColors.current
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            .semantics {
+                this.contentDescription = contentDescription
+                this.role = Role.Button
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        LineIcon(paths = paths, color = c.inkFaint, size = 23.dp)
     }
 }

@@ -55,3 +55,8 @@ GEMINI.md
 # OS / misc
 .DS_Store
 *.hprof
+
+# Signing keystores (machine-local; never commit)
+/keystore/
+*.jks
+*.keystore
