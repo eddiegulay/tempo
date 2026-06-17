@@ -20,6 +20,16 @@ class NotificationRepository {
         TempoNotificationListener.activeInstance?.cancelNotification(key)
     }
 
+    /** Fires the inline action at [actionIndex] of notification [key]. */
+    fun sendAction(key: String, actionIndex: Int) {
+        TempoNotificationListener.activeInstance?.sendAction(key, actionIndex)
+    }
+
+    /** Submits a RemoteInput reply for the action at [actionIndex] of notification [key]. */
+    fun reply(key: String, actionIndex: Int, text: CharSequence) {
+        TempoNotificationListener.activeInstance?.reply(key, actionIndex, text)
+    }
+
     /**
      * Asks the system to rebind the listener. Useful after a process restart where access is still
      * granted but the service hasn't reconnected yet.

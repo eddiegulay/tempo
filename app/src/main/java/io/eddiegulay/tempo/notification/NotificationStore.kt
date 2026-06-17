@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.asStateFlow
 @Immutable
 data class TempoNotification(
     val key: String,
+    /** Source package — the grouping key for the per-app layout. */
+    val packageName: String,
     val title: String,
     val body: String,
     val time: String,
@@ -23,6 +25,19 @@ data class TempoNotification(
     val contentIntent: PendingIntent?,
     /** Whether the notification should be cleared after its content intent is sent. */
     val autoCancel: Boolean,
+    /**
+     * Inline actions in their original order. Position is the index into the live
+     * `Notification.actions[]`, which is how [TempoNotificationListener] re-resolves and fires them
+     * (we never hold the action's PendingIntent in the snapshot — see the listener).
+     */
+    val actions: List<TempoNotificationAction> = emptyList(),
+)
+
+/** A single inline notification action; [isReply] means it carries a RemoteInput text field. */
+@Immutable
+data class TempoNotificationAction(
+    val title: String,
+    val isReply: Boolean,
 )
 
 /**

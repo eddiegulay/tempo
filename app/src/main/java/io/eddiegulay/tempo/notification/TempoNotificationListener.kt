@@ -1,7 +1,10 @@
 package io.eddiegulay.tempo.notification
 
 import android.app.Notification
+import android.app.RemoteInput
 import android.content.Context
+import android.content.Intent
+import android.os.Bundle
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -67,8 +70,16 @@ class TempoNotificationListener : NotificationListenerService() {
             notification.smallIcon?.loadDrawable(this)?.toBitmap()?.asImageBitmap()
         }.getOrNull()
 
+        // Keep only invokable actions, in order; position here == index into notification.actions[],
+        // which is how we fire / reply later (we never retain the action PendingIntent in the model).
+        val actions = notification.actions.orEmpty().mapNotNull { action ->
+            val label = action.title?.toString()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            TempoNotificationAction(title = label, isReply = !action.remoteInputs.isNullOrEmpty())
+        }
+
         return TempoNotification(
             key = sbn.key,
+            packageName = sbn.packageName,
             title = title.ifBlank { appLabel(sbn.packageName) },
             body = body,
             time = formatTime(sbn.postTime),
@@ -77,7 +88,35 @@ class TempoNotificationListener : NotificationListenerService() {
             postTime = sbn.postTime,
             contentIntent = notification.contentIntent,
             autoCancel = (notification.flags and Notification.FLAG_AUTO_CANCEL) != 0,
+            actions = actions,
         )
+    }
+
+    /**
+     * Fire a plain (non-reply) inline action by its index in the live notification's action list.
+     * We resolve the action fresh from [activeNotifications] rather than holding a stale handle.
+     */
+    fun sendAction(key: String, actionIndex: Int) {
+        val action = findAction(key, actionIndex) ?: return
+        runCatching { action.actionIntent?.send() }
+    }
+
+    /** Submit a RemoteInput reply for the action at [actionIndex] of notification [key]. */
+    fun reply(key: String, actionIndex: Int, text: CharSequence) {
+        val action = findAction(key, actionIndex) ?: return
+        val remoteInputs = action.remoteInputs ?: return
+        val pendingIntent = action.actionIntent ?: return
+        val intent = Intent()
+        val results = Bundle().apply {
+            remoteInputs.forEach { putCharSequence(it.resultKey, text) }
+        }
+        RemoteInput.addResultsToIntent(remoteInputs, intent, results)
+        runCatching { pendingIntent.send(this, 0, intent) }
+    }
+
+    private fun findAction(key: String, actionIndex: Int): Notification.Action? {
+        val sbn = runCatching { activeNotifications }.getOrNull()?.firstOrNull { it.key == key } ?: return null
+        return sbn.notification.actions?.getOrNull(actionIndex)
     }
 
     private fun appLabel(packageName: String): String = runCatching {

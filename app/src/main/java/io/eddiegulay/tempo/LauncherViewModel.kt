@@ -8,15 +8,25 @@ import io.eddiegulay.tempo.data.AppInfo
 import io.eddiegulay.tempo.data.AppRepository
 import io.eddiegulay.tempo.data.TempoTheme
 import io.eddiegulay.tempo.data.ThemeRepository
+import io.eddiegulay.tempo.notification.NotificationGroup
 import io.eddiegulay.tempo.notification.NotificationRepository
 import io.eddiegulay.tempo.notification.TempoNotification
+import io.eddiegulay.tempo.notification.groupByApp
 import io.eddiegulay.tempo.ui.Screen
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+/** How long a swiped/cleared notification stays recoverable before it is really cancelled. */
+private const val UNDO_WINDOW_MS = 4_000L
 
 /**
  * Single source of truth for launcher UI state: active screen, theme, search query, the app
@@ -42,6 +52,17 @@ class LauncherViewModel(
 
     val apps: StateFlow<List<AppInfo>> = appRepository.apps
     val notifications: StateFlow<List<TempoNotification>> = notificationRepository.notifications
+
+    /** Keys swiped/cleared but not yet committed — hidden from the UI during the undo window. */
+    private val _pendingDismiss = MutableStateFlow<Set<String>>(emptySet())
+    val pendingDismiss: StateFlow<Set<String>> = _pendingDismiss.asStateFlow()
+    private val dismissJobs = mutableMapOf<String, Job>()
+
+    /** The notification list bucketed per app, with pending dismissals removed. */
+    val grouped: StateFlow<List<NotificationGroup>> =
+        combine(notifications, _pendingDismiss) { list, pending ->
+            groupByApp(list.filterNot { it.key in pending })
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _isDefaultLauncher = MutableStateFlow(false)
     val isDefaultLauncher: StateFlow<Boolean> = _isDefaultLauncher.asStateFlow()
@@ -109,7 +130,42 @@ class LauncherViewModel(
         }
     }
 
-    fun dismissNotification(key: String) = notificationRepository.dismiss(key)
+    /**
+     * Deferred dismissal: hide the row immediately, but only really cancel it after the undo window.
+     * A notification can't be re-posted once cancelled, so undo works by *delaying* the real cancel
+     * rather than restoring it.
+     */
+    fun dismissNotification(key: String) {
+        if (key in _pendingDismiss.value) return
+        _pendingDismiss.update { it + key }
+        dismissJobs[key]?.cancel()
+        dismissJobs[key] = viewModelScope.launch {
+            delay(UNDO_WINDOW_MS)
+            notificationRepository.dismiss(key)
+            dismissJobs.remove(key)
+            _pendingDismiss.update { it - key }
+        }
+    }
+
+    /** Clear everything currently visible, as one undoable batch. */
+    fun dismissAllVisible() {
+        notifications.value.map { it.key }
+            .filterNot { it in _pendingDismiss.value }
+            .forEach { dismissNotification(it) }
+    }
+
+    /** Restore all rows still inside the undo window (cancels their pending real-dismissals). */
+    fun undoDismiss() {
+        dismissJobs.values.forEach { it.cancel() }
+        dismissJobs.clear()
+        _pendingDismiss.value = emptySet()
+    }
+
+    fun sendNotificationAction(key: String, actionIndex: Int) =
+        notificationRepository.sendAction(key, actionIndex)
+
+    fun replyToNotification(key: String, actionIndex: Int, text: String) =
+        notificationRepository.reply(key, actionIndex, text)
 
     fun requestNotificationRebind(context: Context) = notificationRepository.requestRebind(context)
 }

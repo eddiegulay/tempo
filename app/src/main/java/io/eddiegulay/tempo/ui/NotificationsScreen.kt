@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,9 +16,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -25,20 +31,27 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,7 +62,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.DisposableEffect
 import io.eddiegulay.tempo.LauncherViewModel
 import io.eddiegulay.tempo.data.JapaneseDate
+import io.eddiegulay.tempo.notification.NotificationGroup
 import io.eddiegulay.tempo.notification.TempoNotification
+import io.eddiegulay.tempo.notification.TempoNotificationAction
 import io.eddiegulay.tempo.notification.TempoNotificationListener
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Gothic
@@ -80,7 +95,10 @@ fun NotificationsScreen(viewModel: LauncherViewModel, modifier: Modifier = Modif
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val notifications by viewModel.notifications.collectAsStateWithLifecycle()
+    val groups by viewModel.grouped.collectAsStateWithLifecycle()
+    val pending by viewModel.pendingDismiss.collectAsStateWithLifecycle()
+    // Per-app expand state for the 他X件 collapse; keyed by package, survives recomposition.
+    val expanded = remember { mutableStateMapOf<String, Boolean>() }
 
     // Nudge the system to reconnect the listener if access is granted but it isn't bound yet
     // (e.g. after a process restart).
@@ -89,16 +107,25 @@ fun NotificationsScreen(viewModel: LauncherViewModel, modifier: Modifier = Modif
     }
 
     Column(modifier.fillMaxSize()) {
-        Column(Modifier.padding(start = 28.dp, end = 28.dp, top = 24.dp, bottom = 10.dp)) {
-            Text(
-                text = "通知",
-                style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
-            )
-            Spacer(Modifier.height(7.dp))
-            Text(
-                text = "${JapaneseDate.era(now)} ・ ${JapaneseDate.monthDay(now)}",
-                style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 4.sp, color = c.inkFaint),
-            )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 28.dp, end = 22.dp, top = 24.dp, bottom = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column {
+                Text(
+                    text = "通知",
+                    style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
+                )
+                Spacer(Modifier.height(7.dp))
+                Text(
+                    text = "${JapaneseDate.era(now)} ・ ${JapaneseDate.monthDay(now)}",
+                    style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 4.sp, color = c.inkFaint),
+                )
+            }
+            if (enabled && groups.isNotEmpty()) {
+                ClearAllButton(onClick = { viewModel.dismissAllVisible() })
+            }
         }
 
         Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -112,17 +139,49 @@ fun NotificationsScreen(viewModel: LauncherViewModel, modifier: Modifier = Modif
                     },
                 )
 
-                notifications.isEmpty() -> QuietState()
+                groups.isEmpty() -> QuietState()
 
                 else -> LazyColumn(Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 6.dp)) {
-                    items(notifications, key = { it.key }) { n ->
-                        NotifRow(
-                            n = n,
-                            onOpen = { viewModel.openNotification(n) },
-                            onDismiss = { viewModel.dismissNotification(n.key) },
-                        )
+                    groups.forEach { group ->
+                        val collapsible = group.items.size > COLLAPSE_THRESHOLD
+                        val isExpanded = expanded[group.packageName] == true
+                        val visible = if (collapsible && !isExpanded) {
+                            group.items.take(COLLAPSE_THRESHOLD)
+                        } else {
+                            group.items
+                        }
+                        val hidden = group.items.size - visible.size
+
+                        item(key = "header:${group.packageName}") { GroupHeader(group) }
+                        items(visible, key = { it.key }) { n ->
+                            NotifRow(
+                                n = n,
+                                onOpen = { viewModel.openNotification(n) },
+                                onDismiss = { viewModel.dismissNotification(n.key) },
+                                onAction = { idx -> viewModel.sendNotificationAction(n.key, idx) },
+                                onReply = { idx, text -> viewModel.replyToNotification(n.key, idx, text) },
+                            )
+                        }
+                        if (collapsible) {
+                            item(key = "more:${group.packageName}") {
+                                CollapseToggle(
+                                    expanded = isExpanded,
+                                    hiddenCount = hidden,
+                                    onToggle = { expanded[group.packageName] = !isExpanded },
+                                )
+                            }
+                        }
                     }
                 }
+            }
+
+            // Transient undo affordance — auto-fades when the window commits (pending clears).
+            if (pending.isNotEmpty()) {
+                UndoStrip(
+                    count = pending.size,
+                    onUndo = { viewModel.undoDismiss() },
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
             }
         }
     }
@@ -130,7 +189,13 @@ fun NotificationsScreen(viewModel: LauncherViewModel, modifier: Modifier = Modif
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NotifRow(n: TempoNotification, onOpen: () -> Unit, onDismiss: () -> Unit) {
+private fun NotifRow(
+    n: TempoNotification,
+    onOpen: () -> Unit,
+    onDismiss: () -> Unit,
+    onAction: (Int) -> Unit,
+    onReply: (Int, String) -> Unit,
+) {
     val c = LocalTempoColors.current
 
     // A single, readable TalkBack announcement for the whole row, plus an explicit "dismiss" action
@@ -161,21 +226,18 @@ private fun NotifRow(n: TempoNotification, onOpen: () -> Unit, onDismiss: () -> 
         modifier = Modifier.fillMaxWidth(),
         backgroundContent = {},
     ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .background(c.bgSolid)
-                // Present the row as one node: open on activation, with an explicit dismiss action.
-                .clearAndSetSemantics {
-                    contentDescription = rowDescription
-                    onClick(label = "開く") { onOpen(); true }
-                    customActions = dismissAction
-                },
-        ) {
+        Column(Modifier.fillMaxWidth().background(c.bgSolid)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable(onClick = onOpen)
+                    // The tappable summary is one TalkBack node: open on activate, dismiss as an
+                    // action. Inline actions below stay separately focusable (not in this subtree).
+                    .clearAndSetSemantics {
+                        contentDescription = rowDescription
+                        onClick(label = "開く") { onOpen(); true }
+                        customActions = dismissAction
+                    }
                     .padding(horizontal = 4.dp, vertical = 17.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
@@ -221,7 +283,209 @@ private fun NotifRow(n: TempoNotification, onOpen: () -> Unit, onDismiss: () -> 
                     )
                 }
             }
+            if (n.actions.isNotEmpty()) {
+                ActionsRow(actions = n.actions, onAction = onAction, onReply = onReply)
+            }
             Box(Modifier.fillMaxWidth().height(1.dp).background(c.hair))
+        }
+    }
+}
+
+/**
+ * Inline notification actions. Plain actions fire on tap; a reply action toggles an inline field
+ * whose submit routes back through the service's RemoteInput plumbing.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ActionsRow(
+    actions: List<TempoNotificationAction>,
+    onAction: (Int) -> Unit,
+    onReply: (Int, String) -> Unit,
+) {
+    var replyingIndex by remember { mutableStateOf<Int?>(null) }
+
+    Column(Modifier.fillMaxWidth().padding(start = 36.dp, end = 4.dp, bottom = 6.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            actions.forEachIndexed { index, action ->
+                ActionChip(
+                    label = action.title,
+                    onClick = {
+                        if (action.isReply) {
+                            replyingIndex = if (replyingIndex == index) null else index
+                        } else {
+                            onAction(index)
+                        }
+                    },
+                )
+            }
+        }
+        replyingIndex?.let { index ->
+            ReplyField(
+                onSend = { text ->
+                    onReply(index, text)
+                    replyingIndex = null
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ActionChip(label: String, onClick: () -> Unit) {
+    val c = LocalTempoColors.current
+    Box(
+        modifier = Modifier
+            .sizeIn(minHeight = 48.dp)
+            .clickable(onClick = onClick)
+            .semantics(mergeDescendants = true) { role = Role.Button },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            text = label,
+            style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 1.sp, color = c.accent),
+        )
+    }
+}
+
+@Composable
+private fun ReplyField(onSend: (String) -> Unit) {
+    val c = LocalTempoColors.current
+    var text by remember { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    BasicTextField(
+        value = text,
+        onValueChange = { text = it },
+        singleLine = true,
+        textStyle = TextStyle(fontFamily = Gothic, fontSize = 15.sp, color = c.ink),
+        cursorBrush = SolidColor(c.accent),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+        keyboardActions = KeyboardActions(onSend = { if (text.isNotBlank()) onSend(text.trim()) }),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp, bottom = 4.dp)
+            .focusRequester(focusRequester)
+            .semantics { contentDescription = "返信を入力" },
+        decorationBox = { inner ->
+            Column {
+                Box(Modifier.padding(vertical = 6.dp)) {
+                    if (text.isEmpty()) {
+                        Text(
+                            text = "返信",
+                            style = TextStyle(fontFamily = Gothic, fontSize = 15.sp, color = c.inkFaint),
+                        )
+                    }
+                    inner()
+                }
+                Box(Modifier.fillMaxWidth().height(1.dp).background(c.hair))
+            }
+        },
+    )
+}
+
+/** Beyond this many notifications, an app's bucket collapses behind a 他X件 toggle. */
+private const val COLLAPSE_THRESHOLD = 4
+
+/** A quiet per-app header: faint tinted icon, mincho label, count. One TalkBack node. */
+@Composable
+private fun GroupHeader(group: NotificationGroup) {
+    val c = LocalTempoColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 16.dp, bottom = 4.dp)
+            .clearAndSetSemantics { contentDescription = "${group.appLabel}、${group.items.size}件" },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        val icon = group.items.first().icon
+        if (icon != null) {
+            Image(
+                bitmap = icon,
+                contentDescription = null,
+                colorFilter = ColorFilter.tint(c.inkFaint),
+                modifier = Modifier.size(15.dp),
+            )
+        }
+        Text(
+            text = group.appLabel,
+            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
+        )
+        Text(
+            text = group.items.size.toString(),
+            style = TextStyle(fontFamily = Gothic, fontSize = 11.sp, letterSpacing = 1.sp, color = c.inkFaint),
+        )
+    }
+}
+
+/** The 他X件 / 折りたたむ expander for an over-long app bucket. */
+@Composable
+private fun CollapseToggle(expanded: Boolean, hiddenCount: Int, onToggle: () -> Unit) {
+    val c = LocalTempoColors.current
+    val label = if (expanded) "折りたたむ" else "他 $hiddenCount 件"
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .semantics { role = Role.Button; contentDescription = label }
+            .padding(vertical = 11.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 2.sp, color = c.accent),
+        )
+    }
+}
+
+/** The quiet すべて消去 (clear all) control in the header. */
+@Composable
+private fun ClearAllButton(onClick: () -> Unit) {
+    val c = LocalTempoColors.current
+    Box(
+        modifier = Modifier
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .clickable(onClick = onClick)
+            .semantics { role = Role.Button; contentDescription = "すべて消去" }
+            .padding(horizontal = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "すべて消去",
+            style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 2.sp, color = c.inkFaint),
+        )
+    }
+}
+
+/** Bottom strip offering to undo the in-flight dismissals before they commit. */
+@Composable
+private fun UndoStrip(count: Int, onUndo: () -> Unit, modifier: Modifier = Modifier) {
+    val c = LocalTempoColors.current
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(c.card)
+            .padding(start = 28.dp, end = 22.dp, top = 14.dp, bottom = 14.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "$count 件を消去",
+            style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 2.sp, color = c.inkSoft),
+        )
+        Box(
+            modifier = Modifier
+                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                .clickable(onClick = onUndo)
+                .semantics { role = Role.Button; contentDescription = "元に戻す" }
+                .padding(horizontal = 6.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "元に戻す",
+                style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 2.sp, color = c.accent),
+            )
         }
     }
 }
