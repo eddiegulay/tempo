@@ -39,7 +39,10 @@ val PaperColors = TempoColors(
     bgSolid = Color(0xFFF2EEE4),
     bgStops = listOf(Color(0xFFF8F5EF), Color(0xFFF2EEE4), Color(0xFFEBE6DB)),
     card = PaperInk.copy(alpha = 0.035f),
-    ink = PaperInk,
+    // Primary ink is a *toned* warm sumi, not the full #2B2B2B — at full strength the app names and
+    // clock read as hard print-black and fight the washi cream. Secondary tones below stay derived
+    // from the darker base so subtitles, hairlines and the seal keep their tuned weight.
+    ink = Color(0xFF433F38),
     inkSoft = PaperInk.copy(alpha = 0.56f),
     inkFaint = PaperInk.copy(alpha = 0.30f),
     hair = PaperInk.copy(alpha = 0.10f),
