@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -37,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.ColorFilter
@@ -226,7 +228,16 @@ private fun NotifRow(
         modifier = Modifier.fillMaxWidth(),
         backgroundContent = {},
     ) {
-        Column(Modifier.fillMaxWidth().background(c.bgSolid)) {
+        // Each notification is its own soft card — a faint washi fill rounded at the corners with a
+        // small gap to its neighbours — rather than a full-bleed row split by hairlines. The gentle
+        // radius and internal breathing room let each one read as a discrete, calm object.
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 5.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(c.card),
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -238,7 +249,7 @@ private fun NotifRow(
                         onClick(label = "開く") { onOpen(); true }
                         customActions = dismissAction
                     }
-                    .padding(horizontal = 4.dp, vertical = 17.dp),
+                    .padding(horizontal = 18.dp, vertical = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 if (n.icon != null) {
@@ -286,7 +297,6 @@ private fun NotifRow(
             if (n.actions.isNotEmpty()) {
                 ActionsRow(actions = n.actions, onAction = onAction, onReply = onReply)
             }
-            Box(Modifier.fillMaxWidth().height(1.dp).background(c.hair))
         }
     }
 }
@@ -304,7 +314,8 @@ private fun ActionsRow(
 ) {
     var replyingIndex by remember { mutableStateOf<Int?>(null) }
 
-    Column(Modifier.fillMaxWidth().padding(start = 36.dp, end = 4.dp, bottom = 6.dp)) {
+    // Indent to align beneath the title: card padding (18) + icon (20) + row spacing (16).
+    Column(Modifier.fillMaxWidth().padding(start = 54.dp, end = 18.dp, bottom = 12.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             actions.forEachIndexed { index, action ->
                 ActionChip(
@@ -394,7 +405,8 @@ private fun GroupHeader(group: NotificationGroup) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 16.dp, bottom = 4.dp)
+            // Inset to the card's internal padding so the header icon lines up with the row icons.
+            .padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 6.dp)
             .clearAndSetSemantics { contentDescription = "${group.appLabel}、${group.items.size}件" },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(9.dp),
