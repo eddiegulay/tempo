@@ -59,7 +59,10 @@ val SumiColors = TempoColors(
     bgSolid = Color(0xFF1A1814),
     bgStops = listOf(Color(0xFF211F1B), Color(0xFF1A1814), Color(0xFF141210)),
     card = SumiInk.copy(alpha = 0.05f),
-    ink = SumiInk,
+    // Primary ink is a *toned* warm bone, not the full #ECE7DB — at full strength the app names and
+    // clock read as stark white and fight the charcoal. Secondary tones below stay derived from the
+    // brighter base so glyphs and subtitles keep their tuned contrast.
+    ink = Color(0xFFD4CEBF),
     inkSoft = SumiInk.copy(alpha = 0.72f),
     inkFaint = SumiInk.copy(alpha = 0.48f),
     hair = SumiInk.copy(alpha = 0.16f),
