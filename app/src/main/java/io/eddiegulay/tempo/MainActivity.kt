@@ -36,8 +36,8 @@ class MainActivity : ComponentActivity() {
         // Paint the window in the *persisted* in-app theme before Compose's first frame. The XML
         // windowBackground only tracks the system day/night setting, so a user whose chosen theme
         // differs from the system would otherwise see a flash of the wrong colour on every launch.
-        val isDark = viewModel.theme.value == TempoTheme.Amoled
-        window.setBackgroundDrawable(ColorDrawable(if (isDark) WINDOW_AMOLED else WINDOW_PAPER))
+        val isDark = viewModel.theme.value == TempoTheme.Sumi
+        window.setBackgroundDrawable(ColorDrawable(if (isDark) WINDOW_SUMI else WINDOW_PAPER))
 
         roleRequestLauncher = registerForActivityResult(
             ActivityResultContracts.StartActivityForResult(),
@@ -88,8 +88,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private companion object {
-        // Pre-Compose window fills; mirror PaperColors.bgSolid / AmoledColors.bgSolid.
+        // Pre-Compose window fills; mirror PaperColors.bgSolid / SumiColors.bgSolid.
         const val WINDOW_PAPER = 0xFFF2EEE4.toInt()
-        const val WINDOW_AMOLED = 0xFF000000.toInt()
+        const val WINDOW_SUMI = 0xFF1A1814.toInt()
     }
 }

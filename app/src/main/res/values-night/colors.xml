@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Window background before Compose paints: true black (AMOLED theme). -->
-    <color name="tempo_window">#000000</color>
+    <!-- Window background before Compose paints: warm charcoal (Sumi dark-paper theme). -->
+    <color name="tempo_window">#1A1814</color>
 </resources>

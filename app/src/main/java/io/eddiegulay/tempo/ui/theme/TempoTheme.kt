@@ -8,7 +8,8 @@ import androidx.compose.ui.graphics.Color
  * The two Tempo palettes, lifted directly from the prototype's `base` object.
  *
  *  - "paper" — washi-cream radial wash, sumi-ink text, vermillion accent, faint paper grain.
- *  - "amoled" — true-black, warm off-white ink, brighter vermillion, no grain.
+ *  - "sumi" — dark washi: a warm near-black charcoal wash, warm off-white ink at high
+ *    contrast, a slightly brighter vermillion, and a faint light-catching paper tooth.
  *
  * Colours are exposed through [LocalTempoColors] so every screen reads the active theme without
  * threading it through every call site.
@@ -47,20 +48,24 @@ val PaperColors = TempoColors(
     grainOpacity = 0.06f,
 )
 
-private val AmoledInk = Color(0xFFE8E4DA)
+private val SumiInk = Color(0xFFECE7DB)
 
-val AmoledColors = TempoColors(
+// Dark washi. Warm charcoal radial wash (top-centre origin, like paper) instead of true black,
+// with ink alphas raised so secondary text — dates, romaji, labels — stays legible on dark
+// (the old AMOLED ran inkFaint at 0.30 over #000, ~2.4:1, which failed). The grain is drawn with
+// a Screen blend in dark mode (see Background.kt) so paper fibres catch light rather than darken.
+val SumiColors = TempoColors(
     isDark = true,
-    bgSolid = Color(0xFF000000),
-    bgStops = listOf(Color(0xFF000000), Color(0xFF000000), Color(0xFF000000)),
-    card = AmoledInk.copy(alpha = 0.05f),
-    ink = AmoledInk,
-    inkSoft = AmoledInk.copy(alpha = 0.52f),
-    inkFaint = AmoledInk.copy(alpha = 0.30f),
-    hair = AmoledInk.copy(alpha = 0.10f),
-    accent = Color(0xFFCC6149),
-    enso = AmoledInk.copy(alpha = 0.05f),
-    grainOpacity = 0f,
+    bgSolid = Color(0xFF1A1814),
+    bgStops = listOf(Color(0xFF211F1B), Color(0xFF1A1814), Color(0xFF141210)),
+    card = SumiInk.copy(alpha = 0.05f),
+    ink = SumiInk,
+    inkSoft = SumiInk.copy(alpha = 0.72f),
+    inkFaint = SumiInk.copy(alpha = 0.48f),
+    hair = SumiInk.copy(alpha = 0.16f),
+    accent = Color(0xFFD2664B),
+    enso = SumiInk.copy(alpha = 0.07f),
+    grainOpacity = 0.05f,
 )
 
 val LocalTempoColors = staticCompositionLocalOf { PaperColors }

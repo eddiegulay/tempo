@@ -2,9 +2,7 @@ package io.eddiegulay.tempo.ui
 
 import android.app.ActivityOptions
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -32,13 +30,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -189,11 +185,6 @@ private fun AppRow(viewModel: LauncherViewModel, app: AppInfo) {
     val context = LocalContext.current
     val rootView = LocalView.current
 
-    // Lazy, cached icon: paint the cache hit instantly, otherwise load off the main thread.
-    val icon by produceState<ImageBitmap?>(initialValue = viewModel.peekIcon(app), app.key) {
-        if (value == null) value = viewModel.loadIcon(app)
-    }
-
     var menuOpen by remember { mutableStateOf(false) }
     var rowBounds by remember { mutableStateOf<android.graphics.Rect?>(null) }
 
@@ -222,17 +213,7 @@ private fun AppRow(viewModel: LauncherViewModel, app: AppInfo) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            val iconShape = RoundedCornerShape(7.dp)
-            if (icon != null) {
-                Image(
-                    bitmap = icon!!,
-                    contentDescription = app.label,
-                    modifier = Modifier.size(26.dp).clip(iconShape).border(1.dp, c.hair, iconShape),
-                )
-            } else {
-                // Placeholder while the icon decodes — keeps row height stable, avoids jank.
-                Box(Modifier.size(26.dp).clip(iconShape).background(c.card).border(1.dp, c.hair, iconShape))
-            }
+            AppGlyph(app = app, color = c.inkSoft, size = 26.dp)
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = app.label,

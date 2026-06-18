@@ -13,13 +13,9 @@ import android.os.Bundle
 import android.os.Process
 import android.os.UserHandle
 import android.os.UserManager
-import android.util.LruCache
 import android.widget.Toast
 import androidx.compose.runtime.Immutable
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.drawable.toBitmap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -40,6 +36,8 @@ data class AppInfo(
     val key: String,
     /** Localized app-category title (e.g. "生産性"), or null when the app declares none. */
     val category: String?,
+    /** Raw [ApplicationInfo] category constant (CATEGORY_AUDIO, …); drives line-glyph selection. */
+    val categoryId: Int,
     /** Epoch millis the package was last updated; 0 when unknown. */
     val lastUpdated: Long,
 )
@@ -50,10 +48,10 @@ data class AppInfo(
  * Why LauncherApps over a bare PackageManager query:
  *  - it enumerates **all user profiles** (work profile / secondary users) via [UserManager];
  *  - its [LauncherApps.Callback] keeps the list **live** as apps are installed/removed/changed;
- *  - it provides **badged** icons and a profile-aware launch + app-details path.
+ *  - it provides a profile-aware launch + app-details path.
  *
- * Icons are loaded **lazily and cached** (bounded [LruCache]) so cold start and Search-open never
- * decode the whole icon set at once.
+ * The drawer draws Tempo's own monochrome line glyphs (see AppGlyph), not platform app icons, so
+ * there is no per-app bitmap decode or icon cache to maintain here.
  */
 class AppRepository private constructor(private val appContext: Context) {
 
@@ -64,9 +62,6 @@ class AppRepository private constructor(private val appContext: Context) {
 
     private val _apps = MutableStateFlow<List<AppInfo>>(emptyList())
     val apps: StateFlow<List<AppInfo>> = _apps.asStateFlow()
-
-    private val iconCache = LruCache<String, ImageBitmap>(ICON_CACHE_ENTRIES)
-    private val iconSizePx = (appContext.resources.displayMetrics.density * ICON_DP).toInt()
 
     @Volatile
     private var started = false
@@ -111,6 +106,7 @@ class AppRepository private constructor(private val appContext: Context) {
                     user = user,
                     key = keyFor(lai.componentName, user),
                     category = ApplicationInfo.getCategoryTitle(appContext, appInfo.category)?.toString(),
+                    categoryId = appInfo.category,
                     lastUpdated = updatedCache.getOrPut(pkg) {
                         runCatching { pm.getPackageInfo(pkg, 0).lastUpdateTime }.getOrDefault(0L)
                     },
@@ -121,23 +117,6 @@ class AppRepository private constructor(private val appContext: Context) {
             .distinctBy { it.key }
             .sortedBy { it.label.lowercase() }
         _apps.value = list
-    }
-
-    // ----- icons (lazy + cached) -----
-
-    /** Synchronous cache peek for an instant first paint; null on miss. */
-    fun peekIcon(app: AppInfo): ImageBitmap? = iconCache.get(app.key)
-
-    suspend fun loadIcon(app: AppInfo): ImageBitmap = withContext(Dispatchers.IO) {
-        iconCache.get(app.key)?.let { return@withContext it }
-        val drawable = runCatching {
-            launcherApps?.getActivityList(app.packageName, app.user)
-                ?.firstOrNull { it.componentName == app.componentName }
-                ?.getBadgedIcon(0)
-        }.getOrNull() ?: appContext.packageManager.getApplicationIcon(app.packageName)
-        val bitmap = drawable.toBitmap(iconSizePx, iconSizePx).asImageBitmap()
-        iconCache.put(app.key, bitmap)
-        bitmap
     }
 
     // ----- launching & per-app actions -----
@@ -200,15 +179,11 @@ class AppRepository private constructor(private val appContext: Context) {
 
     private val localeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            iconCache.evictAll()
             triggerReload()
         }
     }
 
     companion object {
-        private const val ICON_DP = 48
-        private const val ICON_CACHE_ENTRIES = 256
-
         @Volatile
         private var instance: AppRepository? = null
 

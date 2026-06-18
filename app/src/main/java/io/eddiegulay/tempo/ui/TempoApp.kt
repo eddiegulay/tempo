@@ -33,9 +33,9 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.LauncherViewModel
 import io.eddiegulay.tempo.data.TempoTheme
-import io.eddiegulay.tempo.ui.theme.AmoledColors
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.PaperColors
+import io.eddiegulay.tempo.ui.theme.SumiColors
 
 /** The navigable layers of the launcher. Filter is the hidden-apps page, reached from Search. */
 enum class Screen { Home, Search, Notifications, Filter }
@@ -59,8 +59,8 @@ fun TempoApp(
     val pendingBlock by viewModel.pendingBlock.collectAsStateWithLifecycle()
     val lockedTap by viewModel.lockedTap.collectAsStateWithLifecycle()
 
-    val isDark = theme == TempoTheme.Amoled
-    val colors = if (isDark) AmoledColors else PaperColors
+    val isDark = theme == TempoTheme.Sumi
+    val colors = if (isDark) SumiColors else PaperColors
 
     // All-files access can be toggled in Settings while we're away; re-check on resume and re-merge
     // the durable blockade ledger so a freshly-granted permission immediately backs up existing blocks.

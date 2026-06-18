@@ -1,8 +1,5 @@
 package io.eddiegulay.tempo.ui
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,13 +16,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -76,7 +71,6 @@ fun FilterScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifier) {
         ) {
             items(apps, key = { it.key }) { app ->
                 FilterRow(
-                    viewModel = viewModel,
                     app = app,
                     unlockAt = blockade[app.packageName],
                     now = now,
@@ -91,7 +85,6 @@ fun FilterScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifier) {
 
 @Composable
 private fun FilterRow(
-    viewModel: LauncherViewModel,
     app: AppInfo,
     unlockAt: Long?,
     now: Long,
@@ -100,10 +93,6 @@ private fun FilterRow(
     onLocked: () -> Unit,
 ) {
     val c = LocalTempoColors.current
-
-    val icon by produceState<ImageBitmap?>(initialValue = viewModel.peekIcon(app), app.key) {
-        if (value == null) value = viewModel.loadIcon(app)
-    }
 
     val isBlocked = unlockAt != null
     val remaining = if (unlockAt != null) (unlockAt - now).coerceAtLeast(0L) else 0L
@@ -131,17 +120,8 @@ private fun FilterRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        val iconShape = RoundedCornerShape(7.dp)
         Box(Modifier.alpha(if (dim) 0.4f else 1f)) {
-            if (icon != null) {
-                Image(
-                    bitmap = icon!!,
-                    contentDescription = null,
-                    modifier = Modifier.size(26.dp).clip(iconShape).border(1.dp, c.hair, iconShape),
-                )
-            } else {
-                Box(Modifier.size(26.dp).clip(iconShape).background(c.card).border(1.dp, c.hair, iconShape))
-            }
+            AppGlyph(app = app, color = c.inkSoft, size = 26.dp)
         }
         Column(
             modifier = Modifier.weight(1f),

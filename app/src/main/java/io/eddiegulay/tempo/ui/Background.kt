@@ -23,20 +23,21 @@ import java.util.Random
 fun Modifier.tempoBackground(colors: TempoColors): Modifier = drawWithCache {
     val grain: ImageBitmap? = if (colors.grainOpacity > 0f) noiseTile() else null
 
-    val gradient = if (colors.isDark) {
-        null
-    } else {
-        Brush.radialGradient(
-            0.00f to colors.bgStops[0],
-            0.58f to colors.bgStops[1],
-            1.00f to colors.bgStops[2],
-            center = Offset(size.width / 2f, 0f),
-            radius = size.height * 1.15f,
-        )
-    }
+    // Both palettes are a top-centre radial wash now: cream for paper, warm charcoal for sumi.
+    val gradient = Brush.radialGradient(
+        0.00f to colors.bgStops[0],
+        0.58f to colors.bgStops[1],
+        1.00f to colors.bgStops[2],
+        center = Offset(size.width / 2f, 0f),
+        radius = size.height * 1.15f,
+    )
+
+    // Paper darkens its tooth (Multiply); dark washi lifts it toward the light (Screen), so the
+    // grain reads as fibre catching light instead of muddying the charcoal.
+    val grainBlend = if (colors.isDark) BlendMode.Screen else BlendMode.Multiply
 
     onDrawBehind {
-        if (gradient != null) drawRect(gradient) else drawRect(colors.bgSolid)
+        drawRect(gradient)
 
         if (grain != null) {
             val tw = grain.width.toFloat()
@@ -49,7 +50,7 @@ fun Modifier.tempoBackground(colors: TempoColors): Modifier = drawWithCache {
                         image = grain,
                         topLeft = Offset(x, y),
                         alpha = colors.grainOpacity,
-                        blendMode = BlendMode.Multiply,
+                        blendMode = grainBlend,
                     )
                     x += tw
                 }

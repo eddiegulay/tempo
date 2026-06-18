@@ -184,7 +184,7 @@ class LauncherViewModel(
 
     fun toggleTheme() {
         viewModelScope.launch {
-            val next = if (theme.value == TempoTheme.Amoled) TempoTheme.Paper else TempoTheme.Amoled
+            val next = if (theme.value == TempoTheme.Sumi) TempoTheme.Paper else TempoTheme.Sumi
             themeRepository.setTheme(next)
         }
     }
@@ -201,10 +201,6 @@ class LauncherViewModel(
     fun openAppInfo(context: Context, app: AppInfo) = appRepository.openAppInfo(context, app)
 
     fun requestUninstall(context: Context, app: AppInfo) = appRepository.requestUninstall(context, app)
-
-    fun peekIcon(app: AppInfo) = appRepository.peekIcon(app)
-
-    suspend fun loadIcon(app: AppInfo) = appRepository.loadIcon(app)
 
     fun setDefaultLauncher(isDefault: Boolean) {
         _isDefaultLauncher.value = isDefault

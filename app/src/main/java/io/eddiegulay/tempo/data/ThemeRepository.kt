@@ -13,8 +13,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 
-/** The two visual modes Tempo supports. */
-enum class TempoTheme { Paper, Amoled }
+/** The two visual modes Tempo supports: light washi (Paper) and dark washi (Sumi). */
+enum class TempoTheme { Paper, Sumi }
 
 /** Stored settings read synchronously for the very first frame, before Compose draws. */
 data class InitialSettings(val theme: TempoTheme, val onboardingComplete: Boolean)
@@ -38,7 +38,7 @@ class ThemeRepository(private val context: Context) {
     private val onboardingKey = booleanPreferencesKey("onboarding_complete")
 
     val theme: Flow<TempoTheme> = context.tempoDataStore.data.map { prefs ->
-        if (prefs[themeKey] == VALUE_AMOLED) TempoTheme.Amoled else TempoTheme.Paper
+        prefs[themeKey].toTheme()
     }
 
     /**
@@ -59,14 +59,14 @@ class ThemeRepository(private val context: Context) {
     fun loadInitialSettings(): InitialSettings = runBlocking {
         val prefs = context.tempoDataStore.data.first()
         InitialSettings(
-            theme = if (prefs[themeKey] == VALUE_AMOLED) TempoTheme.Amoled else TempoTheme.Paper,
+            theme = prefs[themeKey].toTheme(),
             onboardingComplete = prefs[onboardingKey] ?: false,
         )
     }
 
     suspend fun setTheme(theme: TempoTheme) {
         context.tempoDataStore.edit { prefs ->
-            prefs[themeKey] = if (theme == TempoTheme.Amoled) VALUE_AMOLED else VALUE_PAPER
+            prefs[themeKey] = if (theme == TempoTheme.Sumi) VALUE_SUMI else VALUE_PAPER
         }
     }
 
@@ -76,8 +76,14 @@ class ThemeRepository(private val context: Context) {
         }
     }
 
+    // "amoled" is the legacy stored value (pre-Sumi); still read as dark so existing installs
+    // keep their dark choice across the rename.
+    private fun String?.toTheme(): TempoTheme =
+        if (this == VALUE_SUMI || this == VALUE_LEGACY_DARK) TempoTheme.Sumi else TempoTheme.Paper
+
     private companion object {
         const val VALUE_PAPER = "paper"
-        const val VALUE_AMOLED = "amoled"
+        const val VALUE_SUMI = "sumi"
+        const val VALUE_LEGACY_DARK = "amoled"
     }
 }
