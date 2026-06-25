@@ -33,6 +33,27 @@ All notable changes to this project are documented here. The format is based on
 - Refreshed the Home and Search screenshots and added a Notifications screenshot; the README now leads
   with the cover and shows a three-up screen gallery (Home · Search · Notifications).
 
+## [0.0.4] - 2026-06-18
+
+### Changed
+- Nudged the primary ink colour for better readability and a more balanced palette.
+
+## [0.0.3] - 2026-06-18
+
+### Added
+- **AppGlyphs**: a set of hand-drawn monochrome line glyphs now stands in for platform app icons in
+  Search (検索) and the hidden-apps page, keeping the drawer on-brand and removing per-app bitmap
+  decoding and icon caching.
+
+### Changed
+- Renamed and retuned the dark theme to **Sumi** (warm charcoal), with refreshed night colours.
+
+## [0.0.2] - 2026-06-18
+
+### Changed
+- **Search (検索)**: the field no longer auto-focuses or pops the keyboard on entry — the screen opens
+  calm, and you tap to start typing.
+
 ## [0.0.1] - 2026-06-18
 
 ### Added
@@ -53,4 +74,7 @@ All notable changes to this project are documented here. The format is based on
 [Unreleased]: https://github.com/eddiegulay/tempo/compare/v0.0.6...HEAD
 [0.0.6]: https://github.com/eddiegulay/tempo/compare/v0.0.5...v0.0.6
 [0.0.5]: https://github.com/eddiegulay/tempo/compare/v0.0.4...v0.0.5
+[0.0.4]: https://github.com/eddiegulay/tempo/compare/v0.0.3...v0.0.4
+[0.0.3]: https://github.com/eddiegulay/tempo/compare/v0.0.2...v0.0.3
+[0.0.2]: https://github.com/eddiegulay/tempo/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/eddiegulay/tempo/releases/tag/v0.0.1
