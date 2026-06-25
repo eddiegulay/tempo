@@ -8,6 +8,14 @@
       which requires All-files access. The user grants this in system Settings.
     -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <!--
+      Android 10 (API 29) has no All-files access. The uninstall-proof ledger mirror instead relies on
+      legacy external storage, opted into below, which this runtime permission backs. Capped at API 29
+      so it is never requested on Android 11+, where MANAGE_EXTERNAL_STORAGE is used instead.
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
 
     <!--
       A home app legitimately needs to see every launchable app to populate Search.
@@ -29,6 +37,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:enableOnBackInvokedCallback="true"
+        android:requestLegacyExternalStorage="true"
         android:theme="@style/Theme.Tempo">
 
         <activity

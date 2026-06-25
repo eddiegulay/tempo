@@ -26,7 +26,7 @@ android {
 
     defaultConfig {
         applicationId = "io.eddiegulay.tempo"
-        minSdk = 35
+        minSdk = 29
         targetSdk = 36
         // Version is overridden from the git tag in CI (see .github/workflows/release.yml);
         // these are the local-build defaults.

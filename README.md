@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Android CI](https://github.com/eddiegulay/tempo/actions/workflows/android.yml/badge.svg)](../../actions/workflows/android.yml)
-![Min SDK](https://img.shields.io/badge/minSdk-35-3DDC84)
+![Min SDK](https://img.shields.io/badge/minSdk-29-3DDC84)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.1-7F52FF)
 ![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-UI-4285F4)
 
@@ -73,7 +73,7 @@ There are no settings, widgets, folders, or app drawer. That's the point.
   to live-filter. Tap a row (or press **Go** to launch the top hit) to open it; long-press for
   **app info / hide / uninstall**. The header carries the hidden-apps button and the theme toggle.
 - **Block an app (the point).** Hide an app from the long-press menu or the hidden-apps page (the
-  eye-off button in the Search header). You'll confirm a **10-day** commitment, granting All-files
+  eye-off button in the Search header). You'll confirm a **10-day** commitment, granting shared-storage
   access so it survives a reinstall, and from then on the app is gone from Search and its
   notifications are suppressed. Tap it on the hidden-apps page to see the countdown; it can only be
   restored once the 10 days are up.
@@ -91,13 +91,14 @@ There are no settings, widgets, folders, or app drawer. That's the point.
 - **Jetpack DataStore** for settings; **`LauncherApps`** for a live app inventory; a
   **`NotificationListenerService`** for real notifications (and for suppressing blocked apps').
 - **The blockade ledger** lives in app-private storage *and* a mirror file in shared storage
-  (All-files access), reconciled by latest-`unlockAt`-wins so a reinstall can't shorten a block, with
-  a monotonic clock guard against rolling the system time back.
+  (All-files access on Android 11+, legacy shared storage on Android 10), reconciled by
+  latest-`unlockAt`-wins so a reinstall can't shorten a block, with a monotonic clock guard against
+  rolling the system time back.
 - No DI framework, no third-party UI libraries, just AndroidX.
 
 ## Build & run
 
-Requirements: **JDK 17+** and the **Android SDK** (compileSdk 36, minSdk 35).
+Requirements: **JDK 17+** and the **Android SDK** (compileSdk 36, minSdk 29 — Android 10 and up).
 
 ```bash
 git clone https://github.com/eddiegulay/tempo.git

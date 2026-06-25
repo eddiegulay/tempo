@@ -1,7 +1,11 @@
 package io.eddiegulay.tempo.data
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Environment
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -51,8 +55,22 @@ class BlockadeRepository private constructor(private val appContext: Context) {
         scope.launch { reconcile() }
     }
 
-    /** Whether All-files access has been granted; required to write the uninstall-proof mirror. */
-    fun hasStorageAccess(): Boolean = Environment.isExternalStorageManager()
+    /**
+     * Whether the app can write the uninstall-proof mirror to shared storage.
+     *
+     * On Android 11+ this is All-files access ([Environment.isExternalStorageManager]). Android 10 has
+     * no such concept, so the legacy [Manifest.permission.WRITE_EXTERNAL_STORAGE] (paired with
+     * `requestLegacyExternalStorage` in the manifest) stands in.
+     */
+    fun hasStorageAccess(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            ContextCompat.checkSelfPermission(
+                appContext,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE,
+            ) == PackageManager.PERMISSION_GRANTED
+        }
 
     /** Guarded "now": never earlier than the highest time we've previously observed. */
     fun now(): Long = maxOf(System.currentTimeMillis(), lastSeen)

@@ -1,10 +1,14 @@
 package io.eddiegulay.tempo.ui
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -69,6 +73,16 @@ fun TempoApp(
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         storageGranted = viewModel.hasStorageAccess()
         viewModel.reconcileBlockade()
+    }
+
+    // Android 10 grants shared-storage access through a runtime permission rather than a Settings
+    // screen, so it returns a result inline. Android 11+ goes through the All-files-access settings
+    // page instead and is picked up by the ON_RESUME re-check above.
+    val storagePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        storageGranted = granted
+        if (granted) viewModel.reconcileBlockade()
     }
 
     // Keep the system bar icons legible against whichever theme is active.
@@ -149,12 +163,18 @@ fun TempoApp(
                     appLabel = app.label,
                     storageGranted = storageGranted,
                     onGrantStorage = {
-                        val direct = Intent(
-                            Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                            Uri.parse("package:${context.packageName}"),
-                        )
-                        runCatching { context.startActivity(direct) }
-                            .onFailure { context.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            val direct = Intent(
+                                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                Uri.parse("package:${context.packageName}"),
+                            )
+                            runCatching { context.startActivity(direct) }
+                                .onFailure { context.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+                        } else {
+                            // Android 10: no All-files access; the legacy storage runtime permission
+                            // backs the uninstall-proof mirror.
+                            storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                        }
                     },
                     onConfirm = viewModel::confirmBlock,
                     onDismiss = viewModel::cancelBlock,

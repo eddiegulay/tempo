@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-06-25
+
+### Changed
+- **Wider device support**: the minimum supported OS drops from Android 15 (API 35) all the way to
+  **Android 10 (API 29)**, bringing Tempo to far more phones. Every version-sensitive code path now
+  branches on the OS level, so nothing regresses on newer releases.
+- **The blockade on Android 10**: All-files access doesn't exist before Android 11, so on Android 10
+  the uninstall-proof ledger mirror is backed by legacy shared storage (`WRITE_EXTERNAL_STORAGE` plus
+  `requestLegacyExternalStorage`), requested as a one-time runtime permission. Android 11+ is
+  unchanged and still uses All-files access.
+
 ## [0.0.5] - 2026-06-18
 
 ### Changed
@@ -39,6 +50,7 @@ All notable changes to this project are documented here. The format is based on
 - Open-source scaffolding: README, MIT license, contribution guide, code of conduct, CI, issue/PR
   templates, and editor config.
 
-[Unreleased]: https://github.com/eddiegulay/tempo/compare/v0.0.5...HEAD
+[Unreleased]: https://github.com/eddiegulay/tempo/compare/v0.0.6...HEAD
+[0.0.6]: https://github.com/eddiegulay/tempo/compare/v0.0.5...v0.0.6
 [0.0.5]: https://github.com/eddiegulay/tempo/compare/v0.0.4...v0.0.5
 [0.0.1]: https://github.com/eddiegulay/tempo/releases/tag/v0.0.1
