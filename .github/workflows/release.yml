@@ -82,11 +82,31 @@ jobs:
         if: always()
         run: rm -f keystore/tempo-release.jks
 
+      - name: Extract release notes from CHANGELOG
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Pull this version's section from CHANGELOG.md: everything between its
+          # "## [x.y.z]" header and the next "## " header.
+          awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\]" { capture=1; next }
+            capture && /^## / { exit }
+            capture { print }
+          ' CHANGELOG.md | sed '/./,$!d' > release-notes.md
+          if [ -s release-notes.md ]; then
+            echo "Using CHANGELOG section for $VERSION as the release body."
+          else
+            # Version not documented yet — leave the body empty so the auto-generated
+            # notes below stand in.
+            echo "No CHANGELOG section for $VERSION; falling back to generated notes." >&2
+          fi
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: Tempo ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
+          body_path: release-notes.md
+          # Appends the "Full Changelog" compare link after the hand-written notes.
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: dist/Tempo-${{ github.ref_name }}.apk
