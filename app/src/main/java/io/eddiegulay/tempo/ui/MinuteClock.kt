@@ -38,3 +38,28 @@ fun rememberMinuteTime(): State<LocalDateTime> {
     }
     return time
 }
+
+/**
+ * A lifecycle-aware, second-aligned clock — the seconds-resolution sibling of [rememberMinuteTime].
+ *
+ * Only the Focus flip clock needs per-second ticking, and it is only mounted while that screen is
+ * open, so Home keeps its once-a-minute loop. Like the minute clock the loop suspends below STARTED
+ * (no CPU wakeups while backgrounded) and re-reads the time immediately on return, and it sleeps to
+ * the next whole-second boundary so digits flip exactly on the tick.
+ */
+@Composable
+fun rememberSecondTime(): State<LocalDateTime> {
+    val time = remember { mutableStateOf(LocalDateTime.now()) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                val now = LocalDateTime.now()
+                time.value = now
+                // Sleep until the next second boundary.
+                delay(1_000L - now.nano / 1_000_000L)
+            }
+        }
+    }
+    return time
+}

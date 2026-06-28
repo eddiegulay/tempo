@@ -41,8 +41,11 @@ import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.PaperColors
 import io.eddiegulay.tempo.ui.theme.SumiColors
 
-/** The navigable layers of the launcher. Filter is the hidden-apps page, reached from Search. */
-enum class Screen { Home, Search, Notifications, Filter }
+/**
+ * The navigable layers of the launcher. Filter is the hidden-apps page, reached from Search; Focus
+ * is the full-screen landscape clock/Pomodoro, reached by long-pressing the Home clock.
+ */
+enum class Screen { Home, Search, Notifications, Filter, Focus }
 
 /**
  * Root of the Tempo launcher. State (screen, theme, search, default-home status) lives in
@@ -62,6 +65,7 @@ fun TempoApp(
     val onboardingComplete by viewModel.onboardingComplete.collectAsStateWithLifecycle()
     val pendingBlock by viewModel.pendingBlock.collectAsStateWithLifecycle()
     val lockedTap by viewModel.lockedTap.collectAsStateWithLifecycle()
+    val pendingFocus by viewModel.pendingFocus.collectAsStateWithLifecycle()
 
     val isDark = theme == TempoTheme.Sumi
     val colors = if (isDark) SumiColors else PaperColors
@@ -112,6 +116,10 @@ fun TempoApp(
                     onComplete = viewModel::completeOnboarding,
                     modifier = Modifier.systemBarsPadding(),
                 )
+            } else if (screen == Screen.Focus) {
+                // Focus is its own immersive world: full-bleed, no dock, no system-bar insets — the
+                // screen itself locks orientation and hides the bars.
+                FocusScreen(Modifier.fillMaxSize())
             } else {
                 Box(Modifier.fillMaxSize().systemBarsPadding()) {
                     // Content fills the layer; the floating dock overlays it, so reserve room at the
@@ -130,7 +138,10 @@ fun TempoApp(
                     ) { target ->
                         Box(Modifier.fillMaxSize()) {
                             when (target) {
-                                Screen.Home -> HomeScreen(showSeal = showSeal)
+                                Screen.Home -> HomeScreen(
+                                    showSeal = showSeal,
+                                    onEnterFocus = viewModel::requestFocus,
+                                )
                                 Screen.Search -> SearchScreen(
                                     viewModel = viewModel,
                                     isDark = isDark,
@@ -139,6 +150,8 @@ fun TempoApp(
                                 )
                                 Screen.Notifications -> NotificationsScreen(viewModel = viewModel)
                                 Screen.Filter -> FilterScreen(viewModel = viewModel)
+                                // Focus renders full-screen in the outer branch; never inside the dock layer.
+                                Screen.Focus -> Unit
                             }
                         }
                     }
@@ -155,6 +168,14 @@ fun TempoApp(
                         frosted = screen != Screen.Home,
                     )
                 }
+            }
+
+            // Deliberate gate into Focus mode — overlays Home after a clock long-press.
+            if (pendingFocus) {
+                FocusConfirmDialog(
+                    onConfirm = viewModel::confirmFocus,
+                    onDismiss = viewModel::cancelFocus,
+                )
             }
 
             // Commitment gate for hiding an app — overlays whichever screen requested the block.

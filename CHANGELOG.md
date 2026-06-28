@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-06-28
+
+### Added
+- **Focus mode** — a full-screen, landscape *flip clock* for distraction-free time. Reach it by
+  **long-pressing the Home clock** and confirming the prompt; the screen rotates to landscape and
+  hides the system bars for a calm, immersive surface. Back (or the HOME key) returns you to a clean
+  Home and restores the previous orientation.
+  - **Flip clock**: split-flap digit cards in the sumi-e style showing `HH:MM`, where each changed
+    digit folds over as it ticks. A single **tap** reveals or hides the seconds.
+  - **Pomodoro**: **long-press** anywhere on the focus surface to switch between the plain clock and a
+    Pomodoro timer — 25-minute focus, 5-minute short break, and a 15-minute long break every fourth
+    session. Tap to start or pause, with controls to reset or skip the current block. Four dots track
+    progress toward the next long break, and the active phase is labelled in kanji (集中 / 休憩 / 長休憩).
+
 ## [0.0.6] - 2026-06-25
 
 ### Changed

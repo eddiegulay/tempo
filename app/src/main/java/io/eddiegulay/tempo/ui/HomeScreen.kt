@@ -3,6 +3,7 @@ package io.eddiegulay.tempo.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -43,9 +49,10 @@ import androidx.compose.material3.Text
  * the extra space falls below the seal, which keeps the airy, unhurried feeling intact.
  */
 @Composable
-fun HomeScreen(showSeal: Boolean, modifier: Modifier = Modifier) {
+fun HomeScreen(showSeal: Boolean, onEnterFocus: () -> Unit, modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
     val now by rememberMinuteTime()
+    val haptics = LocalHapticFeedback.current
     Box(modifier.fillMaxSize()) {
 
         Enso(
@@ -63,7 +70,23 @@ fun HomeScreen(showSeal: Boolean, modifier: Modifier = Modifier) {
                 .padding(top = 44.dp, end = 30.dp),
         )
 
-        Column(modifier = Modifier.padding(start = 34.dp, top = 190.dp)) {
+        Column(
+            modifier = Modifier
+                .padding(start = 34.dp, top = 190.dp)
+                // Long-pressing the clock is the deliberate way into Focus mode; a plain tap is inert.
+                // pointerInput (not combinedClickable) so the calm clock never flashes a ripple.
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onLongPress = {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onEnterFocus()
+                        },
+                    )
+                }
+                .semantics {
+                    onLongClick(label = "集中モード") { onEnterFocus(); true }
+                },
+        ) {
             Text(
                 text = JapaneseDate.time(now),
                 style = TextStyle(

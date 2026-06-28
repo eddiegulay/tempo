@@ -124,6 +124,31 @@ class LauncherViewModel(
         _screen.value = Screen.Filter
     }
 
+    // ----- focus mode (landscape flip clock / pomodoro) -----
+
+    /** True while the "enter focus mode?" confirmation dialog is showing. */
+    private val _pendingFocus = MutableStateFlow(false)
+    val pendingFocus: StateFlow<Boolean> = _pendingFocus.asStateFlow()
+
+    /** Long-pressing the Home clock asks to enter focus mode; surfaces the confirmation dialog. */
+    fun requestFocus() {
+        _pendingFocus.value = true
+    }
+
+    fun cancelFocus() {
+        _pendingFocus.value = false
+    }
+
+    /** Confirm the pending request and step into the full-screen focus page. */
+    fun confirmFocus() {
+        _pendingFocus.value = false
+        goFocus()
+    }
+
+    private fun goFocus() {
+        _screen.value = Screen.Focus
+    }
+
     // ----- app blockade (10-day hide) -----
 
     /** Ask to block an app; surfaces the commitment confirmation dialog. */
@@ -173,8 +198,10 @@ class LauncherViewModel(
     /** Called from MainActivity.onNewIntent — a HOME press always returns to a clean Home. */
     fun resetToHome() {
         // A HOME press yields a genuinely clean Home: dismiss any transient blockade dialogs too.
+        // Leaving Focus this way unmounts FocusScreen, which restores orientation and system bars.
         _pendingBlock.value = null
         _lockedTap.value = null
+        _pendingFocus.value = false
         goHome()
     }
 
