@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
+import android.view.ViewTreeObserver
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -77,23 +78,40 @@ fun FocusScreen(modifier: Modifier = Modifier) {
     var showSeconds by rememberSaveable { mutableStateOf(false) }
     val pomodoro = rememberPomodoroController()
 
-    // Force landscape + immersive while Focus is on screen; undo on dispose.
+    // While Focus is on screen: lock landscape, keep the panel awake, and hold the system bars
+    // hidden. All of it is undone on dispose (Back or a HOME press unmounts this composable).
     val view = LocalView.current
     DisposableEffect(Unit) {
         val activity = view.context.findActivity()
         val originalOrientation = activity?.requestedOrientation
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
 
+        // Keep the screen on so the clock is always readable. Setting it on the view (rather than a
+        // window flag) scopes the wake-lock to this surface and releases it automatically on dispose.
+        view.keepScreenOn = true
+
         val controller = activity?.window?.let { WindowCompat.getInsetsController(it, view) }
-        controller?.apply {
+        // BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE: a deliberate swipe peeks the bars, then they auto-hide.
+        fun hideBars() = controller?.apply {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             hide(WindowInsetsCompat.Type.systemBars())
         }
+        hideBars()
+
+        // hide() is silently reverted whenever the window loses then regains focus — the notification
+        // shade, a toast, a permission prompt, or returning from another app all do this. Re-hide on
+        // every focus regain so the status bar stays actively hidden instead of creeping back.
+        val focusListener = ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
+            if (hasFocus) hideBars()
+        }
+        view.viewTreeObserver.addOnWindowFocusChangeListener(focusListener)
 
         onDispose {
+            view.viewTreeObserver.removeOnWindowFocusChangeListener(focusListener)
+            view.keepScreenOn = false
+            controller?.show(WindowInsetsCompat.Type.systemBars())
             activity?.requestedOrientation =
                 originalOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            controller?.show(WindowInsetsCompat.Type.systemBars())
         }
     }
 

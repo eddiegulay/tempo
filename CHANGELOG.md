@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-06-30
+
+### Changed
+- **Focus mode stays immersive**: the status bar is now kept *actively* hidden for the whole session.
+  The system bars are re-hidden on every window-focus regain — pulling the notification shade, a
+  toast, a permission prompt, or returning from another app no longer lets the bar creep back. A
+  deliberate swipe still peeks the bars, then they auto-hide.
+- **Screen stays awake in Focus mode**: while the flip clock / Pomodoro is showing, the display no
+  longer dims or sleeps, so the clock is always readable. The wake-lock is scoped to the focus
+  surface and released the moment you leave it.
+
 ## [0.0.7] - 2026-06-28
 
 ### Added
