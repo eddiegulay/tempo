@@ -78,17 +78,15 @@ fun FocusScreen(modifier: Modifier = Modifier) {
     var showSeconds by rememberSaveable { mutableStateOf(false) }
     val pomodoro = rememberPomodoroController()
 
-    // While Focus is on screen: lock landscape, keep the panel awake, and hold the system bars
-    // hidden. All of it is undone on dispose (Back or a HOME press unmounts this composable).
+    // While Focus is on screen: lock landscape and hold the system bars hidden; both are undone on
+    // dispose. Keep-awake is NOT handled here — it's driven from TempoApp keyed on the Focus screen
+    // state, so the wake flag is cleared even when this composable never gets to dispose (e.g. HOME
+    // press while Tempo isn't the default launcher). See the DisposableEffect in TempoApp.
     val view = LocalView.current
     DisposableEffect(Unit) {
         val activity = view.context.findActivity()
         val originalOrientation = activity?.requestedOrientation
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-
-        // Keep the screen on so the clock is always readable. Setting it on the view (rather than a
-        // window flag) scopes the wake-lock to this surface and releases it automatically on dispose.
-        view.keepScreenOn = true
 
         val controller = activity?.window?.let { WindowCompat.getInsetsController(it, view) }
         // BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE: a deliberate swipe peeks the bars, then they auto-hide.
@@ -108,7 +106,6 @@ fun FocusScreen(modifier: Modifier = Modifier) {
 
         onDispose {
             view.viewTreeObserver.removeOnWindowFocusChangeListener(focusListener)
-            view.keepScreenOn = false
             controller?.show(WindowInsetsCompat.Type.systemBars())
             activity?.requestedOrientation =
                 originalOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED

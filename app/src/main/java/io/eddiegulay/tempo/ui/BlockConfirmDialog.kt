@@ -22,22 +22,17 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.eddiegulay.tempo.data.BlockadeRepository
-import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 
 /**
  * The commitment gate for hiding an app. Blocking is irreversible for [BlockadeRepository.BLOCK_DAYS]
- * days and survives reinstalling, so we make the user acknowledge the outcome explicitly.
- *
- * When All-files access hasn't been granted the dialog first routes the user to grant it — the block
- * can't be made uninstall-proof without it, so confirmation stays disabled until then.
+ * days and best-effort survives reinstalling (via Android Auto Backup), so we make the user
+ * acknowledge the outcome explicitly with a checkbox before confirmation is enabled.
  */
 @Composable
 fun BlockConfirmDialog(
     appLabel: String,
-    storageGranted: Boolean,
-    onGrantStorage: () -> Unit,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -62,48 +57,34 @@ fun BlockConfirmDialog(
                     style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, color = c.inkSoft, letterSpacing = 0.5.sp),
                 )
 
-                if (!storageGranted) {
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        text = "確実にするため、まず「すべてのファイル」へのアクセスを許可してください。",
-                        style = TextStyle(fontFamily = Gothic, fontSize = 12.sp, color = c.accent, letterSpacing = 1.sp),
+                Spacer(Modifier.height(20.dp))
+                Row(
+                    modifier = Modifier.toggleable(
+                        value = accepted,
+                        role = Role.Checkbox,
+                        onValueChange = { accepted = it },
+                    ),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Checkbox(
+                        checked = accepted,
+                        onCheckedChange = null,
+                        colors = CheckboxDefaults.colors(checkedColor = c.accent, uncheckedColor = c.inkFaint),
                     )
-                } else {
-                    Spacer(Modifier.height(20.dp))
-                    Row(
-                        modifier = Modifier.toggleable(
-                            value = accepted,
-                            role = Role.Checkbox,
-                            onValueChange = { accepted = it },
-                        ),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Checkbox(
-                            checked = accepted,
-                            onCheckedChange = null,
-                            colors = CheckboxDefaults.colors(checkedColor = c.accent, uncheckedColor = c.inkFaint),
-                        )
-                        Text(
-                            text = "理解しました",
-                            style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, color = c.ink),
-                        )
-                    }
+                    Text(
+                        text = "理解しました",
+                        style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, color = c.ink),
+                    )
                 }
             }
         },
         confirmButton = {
-            if (!storageGranted) {
-                TextButton(onClick = onGrantStorage) {
-                    Text("アクセスを許可", style = TextStyle(fontFamily = Mincho, color = c.accent))
-                }
-            } else {
-                TextButton(onClick = onConfirm, enabled = accepted) {
-                    Text(
-                        text = "${days}日間ふうじる",
-                        style = TextStyle(fontFamily = Mincho, color = if (accepted) c.accent else c.inkFaint),
-                    )
-                }
+            TextButton(onClick = onConfirm, enabled = accepted) {
+                Text(
+                    text = "${days}日間ふうじる",
+                    style = TextStyle(fontFamily = Mincho, color = if (accepted) c.accent else c.inkFaint),
+                )
             }
         },
         dismissButton = {

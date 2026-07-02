@@ -3,19 +3,12 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!--
-      The 10-day app blockade must survive the app being uninstalled and reinstalled. App-private
-      storage is wiped on uninstall, so the blockade ledger is mirrored to a file in shared storage,
-      which requires All-files access. The user grants this in system Settings.
+      The 10-day app blockade should survive the app being uninstalled and reinstalled. App-private
+      storage is wiped on uninstall, so uninstall-survival is best-effort via Android Auto Backup:
+      the internal ledger (blockade.json) is included in cloud backup (see @xml/backup_rules and
+      @xml/data_extraction_rules) and restored on reinstall, keyed to the user's Google account. This
+      requires no runtime permission.
     -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-    <!--
-      Android 10 (API 29) has no All-files access. The uninstall-proof ledger mirror instead relies on
-      legacy external storage, opted into below, which this runtime permission backs. Capped at API 29
-      so it is never requested on Android 11+, where MANAGE_EXTERNAL_STORAGE is used instead.
-    -->
-    <uses-permission
-        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="29" />
 
     <!--
       A home app legitimately needs to see every launchable app to populate Search.
@@ -37,7 +30,6 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:enableOnBackInvokedCallback="true"
-        android:requestLegacyExternalStorage="true"
         android:theme="@style/Theme.Tempo">
 
         <activity

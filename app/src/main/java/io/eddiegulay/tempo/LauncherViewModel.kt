@@ -184,13 +184,6 @@ class LauncherViewModel(
     /** Unlock time (epoch millis) for a package, or null if it isn't blocked. */
     fun unlockAt(packageName: String): Long? = blockade.value[packageName]
 
-    /** Re-merge the durable ledger — call after All-files access may have just been granted. */
-    fun reconcileBlockade() {
-        viewModelScope.launch { blockadeRepository.reconcile() }
-    }
-
-    fun hasStorageAccess(): Boolean = blockadeRepository.hasStorageAccess()
-
     fun blockadeNow(): Long = blockadeRepository.now()
 
     fun canUnblock(packageName: String): Boolean = blockadeRepository.canUnblock(packageName)
