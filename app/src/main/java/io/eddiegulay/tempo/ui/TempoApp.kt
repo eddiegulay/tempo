@@ -1,14 +1,8 @@
 package io.eddiegulay.tempo.ui
 
-import android.Manifest
 import android.app.Activity
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.provider.Settings
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -22,18 +16,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.LauncherViewModel
 import io.eddiegulay.tempo.data.TempoTheme
@@ -70,25 +59,6 @@ fun TempoApp(
     val isDark = theme == TempoTheme.Sumi
     val colors = if (isDark) SumiColors else PaperColors
 
-    // All-files access can be toggled in Settings while we're away; re-check on resume and re-merge
-    // the durable blockade ledger so a freshly-granted permission immediately backs up existing blocks.
-    val context = LocalContext.current
-    var storageGranted by remember { mutableStateOf(viewModel.hasStorageAccess()) }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        storageGranted = viewModel.hasStorageAccess()
-        viewModel.reconcileBlockade()
-    }
-
-    // Android 10 grants shared-storage access through a runtime permission rather than a Settings
-    // screen, so it returns a result inline. Android 11+ goes through the All-files-access settings
-    // page instead and is picked up by the ON_RESUME re-check above.
-    val storagePermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        storageGranted = granted
-        if (granted) viewModel.reconcileBlockade()
-    }
-
     // Keep the system bar icons legible against whichever theme is active.
     val view = LocalView.current
     SideEffect {
@@ -97,6 +67,20 @@ fun TempoApp(
             isAppearanceLightStatusBars = !isDark
             isAppearanceLightNavigationBars = !isDark
         }
+    }
+
+    // Keep the screen awake only while Focus is on screen. Driven by [screen] rather than from inside
+    // FocusScreen so the wake flag is cleared on every other screen regardless of whether FocusScreen
+    // got to dispose — e.g. when Tempo isn't the default launcher, pressing HOME backgrounds the app
+    // without unmounting Focus, so a disposal-scoped release would leak the wake-lock process-wide.
+    DisposableEffect(screen == Screen.Focus) {
+        val window = (view.context as? Activity)?.window
+        if (screen == Screen.Focus) {
+            window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
     // Back never leaves the launcher. Filter is a sub-page of Search, so it returns there; any other
@@ -182,21 +166,6 @@ fun TempoApp(
             pendingBlock?.let { app ->
                 BlockConfirmDialog(
                     appLabel = app.label,
-                    storageGranted = storageGranted,
-                    onGrantStorage = {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                            val direct = Intent(
-                                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                                Uri.parse("package:${context.packageName}"),
-                            )
-                            runCatching { context.startActivity(direct) }
-                                .onFailure { context.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
-                        } else {
-                            // Android 10: no All-files access; the legacy storage runtime permission
-                            // backs the uninstall-proof mirror.
-                            storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                        }
-                    },
                     onConfirm = viewModel::confirmBlock,
                     onDismiss = viewModel::cancelBlock,
                 )

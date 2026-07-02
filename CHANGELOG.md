@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.0.9] - 2026-07-02
+
+### Removed
+- **All-files access permission**: Tempo no longer requests `MANAGE_EXTERNAL_STORAGE` (All-files
+  access), which was causing Google Play Protect to flag installs as harmful and block installation
+  on many devices. A launcher has no need for device-wide file access. The legacy
+  `WRITE_EXTERNAL_STORAGE` permission and `requestLegacyExternalStorage` are gone with it, so Tempo
+  now asks for **no storage permission at all**. The 10-day app blockade still survives an
+  uninstall/reinstall — its ledger is now carried by Android's built-in app backup (restored from
+  your Google account on reinstall) instead of a file in shared storage.
+
+### Fixed
+- **Screen no longer stays awake after leaving Focus mode**: opening the flip clock / Pomodoro used
+  to leave the display permanently awake — it never slept again, even back on the Home screen.
+  Keep-awake is now bound to the Focus surface and released on every other screen, so the device
+  returns to its normal sleep behaviour the moment you leave Focus. The fix also holds when Tempo
+  isn't set as the default launcher.
+
 ## [0.0.8] - 2026-06-30
 
 ### Changed

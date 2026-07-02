@@ -1,19 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
+   Backup / transfer rules for Android 12+ (API 31+).
    See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
+
+   The 10-day blockade ledger lives in app-private files (filesDir/blockade.json). Including it in
+   cloud-backup means it is uploaded to the user's Google cloud backup and restored on reinstall,
+   giving the blockade best-effort uninstall survival without any storage permission. The DataStore
+   preferences (theme, onboarding) are included too so user settings survive a restore as before.
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <include domain="file" path="blockade.json"/>
+        <include domain="file" path="datastore/tempo_settings.preferences_pb"/>
     </cloud-backup>
-    <!--
-    <device-transfer>
-        <include .../>
-        <exclude .../>
-    </device-transfer>
-    -->
 </data-extraction-rules>
