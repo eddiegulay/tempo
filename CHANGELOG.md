@@ -6,6 +6,55 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-12
+
+### Added
+- **Calendar (予定)** — Tempo now shows your real agenda. It reads the device's calendar provider,
+  which is the same place the Google Calendar app syncs into, so the events on your launcher are the
+  very ones on your laptop. No sign-in, no network of its own, no Play Services: if an event reaches
+  your phone, it reaches Tempo, and an event added in Tempo syncs back out to every device you own.
+  - **The next event replaces the date on Home.** The top-right cluster used to print today's date in
+    Japanese; it now shows what is coming next — the day, the time, and the title — and falls back to
+    the date when there is nothing ahead or no calendar access.
+  - **Written vertically** (縦書き). Kanji and kana stack upright, one glyph per cell, the way they are
+    set on a printed page; a run of Latin turns a quarter-turn and reads as a single stroke rather
+    than a column of loose letters; short numbers sit upright in place (縦中横). A vermillion dot
+    appears when the event is within half an hour.
+  - **Tap the corner to open the agenda** — the next fortnight, grouped by day, with 今日 and 明日
+    named rather than dated. In-progress events are marked いま. It is the only way in: the calendar
+    has no dock tab, because a launcher's home screen should stay a home screen.
+  - **Add and edit events in place**, without leaving for another app. Title, all-day, start, end,
+    location, and — when you have more than one — which calendar it lands on. The date and time are
+    dialled on a 栞 (bookmark) wheel rather than a Material date picker, so the composer looks like the
+    rest of Tempo and not like a dialog that wandered in from another application.
+
+### Changed
+- **Every change to the calendar now asks first.** Adding, editing, and deleting each restate what is
+  about to happen — the event, its time, and the consequence — and wait to be told yes. A calendar is
+  not private state: what Tempo writes appears on your other devices, and a deletion is withdrawn from
+  everyone invited and cannot be taken back. That is worth a deliberate second tap, especially on a
+  launcher, which lives in a pocket.
+- **Repeating events are read-only**, and open in your calendar app instead (カレンダーで開く). Editing
+  one occurrence of a series means writing the provider's exception rows, and getting it subtly wrong
+  silently rewrites a meeting for everyone on the invite. Tempo would rather hand you to the tool that
+  does it properly than quietly corrupt a shared calendar. Calendars you only have read access to —
+  a holiday feed, a colleague's shared calendar — behave the same way.
+
+### Fixed
+- **An unreadable calendar can no longer masquerade as an empty one.** If the calendar could not be
+  read, Tempo used to render a calm, empty page that said "予定はありません" — you had no way to tell a
+  free day from a broken one, and you would have believed it and missed a meeting. Loading, empty, and
+  failed are now three different states, and Tempo will only claim your day is clear when it actually
+  knows that to be true.
+- **A failed save no longer throws your draft away.** Saving used to return to the agenda whether or
+  not the event had been written, so a rejected save left you looking at a list that did not contain
+  the event you had just typed, with nothing said. Tempo now stays exactly where you are, keeps every
+  word, tells you what went wrong, and lets you fix it and try again.
+- **Nothing dead-ends.** Every failure in the calendar — access revoked, no writable calendar, an event
+  deleted on another device, a provider that refuses the write, no calendar app to hand off to — now
+  says what happened and offers the one thing that would fix it: ask for access again, open Settings,
+  add an account, or simply try again.
+
 ## [0.0.9] - 2026-07-02
 
 ### Removed

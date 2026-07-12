@@ -21,8 +21,12 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.LauncherViewModel
 import io.eddiegulay.tempo.data.TempoTheme
@@ -32,9 +36,10 @@ import io.eddiegulay.tempo.ui.theme.SumiColors
 
 /**
  * The navigable layers of the launcher. Filter is the hidden-apps page, reached from Search; Focus
- * is the full-screen landscape clock/Pomodoro, reached by long-pressing the Home clock.
+ * is the full-screen landscape clock/Pomodoro, reached by long-pressing the Home clock; Calendar is
+ * the agenda, reached only by tapping Home's top-right cluster, with EventCompose beneath it.
  */
-enum class Screen { Home, Search, Notifications, Filter, Focus }
+enum class Screen { Home, Search, Notifications, Filter, Focus, Calendar, EventCompose }
 
 /**
  * Root of the Tempo launcher. State (screen, theme, search, default-home status) lives in
@@ -55,9 +60,22 @@ fun TempoApp(
     val pendingBlock by viewModel.pendingBlock.collectAsStateWithLifecycle()
     val lockedTap by viewModel.lockedTap.collectAsStateWithLifecycle()
     val pendingFocus by viewModel.pendingFocus.collectAsStateWithLifecycle()
+    val calendarEvents by viewModel.calendarEvents.collectAsStateWithLifecycle()
 
     val isDark = theme == TempoTheme.Sumi
     val colors = if (isDark) SumiColors else PaperColors
+
+    // Home's corner shows the next event, so calendar access has to be known before the Calendar page
+    // is ever opened — and it can be revoked in Settings while the launcher is alive.
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshCalendarAccess(context)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // Keep the system bar icons legible against whichever theme is active.
     val view = LocalView.current
@@ -83,10 +101,13 @@ fun TempoApp(
         onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
-    // Back never leaves the launcher. Filter is a sub-page of Search, so it returns there; any other
-    // sub-screen returns home; on home it's a no-op.
+    // Back never leaves the launcher. Filter is a sub-page of Search and EventCompose a sub-page of
+    // Calendar, so each returns to its parent; any other sub-screen returns home; on home it's a no-op.
     BackHandler(enabled = screen == Screen.Filter) { viewModel.goSearch() }
-    BackHandler(enabled = screen != Screen.Home && screen != Screen.Filter) { viewModel.goHome() }
+    BackHandler(enabled = screen == Screen.EventCompose) { viewModel.cancelCompose() }
+    BackHandler(
+        enabled = screen != Screen.Home && screen != Screen.Filter && screen != Screen.EventCompose,
+    ) { viewModel.goHome() }
     BackHandler(enabled = screen == Screen.Home) { /* stay on home */ }
 
     CompositionLocalProvider(LocalTempoColors provides colors) {
@@ -124,7 +145,9 @@ fun TempoApp(
                             when (target) {
                                 Screen.Home -> HomeScreen(
                                     showSeal = showSeal,
+                                    events = calendarEvents,
                                     onEnterFocus = viewModel::requestFocus,
+                                    onOpenCalendar = viewModel::goCalendar,
                                 )
                                 Screen.Search -> SearchScreen(
                                     viewModel = viewModel,
@@ -134,23 +157,29 @@ fun TempoApp(
                                 )
                                 Screen.Notifications -> NotificationsScreen(viewModel = viewModel)
                                 Screen.Filter -> FilterScreen(viewModel = viewModel)
+                                Screen.Calendar -> CalendarScreen(viewModel = viewModel)
+                                Screen.EventCompose -> EventComposeScreen(viewModel = viewModel)
                                 // Focus renders full-screen in the outer branch; never inside the dock layer.
                                 Screen.Focus -> Unit
                             }
                         }
                     }
-                    Dock(
-                        current = screen,
-                        isDefaultLauncher = isDefaultLauncher,
-                        onHome = viewModel::goHome,
-                        onSearch = viewModel::goSearch,
-                        onNotifications = viewModel::goNotifications,
-                        onRequestDefault = onRequestDefault,
-                        modifier = Modifier.align(Alignment.BottomCenter),
-                        // Over a sub-screen the dock becomes frosted "wet paper"; over Home it stays a
-                        // faint pill on the wallpaper.
-                        frosted = screen != Screen.Home,
-                    )
+                    // The composer is a committed task: leaving it half-written should be a deliberate
+                    // Back or やめる, not a stray tap on a dock tab.
+                    if (screen != Screen.EventCompose) {
+                        Dock(
+                            current = screen,
+                            isDefaultLauncher = isDefaultLauncher,
+                            onHome = viewModel::goHome,
+                            onSearch = viewModel::goSearch,
+                            onNotifications = viewModel::goNotifications,
+                            onRequestDefault = onRequestDefault,
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                            // Over a sub-screen the dock becomes frosted "wet paper"; over Home it stays
+                            // a faint pill on the wallpaper.
+                            frosted = screen != Screen.Home,
+                        )
+                    }
                 }
             }
 

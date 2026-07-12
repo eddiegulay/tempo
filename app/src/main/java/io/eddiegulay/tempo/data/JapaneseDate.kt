@@ -1,5 +1,6 @@
 package io.eddiegulay.tempo.data
 
+import java.time.LocalDate
 import java.time.LocalDateTime
 
 /**
@@ -52,5 +53,40 @@ object JapaneseDate {
         // java.time: MONDAY=1 .. SUNDAY=7; mod 7 maps SUNDAY->0 to match the design's table.
         val idx = now.dayOfWeek.value % 7
         return DOW[idx].toString()
+    }
+
+    // ----- calendar -----
+
+    /**
+     * An event's start in kanji, 24-hour: 十九時三十分, or 十九時 on the hour.
+     *
+     * Home's corner is the kanji artefact — the 104sp clock already owns digits there, and a second
+     * numeral cluster four inches away would compete with it. The Calendar *page* uses digits
+     * ([clock]) because that surface is a tool, not an artefact.
+     */
+    fun eventTime(at: LocalDateTime): String {
+        val minutes = if (at.minute == 0) "" else kanji(at.minute) + "分"
+        return kanji(at.hour) + "時" + minutes
+    }
+
+    /** Plain 09:30, for the Calendar page's event cards. */
+    fun clock(at: LocalDateTime): String = "%02d:%02d".format(at.hour, at.minute)
+
+    /**
+     * How a date reads relative to today, collapsing as it gets closer: 今日 / 明日 / 水曜日 within the
+     * week, and the kanji month-day beyond it.
+     */
+    fun dayToken(date: LocalDate, today: LocalDate): String = when {
+        date == today -> "今日"
+        date == today.plusDays(1) -> "明日"
+        date.isBefore(today.plusDays(7)) -> dayOfWeek(date.atStartOfDay())
+        else -> monthDay(date.atStartOfDay())
+    }
+
+    /** The fuller label a day-group header carries: 今日 / 明日 / 水曜日 ・ 六月十九日. */
+    fun dayHeading(date: LocalDate, today: LocalDate): String = when {
+        date == today -> "今日"
+        date == today.plusDays(1) -> "明日"
+        else -> dayOfWeek(date.atStartOfDay()) + " ・ " + monthDay(date.atStartOfDay())
     }
 }
