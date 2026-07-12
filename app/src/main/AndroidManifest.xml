@@ -11,13 +11,29 @@
     -->
 
     <!--
+      The 予定 page reads the device's calendar through CalendarContract — the same provider the
+      Google Calendar sync adapter writes into, so Tempo shows the very agenda the user's other
+      devices show, with no OAuth, no network and no Play Services. WRITE lets the composer add and
+      edit an event in place; the change is picked up by the sync adapter and pushed back to Google.
+      Both are requested at the moment the user opens the page, never at launch.
+    -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+
+    <!--
       A home app legitimately needs to see every launchable app to populate Search.
       The launcher intent below grants that visibility on Android 11+ without QUERY_ALL_PACKAGES.
+      The second entry lets Tempo hand a repeating event off to the system calendar app, which is the
+      only place recurrence is safe to edit.
     -->
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="vnd.android.cursor.item/event" />
         </intent>
     </queries>
 

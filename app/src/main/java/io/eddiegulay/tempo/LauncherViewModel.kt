@@ -4,6 +4,15 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.eddiegulay.tempo.calendar.CalendarEvent
+import io.eddiegulay.tempo.calendar.CalendarFault
+import io.eddiegulay.tempo.calendar.CalendarInfo
+import io.eddiegulay.tempo.calendar.CalendarRepository
+import io.eddiegulay.tempo.calendar.EventDraft
+import io.eddiegulay.tempo.calendar.Loadable
+import io.eddiegulay.tempo.calendar.PendingWrite
+import io.eddiegulay.tempo.calendar.WriteOutcome
+import io.eddiegulay.tempo.calendar.hasCalendarAccess
 import io.eddiegulay.tempo.data.AppInfo
 import io.eddiegulay.tempo.data.AppRepository
 import io.eddiegulay.tempo.data.BlockadeRepository
@@ -14,6 +23,7 @@ import io.eddiegulay.tempo.notification.NotificationRepository
 import io.eddiegulay.tempo.notification.TempoNotification
 import io.eddiegulay.tempo.notification.groupByApp
 import io.eddiegulay.tempo.ui.Screen
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,6 +31,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -41,6 +53,7 @@ class LauncherViewModel(
     private val appRepository: AppRepository,
     private val notificationRepository: NotificationRepository,
     private val blockadeRepository: BlockadeRepository,
+    private val calendarRepository: CalendarRepository,
 ) : ViewModel() {
 
     // Read once, synchronously, at construction so the first frame already reflects stored choices
@@ -195,6 +208,9 @@ class LauncherViewModel(
         _pendingBlock.value = null
         _lockedTap.value = null
         _pendingFocus.value = false
+        _composing.value = null
+        _pendingWrite.value = null
+        _calendarFault.value = null
         goHome()
     }
 
@@ -278,6 +294,187 @@ class LauncherViewModel(
         notificationRepository.reply(key, actionIndex, text)
 
     fun requestNotificationRebind(context: Context) = notificationRepository.requestRebind(context)
+
+    // ----- calendar -----
+
+    /** Whether READ_CALENDAR is currently held. Re-checked on every resume; revocable in Settings. */
+    private val _calendarAccess = MutableStateFlow(false)
+    val calendarAccess: StateFlow<Boolean> = _calendarAccess.asStateFlow()
+
+    /**
+     * The next fortnight of events, live. Collection only starts once access is granted — a query
+     * without the permission throws — and stops when nothing is watching, which unregisters the
+     * provider observer while the user is off in another app.
+     *
+     * Carries its own loading and failure states: see [Loadable] for why an unreadable calendar must
+     * never be allowed to render as an empty one.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val agenda: StateFlow<Loadable<List<CalendarEvent>>> = _calendarAccess
+        .flatMapLatest { granted ->
+            if (granted) calendarRepository.events() else flowOf(Loadable.Ready(emptyList()))
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Loadable.Loading)
+
+    /**
+     * The agenda as Home wants it: just the events, or none. Home is the one place that may degrade
+     * quietly — it has a perfectly good date to fall back to, and a launcher's home screen is not the
+     * place to argue about a provider error.
+     */
+    val calendarEvents: StateFlow<List<CalendarEvent>> = agenda
+        .map { it.valueOrNull().orEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Calendars that can host a new event, best default first. */
+    private val _writableCalendars = MutableStateFlow<Loadable<List<CalendarInfo>>>(Loadable.Loading)
+    val writableCalendars: StateFlow<Loadable<List<CalendarInfo>>> = _writableCalendars.asStateFlow()
+
+    /** The event the composer is editing; null while composing a new one. */
+    private val _composing = MutableStateFlow<CalendarEvent?>(null)
+    val composing: StateFlow<CalendarEvent?> = _composing.asStateFlow()
+
+    /** The change awaiting the user's yes. Drives the confirmation dialog; null when none. */
+    private val _pendingWrite = MutableStateFlow<PendingWrite?>(null)
+    val pendingWrite: StateFlow<PendingWrite?> = _pendingWrite.asStateFlow()
+
+    /** True while a confirmed write is in flight, so the composer can't be double-submitted. */
+    private val _writing = MutableStateFlow(false)
+    val writing: StateFlow<Boolean> = _writing.asStateFlow()
+
+    /** The last thing that went wrong, shown on the composer until acknowledged or resolved. */
+    private val _calendarFault = MutableStateFlow<CalendarFault?>(null)
+    val calendarFault: StateFlow<CalendarFault?> = _calendarFault.asStateFlow()
+
+    fun refreshCalendarAccess(context: Context) = setCalendarAccess(hasCalendarAccess(context))
+
+    fun setCalendarAccess(granted: Boolean) {
+        if (_calendarAccess.value == granted) return
+        _calendarAccess.value = granted
+        if (granted) {
+            // Whatever the user was blocked by, they've just fixed it.
+            if (_calendarFault.value == CalendarFault.PermissionLost) _calendarFault.value = null
+            loadCalendars()
+        } else {
+            _writableCalendars.value = Loadable.Ready(emptyList())
+        }
+    }
+
+    /** Re-run the agenda query after a failure — the "もう一度" on the Calendar page. */
+    fun retryAgenda() = calendarRepository.retry()
+
+    /** Re-run the calendar list after a failure — the "もう一度" in the composer. */
+    fun loadCalendars() {
+        viewModelScope.launch {
+            _writableCalendars.value = Loadable.Loading
+            _writableCalendars.value = calendarRepository.writableCalendars()
+        }
+    }
+
+    fun dismissCalendarFault() {
+        _calendarFault.value = null
+    }
+
+    /** Home's top-right cluster is the only way in — Calendar has no dock tab. */
+    fun goCalendar() {
+        _screen.value = Screen.Calendar
+    }
+
+    fun composeNewEvent() {
+        _composing.value = null
+        _calendarFault.value = null
+        // The list may have been empty because the query failed last time, or because an account was
+        // added since. Either way, ask again before showing the user a composer they can't save from.
+        if (_writableCalendars.value.valueOrNull().isNullOrEmpty()) loadCalendars()
+        _screen.value = Screen.EventCompose
+    }
+
+    fun composeEvent(event: CalendarEvent) {
+        _composing.value = event
+        _calendarFault.value = null
+        _screen.value = Screen.EventCompose
+    }
+
+    fun cancelCompose() {
+        _composing.value = null
+        _pendingWrite.value = null
+        _calendarFault.value = null
+        goCalendar()
+    }
+
+    // ----- mutations: proposed, confirmed, then written -----
+
+    /**
+     * Propose a save. Nothing is written yet — this only raises the confirmation, because the event
+     * is going to land on every device the user owns and, if there are guests, in their inboxes too.
+     */
+    fun requestSave(draft: EventDraft) {
+        val editing = _composing.value
+        _pendingWrite.value =
+            if (editing == null) PendingWrite.Create(draft) else PendingWrite.Update(editing, draft)
+    }
+
+    /** Propose a delete. */
+    fun requestDelete() {
+        val editing = _composing.value ?: return
+        _pendingWrite.value = PendingWrite.Delete(editing)
+    }
+
+    fun cancelWrite() {
+        _pendingWrite.value = null
+    }
+
+    /**
+     * Commit the proposed change.
+     *
+     * On success we leave for the agenda; there is no optimistic update, because the provider notifies
+     * its own change and the flow re-queries — so the list can only ever show what the calendar really
+     * contains. On failure we stay exactly where we are: the composer keeps every word the user typed,
+     * and the fault is shown above the fields with a way out. Navigating away on a failed write would
+     * destroy their draft and tell them nothing.
+     */
+    fun confirmWrite() {
+        val pending = _pendingWrite.value ?: return
+        if (_writing.value) return
+        _pendingWrite.value = null
+        _calendarFault.value = null
+        _writing.value = true
+
+        viewModelScope.launch {
+            val outcome = when (pending) {
+                is PendingWrite.Create -> calendarRepository.insert(pending.draft)
+                is PendingWrite.Update -> calendarRepository.update(pending.event.eventId, pending.draft)
+                is PendingWrite.Delete -> calendarRepository.delete(pending.event.eventId)
+            }
+            _writing.value = false
+
+            when (outcome) {
+                is WriteOutcome.Ok -> {
+                    _composing.value = null
+                    goCalendar()
+                }
+                is WriteOutcome.Failed -> {
+                    _calendarFault.value = outcome.fault
+                    // A write that failed for want of permission means access was revoked underneath
+                    // us; drop the flag so the page gates itself and the prompt reappears.
+                    if (outcome.fault == CalendarFault.PermissionLost) _calendarAccess.value = false
+                }
+            }
+        }
+    }
+
+    /**
+     * Hands off to the real calendar app. This is how repeating events get edited at all: writing the
+     * provider's exception rows for a single occurrence of a series is subtle, and getting it wrong
+     * silently rewrites a meeting for everyone on the invite — so Tempo doesn't try.
+     *
+     * A device with no calendar app at all would otherwise make this button do nothing when tapped,
+     * which is the one thing the escape hatch must never do.
+     */
+    fun openInCalendarApp(context: Context, event: CalendarEvent) {
+        if (!calendarRepository.openInCalendarApp(context, event)) {
+            _calendarFault.value = CalendarFault.NoCalendarApp
+        }
+    }
 }
 
 /** Manual factory wiring the repositories from the application context (no DI framework). */
@@ -292,6 +489,7 @@ class LauncherViewModelFactory(context: Context) : ViewModelProvider.Factory {
             appRepository = AppRepository.getInstance(appContext),
             notificationRepository = NotificationRepository(),
             blockadeRepository = BlockadeRepository.getInstance(appContext),
+            calendarRepository = CalendarRepository(appContext),
         ) as T
     }
 }
