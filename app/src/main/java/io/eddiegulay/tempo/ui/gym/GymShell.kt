@@ -151,7 +151,7 @@ fun GymShell(gym: GymViewModel, onExit: () -> Unit, modifier: Modifier = Modifie
                             // while its labels stay clear (§A.7).
                             .then(if (frame.route.immersive) Modifier else Modifier.statusBarsPadding()),
                     ) {
-                        GymPage(frame.route)
+                        GymPage(frame.route, gym)
                     }
                 }
             }
@@ -258,37 +258,70 @@ private fun Modifier.gymEntrance(): Modifier {
 }
 
 /**
+ * Which routes have no page yet, and what heading stands in for one — `null` for the routes that do.
+ *
+ * A pure function rather than a `when` buried in [GymPage] for one reason: **"is this route wired to a
+ * real page?" is the question this phase kept getting wrong**, and it was unanswerable without running
+ * Compose. Three finished pages shipped with zero call sites because the placeholder branch was still
+ * catching their routes, and nothing in the build or the tests could see it. Here it is a value a JVM
+ * test asserts on (`GymShellTest`), so the next page to land cannot quietly fail to be reachable.
+ *
+ * The stand-ins are honestly placeholders: the page's own title in the header idiom and **nothing
+ * under it**. Not an empty state, not 読み込み中, not a hand-written "coming soon" — the first two
+ * would be claims about the user's data the shell is in no position to make, and the third would be
+ * prose no spec table contains. A heading with nothing beneath it claims nothing.
+ *
+ * The titles are each page spec's own, so replacing a branch with the real page keeps the word the
+ * user already saw: 種目をえらぶ `04` §3, これまで / 最高 / 移り変わり `04` §4, 支度 `03` §A,
+ * 設定 / 安全のために `01` §B, and 記録 from `GymTab`.
+ *
+ * Exhaustive over [GymRoute] with no `else`, deliberately: a route added in a later phase must be
+ * classified here or the build stops, rather than defaulting into whichever branch was cheapest.
+ */
+internal fun gymPagePlaceholderTitle(route: GymRoute): String? = when (route) {
+    // Written, and reachable.
+    GymRoute.Home, GymRoute.Library, is GymRoute.RoutineDetail -> null
+
+    GymRoute.Records -> "記録"
+    is GymRoute.Builder -> if (route.editingId == null) "型を作る" else "型を編集"
+    is GymRoute.StationPicker -> "種目をえらぶ"
+    GymRoute.ExerciseIndex -> "種目"
+    is GymRoute.ExerciseDetail -> "種目の中身"
+    is GymRoute.Session -> "支度"
+    is GymRoute.Record -> "記録の中身"
+    is GymRoute.History -> "これまで"
+    GymRoute.Bests -> "最高"
+    GymRoute.Charts -> "移り変わり"
+    GymRoute.Settings -> "設定"
+    GymRoute.Safety -> "安全のために"
+}
+
+/**
  * Whatever page the top route names.
  *
- * Every branch is a placeholder today and each is honestly one: the page's own title in the header
- * idiom and **nothing under it**. Not an empty state, not 読み込み中, not a hand-written "coming soon"
- * — the first two would be claims about the user's data that this unit is in no position to make, and
- * the third would be prose no spec table contains. A heading with nothing beneath it claims nothing.
+ * [gymPagePlaceholderTitle] decides *whether* there is a page; this only says which composable it is.
+ * The placeholder is taken first and returns, so a route can never both draw its page and fall through
+ * to a heading — the fall-through is exactly how `GymHomeScreen`, `LibraryIndexScreen` and
+ * `LibraryDetailScreen` came to be written, compiling and unreachable.
  *
- * The titles themselves are each page spec's own, so replacing a branch with the real page keeps the
- * word the user already saw: 型の中身 `04` §3, 種目をえらぶ `04` §3, これまで / 最高 / 移り変わり `04`
- * §4, 支度 `03` §A, 設定 / 安全のために `01` §B, and the three tab words from `GymTab`.
+ * [gym] is passed down rather than resolved per page with `viewModel()`: the shell already holds the
+ * one instance keyed to `MainActivity`'s store, and a page reaching for its own would be a second
+ * lookup with a second chance to disagree about which gym it is talking to.
  */
 @Composable
-private fun GymPage(route: GymRoute) {
-    val title = when (route) {
-        GymRoute.Home -> "鍛錬"
-        GymRoute.Library -> "型"
-        GymRoute.Records -> "記録"
-        is GymRoute.RoutineDetail -> "型の中身"
-        is GymRoute.Builder -> if (route.editingId == null) "型を作る" else "型を編集"
-        is GymRoute.StationPicker -> "種目をえらぶ"
-        GymRoute.ExerciseIndex -> "種目"
-        is GymRoute.ExerciseDetail -> "種目の中身"
-        is GymRoute.Session -> "支度"
-        is GymRoute.Record -> "記録の中身"
-        is GymRoute.History -> "これまで"
-        GymRoute.Bests -> "最高"
-        GymRoute.Charts -> "移り変わり"
-        GymRoute.Settings -> "設定"
-        GymRoute.Safety -> "安全のために"
+private fun GymPage(route: GymRoute, gym: GymViewModel) {
+    val placeholder = gymPagePlaceholderTitle(route)
+    if (placeholder != null) {
+        GymPagePlaceholder(placeholder)
+        return
     }
-    GymPagePlaceholder(title)
+    when (route) {
+        GymRoute.Home -> GymHomeScreen(gym)
+        GymRoute.Library -> LibraryIndexScreen(gym)
+        is GymRoute.RoutineDetail -> LibraryDetailScreen(gym, route.routineId)
+        // Unreachable: every other route returned a placeholder above, and that `when` is exhaustive.
+        else -> Unit
+    }
 }
 
 /** The page header idiom of `CalendarScreen`, with the body its owner has yet to write. */

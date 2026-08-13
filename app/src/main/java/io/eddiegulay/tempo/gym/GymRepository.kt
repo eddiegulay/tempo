@@ -124,7 +124,28 @@ interface GymRepository {
 
     fun attemptsForRoutine(routineId: String, limit: Int): Flow<Loadable<List<SessionSummary>>>
 
-    fun countForRoutine(routineId: String): Flow<Int>
+    /**
+     * How many sessions this routine has finished — as a [Loadable], because 削除 branches on it.
+     *
+     * **A bare `Flow<Int>` cannot say "I do not know yet", and this is the one read where that
+     * matters.** `GYM.LIBRARY.DETAIL`'s 削除 confirm chooses between an archive ("記録は残ります") and an
+     * irreversible purge ("やった記録はありません。完全に消えます。") from this number. Implemented with a
+     * fallback of zero — which is what `02-data.md` §C.1's original signature invited — "not read yet"
+     * and "the read failed" both arrive as *zero*, and the page renders an ありません-as-emptiness claim
+     * about the user's records over an unreadable store, then offers 完全に削除 on top of it. That is
+     * exactly what `00-plan.md` §4.1 rule 1 forbids and what `DECISIONS.md` §Q6 pins
+     * (記録を読めません must never be misreadable as 記録はありません), on the only irreversible dialog in
+     * the feature.
+     *
+     * So: `Ready(0)` earns the purge wording, `Ready(n > 0)` the archive wording, and
+     * `Loading` / `Failed` must not offer the destructive branch at all.
+     *
+     * *Rejected* — reading it with the `suspend` path at the moment 削除 is tapped. It answers the
+     * doctrine too, but the count also has to be *live*: a session finishing while the detail page is
+     * open must move the routine from purgeable to archivable without a re-entry, which a one-shot read
+     * at tap time cannot do without re-querying inside a dialog's click handler.
+     */
+    fun countForRoutine(routineId: String): Flow<Loadable<Int>>
 
     suspend fun populatedMonths(): Loadable<List<YearMonth>>
 
@@ -169,7 +190,7 @@ interface GymRepository {
 
     suspend fun restoreRoutine(routineId: String): GymWrite<Unit>
 
-    /** Offered only when countForRoutine == 0. */
+    /** Offered only when [countForRoutine] is `Ready(0)` — never on a count that is merely unread. */
     suspend fun purgeRoutine(routineId: String): GymWrite<Unit>
 
     suspend fun setFavourite(routineId: String, favourite: Boolean): GymWrite<Unit>
@@ -183,6 +204,27 @@ interface GymRepository {
 
     /** Re-runs every failed read. The もう一度 behind a `FaultPanel`, exactly as the calendar's. */
     fun retry()
+
+    /**
+     * Lowers the quarantined-database fault, durably, because the user has read it (§E.6).
+     *
+     * **Not a retry, and that is why it is a separate method.** [retry] re-runs the reads and a
+     * quarantined store fails them all again; this is the user saying they have understood that a year
+     * of training is gone. It is the *only* way out of that state — finishing a session must not clear
+     * it, because one new session does not bring the history back, and a corruption raised mid-session
+     * would otherwise be erased by that same session's finish.
+     *
+     * Declared here rather than left on `GymStore` alone because the store is `internal` and reached
+     * only through this interface, so an undeclared method is a method nothing can ever call. The
+     * previous unit tried and reverted: Kotlin requires the implementation to carry `override`, which
+     * is a one-word edit in a file it did not own. Both files land together here.
+     *
+     * **Still unwired on purpose.** The surface that owes it an affordance is the 記録 tab
+     * (`GYM.RECORDS.INDEX`, Phase 3), whose fault strip is where `GymFault.StoreCorrupt` is read.
+     * Bolting a dismissal onto a Phase 1 page would put the one irreversible acknowledgement in the
+     * feature somewhere the spec never asked for it.
+     */
+    suspend fun acknowledgeHistoryLoss()
 
     suspend fun rebuildPersonalRecords(): GymWrite<Unit>
 

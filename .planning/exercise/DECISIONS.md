@@ -160,6 +160,57 @@ rather than slipped in.
 strictly better than five guesses; a translation of a documented Japanese name invents no fact. Added
 to `02` §F.1's table so the seed's provenance is complete.
 
+## Q13 — Staleness copy above two hours — **delegate to `relativeDayJa`** (pages review)
+
+`03` §A edge case 4 lists five words — `さっき` (<10m), `一時間前`, `二時間前`, `昨日`, `三日前` — and the
+HOME agent correctly reported that **between 4h and 24h none of them is true**: 二時間前 is false for a
+five-hour-old session and 昨日 is false for one begun this morning. It refused to invent a sixth word
+and escalated. Right call.
+
+**The sixth word already exists and is sourced.** `01` :642 declares
+`relativeDayJa(then, now, zone): String  // "三日前" / "きのう" / "きょう"` — the same feature's own
+relative-day formatter, used by `lastResultLine` for the routine cards on this very page.
+
+**The rule:** below two hours the label is elapsed-time-shaped; at and above it, the label is
+day-shaped and comes from `relativeDayJa`.
+
+| age | label | source |
+|---|---|---|
+| < 10m | `さっき` | `03` §A edge 4 |
+| < 2h | `一時間前` | `03` §A edge 4 |
+| < 4h (the resumability horizon) | `二時間前` | `03` §A edge 4 |
+| ≥ 4h | `relativeDayJa(...)` → `きょう` / `きのう` / `三日前` | `01` :642 |
+
+This fixes the five-hour case (→ きょう, which is true) and it resolves the 昨日 / きのう split that
+`03` §A edge 4 and `01` :642 would otherwise have shipped side by side on one screen. **One formatter
+is authoritative**, exactly as `kanjiExtended` and `ensoSweep` were made authoritative rather than
+duplicated (§Q7).
+
+Past the horizon the day boundary is a **calendar** boundary in the device's zone, never an hour
+count — the same reason `00-plan` §2 row 14 computes every date bucket in Kotlin rather than in UTC
+SQL. What that buys, and what no set of hour edges can: a **five**-hour-old session reads きのう while
+a **fourteen**-hour-old one reads きょう, because midnight separates them and duration does not.
+
+Below the horizon elapsed time still wins, deliberately. Twenty minutes after midnight, きのう is true
+and useless — the fact the user wants is that they stopped a moment ago. The day words take over only
+once the elapsed number has stopped being the more informative of the two.
+
+## Q14 — One resume prompt on screen — **the mount is idempotent, all three pages keep theirs**
+
+The review contradicted itself: the `LIBRARY.INDEX` blocker said *add* a third `ResumePromptHost`
+mount, two minors said hoist a single one into `GymShell` and delete both page mounts. The plumbing
+agent declined to do half of a two-sided fix and escalated. Also right — landing the shell half alone
+would have produced doubled dialogs.
+
+**Ruling: the HOME agent's `ResumePromptMount` is the answer.** The host claims the modal and only the
+first mounted one draws, so every page may mount it unconditionally and at most one dialog is ever on
+screen. No shell edit, no cross-page rule for a future page author to forget, and no page can deadlock
+by omitting the mount — which was the actual `LIBRARY.INDEX` blocker: `startSession` publishes the
+prompt and **deliberately holds the start lock**, so a page that raises it without drawing it wedges
+始める permanently.
+
+Every page that can call `startSession` mounts it. That is the rule, and it is one sentence.
+
 ## Q4 — Numerals — **as specced, no change**
 
 Counts render kanji, countdowns render arabic, wheels render arabic mid-spin. This matches the flip

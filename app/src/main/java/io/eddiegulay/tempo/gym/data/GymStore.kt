@@ -221,16 +221,18 @@ internal class GymStore private constructor(
     /**
      * Lowers the history-loss fault, durably, because the user has read it.
      *
-     * **Unwired in Phase 1 — Track B attaches it to the fault strip's dismissal.** It is on the store
-     * rather than on [GymRepository] until there is a caller, so the interface does not carry a method
-     * nothing implements a UI for.
+     * **Now declared on [GymRepository], which is the change that makes it reachable at all.** The
+     * store is `internal` and reached only through that interface, so while the method lived here
+     * alone nothing above the data layer could call it and the quarantine had no exit. See the
+     * interface's KDoc for why it is not a retry and why the affordance still belongs to Phase 3's
+     * 記録 tab rather than to any Phase 1 page.
      *
      * Acknowledgement is the *only* way out. It used to be finishing a session, which was wrong twice
      * over: one new session does not bring back a year of training, so the strip disappeared while the
      * history was still gone; and a corruption raised mid-session would have been cleared by that same
      * session's finish, hiding the very fault it had just caused (§E.6).
      */
-    suspend fun acknowledgeHistoryLoss() {
+    override suspend fun acknowledgeHistoryLoss() {
         HistoryLoss.clear()
         CorruptionFlag.clear(appContext)
         // The gate has moved, so the surfaces it gates have to be asked again.
@@ -555,8 +557,20 @@ internal class GymStore private constructor(
             readAttempts(database, routineId, limit)
         }
 
-    override fun countForRoutine(routineId: String): Flow<Int> =
-        observeRaw(TABLE_SESSION, fallback = 0) { database ->
+    /**
+     * **[observeHistory], never [observeRaw].** This count is what 削除 branches on, and the fallback
+     * this used to carry turned every unreadable store into a confident zero — the page then printed
+     * 「やった記録はありません。完全に消えます。」 over a routine with a decade behind it and offered
+     * 完全に削除 (see [GymRepository.countForRoutine], and the guard inside [purgeRoutine] that had to
+     * defend the data from it). A `Loadable` lets the page say 記録を読めません instead.
+     *
+     * [observeHistory] rather than plain [observe] because the rows being counted are exactly the ones
+     * a quarantined database has lost: on `historyLost` a truthful `SELECT COUNT(*)` returns zero and
+     * would be indistinguishable from a routine that was never performed. `StoreCorrupt` is the honest
+     * answer, and it withholds the destructive branch, which is the conservative direction.
+     */
+    override fun countForRoutine(routineId: String): Flow<Loadable<Int>> =
+        observeHistory(TABLE_SESSION) { database ->
             database.rawQuery(
                 "SELECT COUNT(*) FROM $TABLE_SESSION WHERE routine_id = ? AND finished_at IS NOT NULL",
                 arrayOf(routineId),
@@ -778,12 +792,13 @@ internal class GymStore private constructor(
         write(TABLE_ROUTINE, TABLE_ROUTINE_VERSION) {
             // The local guard, and it is not redundant with the foreign keys.
             //
-            // The only guard upstream is `countForRoutine == 0`, and that count is read through
-            // `observeRaw(fallback = 0)` — so a *read failure* reports zero sessions and the UI happily
-            // offers 削除 on a routine with a decade of history behind it. Without this the invariant is
-            // enforced only by a deferred FK check raised at COMMIT, from inside `transact`'s `finally`
-            // after `setTransactionSuccessful`, which is both a strange place to discover it and
-            // unreadable at the point the deletes are written.
+            // The guard upstream is `countForRoutine == Ready(0)`, which since the count became a
+            // `Loadable` can no longer confuse an unreadable store with an unperformed routine — but
+            // it still counts only *finished* sessions, while this counts all of them, so an open
+            // session on an otherwise-untouched routine reaches here and is refused. Without this the
+            // invariant is enforced only by a deferred FK check raised at COMMIT, from inside
+            // `transact`'s `finally` after `setTransactionSuccessful`, which is both a strange place to
+            // discover it and unreadable at the point the deletes are written.
             val sessions = rawQuery(
                 "SELECT COUNT(*) FROM $TABLE_SESSION WHERE routine_id = ?",
                 arrayOf(routineId),
