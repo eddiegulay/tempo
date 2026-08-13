@@ -31,7 +31,9 @@ import io.eddiegulay.tempo.calendar.CalendarEvent
 import io.eddiegulay.tempo.calendar.CalendarFault
 import io.eddiegulay.tempo.calendar.EventDraft
 import io.eddiegulay.tempo.calendar.PendingWrite
+import io.eddiegulay.tempo.data.GymFault
 import io.eddiegulay.tempo.data.JapaneseDate
+import io.eddiegulay.tempo.data.TempoFault
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
@@ -46,7 +48,24 @@ import java.time.LocalDateTime
  */
 data class FaultCopy(val message: String, val action: String?)
 
-fun faultCopy(fault: CalendarFault): FaultCopy = when (fault) {
+/**
+ * The one place a fault becomes words, for every feature that raises one.
+ *
+ * Dispatch is by family and then by case, rather than one flat table, so each family stays
+ * exhaustively matched by the compiler — [TempoFault] cannot be `sealed` (see its docs) and a flat
+ * `when` would need an `else` that quietly swallowed a newly added calendar or gym case. The `else`
+ * here can only be reached by a *third* family nobody has written yet, and even that one gets words.
+ */
+fun faultCopy(fault: TempoFault): FaultCopy = when (fault) {
+    is CalendarFault -> calendarFaultCopy(fault)
+    is GymFault -> gymFaultCopy(fault)
+    // Unreachable today, and not a placeholder for copy that exists: no written fault reaches this
+    // branch. It exists so that "every fault says something" survives a family we have not thought of
+    // yet — see [TempoFault]'s doctrine, which permits a third family to be vague but never silent.
+    else -> FaultCopy("うまくいきませんでした", "もう一度")
+}
+
+private fun calendarFaultCopy(fault: CalendarFault): FaultCopy = when (fault) {
     CalendarFault.PermissionLost ->
         FaultCopy("カレンダーへのアクセスが必要です", "許可する")
 
@@ -67,6 +86,46 @@ fun faultCopy(fault: CalendarFault): FaultCopy = when (fault) {
 }
 
 /**
+ * 鍛錬's faults, in the same shape and the same chrome as the calendar's.
+ *
+ * **記録を読めません is the load-bearing sentence here, and the reason is what it cannot be mistaken
+ * for.** A store we could not read and a store with nothing in it are one pixel apart on screen and
+ * worlds apart in meaning: 記録はありません tells the user their training history does not exist, and
+ * a user who believes that stops looking for it. 記録を読めません carries no ありません at all, so it
+ * cannot be read as emptiness even at a glance — it says the 記録 is there and *we* are the ones who
+ * failed. That distinction is the whole point of routing gym reads through `Loadable`/[GymFault]
+ * rather than an empty list, and it is what `CalendarFeedbackTest` pins.
+ *
+ * Every case's message and action is fixed by `.planning/exercise/DECISIONS.md` §Q6, which sourced
+ * each one to the string tables (`04-library-records.md` §6, `01-shell.md`, `03-player.md`). Nothing
+ * on this page is an implementer's guess, and nothing falls through to a generic.
+ */
+private fun gymFaultCopy(fault: GymFault): FaultCopy = when (fault) {
+    // The store is there; we could not read it. Retrying is the remedy for all four — a lock that
+    // clears, a quarantine that has already happened, a downgrade that gets reinstalled, the unforeseen.
+    GymFault.StoreCorrupt,
+    GymFault.StoreReset,
+    is GymFault.StoreUnavailable,
+    is GymFault.Unknown,
+    -> FaultCopy("記録を読めません", "もう一度")
+
+    // No action: retrying cannot free disk, and offering a button that cannot work is worse than none.
+    GymFault.StoreFull ->
+        FaultCopy("空き容量が足りません", null)
+
+    // Both pop the page they occur on rather than sit on it, so there is nothing left here to press.
+    GymFault.RoutineGone ->
+        FaultCopy("この型は削除されています", null)
+
+    GymFault.SessionGone ->
+        FaultCopy("この記録は削除されています", null)
+
+    // A CHECK constraint refused the row: the same draft will be refused again, so no もう一度.
+    GymFault.Rejected ->
+        FaultCopy("保存できませんでした", null)
+}
+
+/**
  * A fault, stated in place with its way out — never a toast, which would slide away before the user
  * had finished reading it and leave them with a screen that simply looks broken.
  *
@@ -74,7 +133,7 @@ fun faultCopy(fault: CalendarFault): FaultCopy = when (fault) {
  * the fields it concerns, and the composer stays exactly as the user left it behind it.
  */
 @Composable
-fun FaultStrip(fault: CalendarFault, onRecover: () -> Unit, modifier: Modifier = Modifier) {
+fun FaultStrip(fault: TempoFault, onRecover: () -> Unit, modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
     val copy = faultCopy(fault)
 
@@ -112,7 +171,7 @@ fun FaultStrip(fault: CalendarFault, onRecover: () -> Unit, modifier: Modifier =
  * the user's day, and we may only make it when we know it to be true.
  */
 @Composable
-fun FaultPanel(fault: CalendarFault, onRecover: () -> Unit) {
+fun FaultPanel(fault: TempoFault, onRecover: () -> Unit) {
     val c = LocalTempoColors.current
     val copy = faultCopy(fault)
 

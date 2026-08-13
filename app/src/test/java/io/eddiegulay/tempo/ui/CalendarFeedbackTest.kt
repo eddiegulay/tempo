@@ -2,6 +2,7 @@ package io.eddiegulay.tempo.ui
 
 import io.eddiegulay.tempo.calendar.CalendarFault
 import io.eddiegulay.tempo.calendar.EventDraft
+import io.eddiegulay.tempo.data.GymFault
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -26,9 +27,26 @@ class CalendarFeedbackTest {
         CalendarFault.Unknown("boom"),
     )
 
+    // 鍛錬 rides the same strip, the same panel and the same copy function. Listed exhaustively here
+    // on purpose: `faultCopy` dispatches by family, so a case added to GymFault without copy would
+    // compile — this list is what fails instead.
+    private val everyGymFault = listOf(
+        GymFault.StoreCorrupt,
+        GymFault.StoreUnavailable("locked"),
+        GymFault.StoreFull,
+        GymFault.StoreReset,
+        GymFault.RoutineGone,
+        GymFault.SessionGone,
+        GymFault.Rejected,
+        GymFault.Unknown("boom"),
+    )
+
     @Test
     fun `every fault says something to the user`() {
         everyFault.forEach { fault ->
+            assertTrue("$fault has no message", faultCopy(fault).message.isNotBlank())
+        }
+        everyGymFault.forEach { fault ->
             assertTrue("$fault has no message", faultCopy(fault).message.isNotBlank())
         }
     }
@@ -59,6 +77,76 @@ class CalendarFeedbackTest {
         val copy = faultCopy(CalendarFault.Unknown(cause = null))
         assertTrue(copy.message.isNotBlank())
         assertEquals("もう一度", copy.action)
+    }
+
+    @Test
+    fun `every gym fault says exactly the words the spec decided on`() {
+        // DECISIONS.md §Q6, verbatim. Each entry there is sourced to a string table; a case that drifts
+        // off this table is a case shipping copy nobody signed off on.
+        assertEquals("記録を読めません", faultCopy(GymFault.StoreCorrupt).message)
+        assertEquals("記録を読めません", faultCopy(GymFault.StoreUnavailable("locked")).message)
+        assertEquals("記録を読めません", faultCopy(GymFault.StoreReset).message)
+        assertEquals("記録を読めません", faultCopy(GymFault.Unknown("boom")).message)
+        assertEquals("空き容量が足りません", faultCopy(GymFault.StoreFull).message)
+        assertEquals("この型は削除されています", faultCopy(GymFault.RoutineGone).message)
+        assertEquals("この記録は削除されています", faultCopy(GymFault.SessionGone).message)
+        assertEquals("保存できませんでした", faultCopy(GymFault.Rejected).message)
+    }
+
+    @Test
+    fun `every gym fault offers exactly the action the spec decided on`() {
+        assertEquals("もう一度", faultCopy(GymFault.StoreCorrupt).action)
+        assertEquals("もう一度", faultCopy(GymFault.StoreUnavailable("locked")).action)
+        assertEquals("もう一度", faultCopy(GymFault.StoreReset).action)
+        assertEquals("もう一度", faultCopy(GymFault.Unknown("boom")).action)
+        assertNull(faultCopy(GymFault.StoreFull).action)
+        assertNull(faultCopy(GymFault.RoutineGone).action)
+        assertNull(faultCopy(GymFault.SessionGone).action)
+        assertNull(faultCopy(GymFault.Rejected).action)
+    }
+
+    @Test
+    fun `a full disk is named as a full disk, and offers no retry that cannot work`() {
+        val copy = faultCopy(GymFault.StoreFull)
+        assertEquals("空き容量が足りません", copy.message)
+        assertNull("retrying cannot free space", copy.action)
+    }
+
+    @Test
+    fun `a vanished routine or session leaves nothing to press, because the page is leaving`() {
+        assertNull(faultCopy(GymFault.RoutineGone).action)
+        assertNull(faultCopy(GymFault.SessionGone).action)
+    }
+
+    @Test
+    fun `a refused row leaves nothing to press, because the same draft will be refused again`() {
+        assertNull(faultCopy(GymFault.Rejected).action)
+    }
+
+    @Test
+    fun `a store that might come back is retryable`() {
+        // The store cases whose remedy is "try again": a lock that clears, a quarantine that has
+        // already happened, a downgrade that gets reinstalled, and the unforeseen. All four are the
+        // 記録を読めません cases, and 記録を読めません is precisely the sentence a retry can undo.
+        listOf(
+            GymFault.StoreUnavailable("locked"),
+            GymFault.StoreCorrupt,
+            GymFault.StoreReset,
+            GymFault.Unknown(null),
+        ).forEach { fault ->
+            assertEquals("$fault leaves the user stuck", "記録を読めません", faultCopy(fault).message)
+            assertEquals("$fault leaves the user stuck", "もう一度", faultCopy(fault).action)
+        }
+    }
+
+    @Test
+    fun `an unreadable gym store never renders as an empty one`() {
+        // The whole reason GymFault exists. StoreCorrupt means the history is unreadable, and the copy
+        // must not be — nor be confusable with — 記録はありません. 記録を読めません carries no ありません
+        // at all, which is what makes it unmistakable at a glance.
+        val copy = faultCopy(GymFault.StoreCorrupt)
+        assertEquals("記録を読めません", copy.message)
+        assertTrue(copy.message, !copy.message.contains("ありません"))
     }
 
     @Test

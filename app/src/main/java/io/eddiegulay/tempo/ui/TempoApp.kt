@@ -36,10 +36,14 @@ import io.eddiegulay.tempo.ui.theme.SumiColors
 
 /**
  * The navigable layers of the launcher. Filter is the hidden-apps page, reached from Search; Focus
- * is the full-screen landscape clock/Pomodoro, reached by long-pressing the Home clock; Calendar is
- * the agenda, reached only by tapping Home's top-right cluster, with EventCompose beneath it.
+ * is the full-screen landscape clock/Pomodoro, reached from the Home clock's mode chooser; Calendar
+ * is the agenda, reached only by tapping Home's top-right cluster, with EventCompose beneath it.
+ *
+ * [Gym] is the other mode, and it is one value on purpose: 鍛錬 keeps its own back stack, so where
+ * you are *inside* it is not the launcher's business — exactly as [Focus] does not encode "clock vs
+ * pomodoro". It buys the gym a whole shell for one enum entry.
  */
-enum class Screen { Home, Search, Notifications, Filter, Focus, Calendar, EventCompose }
+enum class Screen { Home, Search, Notifications, Filter, Focus, Calendar, EventCompose, Gym }
 
 /**
  * Root of the Tempo launcher. State (screen, theme, search, default-home status) lives in
@@ -59,7 +63,7 @@ fun TempoApp(
     val onboardingComplete by viewModel.onboardingComplete.collectAsStateWithLifecycle()
     val pendingBlock by viewModel.pendingBlock.collectAsStateWithLifecycle()
     val lockedTap by viewModel.lockedTap.collectAsStateWithLifecycle()
-    val pendingFocus by viewModel.pendingFocus.collectAsStateWithLifecycle()
+    val pendingMode by viewModel.pendingMode.collectAsStateWithLifecycle()
     val calendarEvents by viewModel.calendarEvents.collectAsStateWithLifecycle()
 
     val isDark = theme == TempoTheme.Sumi
@@ -146,7 +150,7 @@ fun TempoApp(
                                 Screen.Home -> HomeScreen(
                                     showSeal = showSeal,
                                     events = calendarEvents,
-                                    onEnterFocus = viewModel::requestFocus,
+                                    onChooseMode = viewModel::requestMode,
                                     onOpenCalendar = viewModel::goCalendar,
                                 )
                                 Screen.Search -> SearchScreen(
@@ -161,6 +165,9 @@ fun TempoApp(
                                 Screen.EventCompose -> EventComposeScreen(viewModel = viewModel)
                                 // Focus renders full-screen in the outer branch; never inside the dock layer.
                                 Screen.Focus -> Unit
+                                // TODO(gym shell): render the 鍛錬 shell here — its own back stack,
+                                // tab bar and GymViewModel. Nothing navigates to Screen.Gym yet.
+                                Screen.Gym -> Unit
                             }
                         }
                     }
@@ -183,11 +190,11 @@ fun TempoApp(
                 }
             }
 
-            // Deliberate gate into Focus mode — overlays Home after a clock long-press.
-            if (pendingFocus) {
-                FocusConfirmDialog(
-                    onConfirm = viewModel::confirmFocus,
-                    onDismiss = viewModel::cancelFocus,
+            // Deliberate gate into a mode — overlays Home after a clock long-press.
+            if (pendingMode) {
+                ModeDialog(
+                    onChoose = viewModel::confirmMode,
+                    onDismiss = viewModel::cancelMode,
                 )
             }
 

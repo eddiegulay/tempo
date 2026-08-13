@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.view.ViewTreeObserver
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,7 +14,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -191,7 +189,14 @@ private fun PomodoroFace(controller: PomodoroController, colors: TempoColors) {
             cardHeight = 132.dp,
         )
         Spacer(Modifier.height(20.dp))
-        CycleDots(filled = controller.completedFocus % LONG_EVERY, accent = colors.accent, faint = colors.inkFaint)
+        // Focus keeps CycleDots' default 9.dp / 12.dp geometry — the shared component was extracted
+        // for the session player, not to restyle this face.
+        CycleDots(
+            total = LONG_EVERY,
+            filled = controller.completedFocus % LONG_EVERY,
+            filledColor = colors.accent,
+            pendingColor = colors.inkFaint,
+        )
         Spacer(Modifier.height(20.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
             ControlLabel(text = "リセット", color = colors.inkSoft, onClick = controller::reset)
@@ -201,21 +206,6 @@ private fun PomodoroFace(controller: PomodoroController, colors: TempoColors) {
                 onClick = controller::startPause,
             )
             ControlLabel(text = "スキップ", color = colors.inkSoft, onClick = controller::skip)
-        }
-    }
-}
-
-/** Four dots tracking progress toward the next long break. */
-@Composable
-private fun CycleDots(filled: Int, accent: Color, faint: Color) {
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        repeat(LONG_EVERY) { i ->
-            Box(
-                Modifier
-                    .size(9.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(if (i < filled) accent else faint),
-            )
         }
     }
 }

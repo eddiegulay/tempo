@@ -31,7 +31,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
@@ -43,10 +42,7 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.TextUnit
@@ -74,7 +70,7 @@ import androidx.compose.material3.Text
 fun HomeScreen(
     showSeal: Boolean,
     events: List<CalendarEvent>,
-    onEnterFocus: () -> Unit,
+    onChooseMode: () -> Unit,
     onOpenCalendar: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -91,8 +87,12 @@ fun HomeScreen(
 
     Box(modifier.fillMaxSize()) {
 
+        // 202.dp of ring centred in a 252.dp box — the prototype's 101/252 radius and 8/252 stroke,
+        // stated in dp now that [Enso] no longer scales them from the box.
         Enso(
             color = c.enso,
+            diameter = 202.dp,
+            strokeWidth = 8.dp,
             modifier = Modifier
                 .padding(start = 6.dp, top = 70.dp)
                 .size(252.dp),
@@ -110,18 +110,19 @@ fun HomeScreen(
         Column(
             modifier = Modifier
                 .padding(start = 34.dp, top = 190.dp)
-                // Long-pressing the clock is the deliberate way into Focus mode; a plain tap is inert.
-                // pointerInput (not combinedClickable) so the calm clock never flashes a ripple.
+                // Long-pressing the clock is the deliberate way out of the launcher and into a mode —
+                // 集中 or 鍛錬; a plain tap is inert. pointerInput (not combinedClickable) so the calm
+                // clock never flashes a ripple.
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onLongPress = {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onEnterFocus()
+                            onChooseMode()
                         },
                     )
                 }
                 .semantics {
-                    onLongClick(label = "集中モード") { onEnterFocus(); true }
+                    onLongClick(label = "モードを選ぶ") { onChooseMode(); true }
                 },
         ) {
             Text(
@@ -154,25 +155,6 @@ fun HomeScreen(
                 modifier = Modifier.padding(start = 36.dp, top = 368.dp),
             )
         }
-    }
-}
-
-/** The broken brush ring — an arc with a gap, drawn from the prototype's enso path geometry. */
-@Composable
-private fun Enso(color: Color, modifier: Modifier) {
-    Canvas(modifier) {
-        val diameter = size.minDimension
-        val radius = diameter * (101f / 252f)
-        val center = Offset(diameter * (126f / 252f), diameter * (126f / 252f))
-        drawArc(
-            color = color,
-            startAngle = -60f,   // gap sits in the upper-right, matching the source path
-            sweepAngle = 312f,
-            useCenter = false,
-            topLeft = Offset(center.x - radius, center.y - radius),
-            size = Size(radius * 2f, radius * 2f),
-            style = Stroke(width = diameter * (8f / 252f), cap = StrokeCap.Round),
-        )
     }
 }
 

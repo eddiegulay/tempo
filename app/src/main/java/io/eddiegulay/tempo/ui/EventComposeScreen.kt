@@ -6,13 +6,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,16 +20,12 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,17 +36,13 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -64,11 +54,11 @@ import io.eddiegulay.tempo.calendar.Loadable
 import io.eddiegulay.tempo.calendar.openAccountSettings
 import io.eddiegulay.tempo.calendar.rememberCalendarPermissionState
 import io.eddiegulay.tempo.data.JapaneseDate
+import io.eddiegulay.tempo.data.TempoFault
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import java.time.Duration
-import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 
@@ -124,7 +114,9 @@ fun EventComposeScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifi
     val nothingToWriteTo = editing == null && calendarsState is Loadable.Ready && calendars.isEmpty()
 
     // The strip shows a real fault first; failing that, the structural reasons the user can't save.
-    val shown: CalendarFault? = fault
+    // Typed as the wider [TempoFault] only because [Loadable.Failed] now is; everything this composer
+    // can actually put in it is a [CalendarFault].
+    val shown: TempoFault? = fault
         ?: (calendarsState as? Loadable.Failed)?.fault
         ?: CalendarFault.NoWritableCalendar.takeIf { nothingToWriteTo }
 
@@ -476,148 +468,7 @@ private fun PickerRow(
             )
         }
         if (expanded && enabled) {
-            TempoWheel(current = current, allDay = allDay, onChange = onChange)
-        }
-    }
-}
-
-/**
- * The 栞 (shiori, "bookmark") wheel — the only place in Tempo where a value is dialled.
- *
- * Three snapping columns under a pair of hairline rules, like a paper bookmark laid across the page.
- * Material's `DatePicker` / `TimePicker` are not an option here: they arrive with Material's type
- * scale, its tonal surfaces, its clock dial and its dialog chrome, none of which exist anywhere else
- * in this app.
- *
- * Minutes step by five. A launcher does not need 12:37, and halving the column removes a whole class
- * of fiddly scrolling — but an existing event's odd minute is kept in the list rather than silently
- * rounded away.
- */
-@Composable
-private fun TempoWheel(current: LocalDateTime, allDay: Boolean, onChange: (LocalDateTime) -> Unit) {
-    val c = LocalTempoColors.current
-    val today = remember { LocalDate.now() }
-
-    // Span from whichever is earlier — today, or the date of an event being edited — so an existing
-    // date is always reachable on the wheel.
-    val firstDay = remember(current) { minOf(today, current.toLocalDate()) }
-    val days = remember(firstDay) {
-        val count = ChronoUnit.DAYS.between(firstDay, today.plusDays(60)).toInt() + 1
-        List(count) { firstDay.plusDays(it.toLong()) }
-    }
-    val minutes = remember(current) {
-        // Keep 09:37 as 09:37 unless the user actually spins the column.
-        ((0..55 step 5) + current.minute).distinct().sorted()
-    }
-
-    val dayIndex = remember(current, days) {
-        days.indexOf(current.toLocalDate()).coerceAtLeast(0)
-    }
-
-    Box(Modifier.fillMaxWidth().height(WHEEL_HEIGHT.dp).padding(bottom = 8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            horizontalArrangement = Arrangement.spacedBy(24.dp),
-        ) {
-            Box(Modifier.weight(1f)) {
-                WheelColumn(
-                    items = days.map { JapaneseDate.dayToken(it, today) },
-                    initialIndex = dayIndex,
-                    onSelect = { i ->
-                        val d = days[i]
-                        onChange(current.withYear(d.year).withDayOfYear(d.dayOfYear))
-                    },
-                )
-            }
-            if (!allDay) {
-                Box(Modifier.width(58.dp)) {
-                    WheelColumn(
-                        items = (0..23).map { "%02d".format(it) },
-                        initialIndex = current.hour,
-                        onSelect = { onChange(current.withHour(it)) },
-                    )
-                }
-                Box(Modifier.width(58.dp)) {
-                    WheelColumn(
-                        items = minutes.map { "%02d".format(it) },
-                        initialIndex = minutes.indexOf(current.minute).coerceAtLeast(0),
-                        onSelect = { onChange(current.withMinute(minutes[it])) },
-                    )
-                }
-            }
-        }
-
-        // The bookmark itself: one pair of rules laid across *all* the columns, not bracketing each
-        // one separately — a 栞 is a single strip of paper, and per-column rules would break at every
-        // column gap. Drawn over the wheels, and transparent to touch so the columns still scroll.
-        Column(
-            Modifier.fillMaxSize().padding(vertical = WHEEL_ROW.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Box(Modifier.fillMaxWidth().height(1.dp).background(c.hair))
-            Box(Modifier.fillMaxWidth().height(1.dp).background(c.hair))
-        }
-    }
-}
-
-private const val WHEEL_ROW = 44
-private const val WHEEL_HEIGHT = WHEEL_ROW * 3
-
-@Composable
-private fun WheelColumn(items: List<String>, initialIndex: Int, onSelect: (Int) -> Unit) {
-    val c = LocalTempoColors.current
-    val haptics = LocalHapticFeedback.current
-    val state = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
-
-    // Whichever row sits nearest the viewport centre is the selection. Reading it from layout (rather
-    // than tracking scroll offsets) keeps it correct through flings, snaps and rotation.
-    val centred by remember {
-        derivedStateOf {
-            val info = state.layoutInfo
-            val centre = (info.viewportStartOffset + info.viewportEndOffset) / 2
-            info.visibleItemsInfo
-                .minByOrNull { kotlin.math.abs((it.offset + it.size / 2) - centre) }
-                ?.index
-        }
-    }
-
-    // Skip the first emission: mounting the wheel must not itself count as the user choosing a value.
-    var settled by remember { mutableStateOf(false) }
-    LaunchedEffect(centred) {
-        val index = centred ?: return@LaunchedEffect
-        if (!settled) {
-            settled = true
-            return@LaunchedEffect
-        }
-        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-        onSelect(index)
-    }
-
-    LazyColumn(
-        state = state,
-        flingBehavior = rememberSnapFlingBehavior(state),
-        // A row of padding above and below, so the selected row rests in the centre band.
-        contentPadding = PaddingValues(vertical = WHEEL_ROW.dp),
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        items(items.size) { i ->
-            val selected = i == centred
-            Box(
-                Modifier.fillMaxWidth().height(WHEEL_ROW.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = items[i],
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    style = TextStyle(
-                        fontFamily = Mincho,
-                        fontSize = if (selected) 22.sp else 16.sp,
-                        color = if (selected) c.ink else c.inkFaint,
-                    ),
-                )
-            }
+            TempoDateTimeWheel(current = current, allDay = allDay, onChange = onChange)
         }
     }
 }

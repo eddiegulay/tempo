@@ -42,6 +42,16 @@ import kotlinx.coroutines.launch
 private const val UNDO_WINDOW_MS = 4_000L
 
 /**
+ * What the Home clock's long-press can lead to.
+ *
+ * A named choice rather than a boolean or the destination [Screen] itself: the dialog reports what
+ * the user *meant*, and the ViewModel decides where that lands. Keeping the mapping in one `when`
+ * means a third mode cannot be half-added — and it keeps the dialog from being able to navigate the
+ * launcher to any screen it likes.
+ */
+enum class LauncherMode { Focus, Gym }
+
+/**
  * Single source of truth for launcher UI state: active screen, theme, search query, the app
  * inventory, live notifications, and whether Tempo is the default home app.
  *
@@ -137,29 +147,35 @@ class LauncherViewModel(
         _screen.value = Screen.Filter
     }
 
-    // ----- focus mode (landscape flip clock / pomodoro) -----
+    // ----- modes (landscape flip clock / pomodoro, and the gym) -----
 
-    /** True while the "enter focus mode?" confirmation dialog is showing. */
-    private val _pendingFocus = MutableStateFlow(false)
-    val pendingFocus: StateFlow<Boolean> = _pendingFocus.asStateFlow()
+    /** True while the mode chooser is showing. */
+    private val _pendingMode = MutableStateFlow(false)
+    val pendingMode: StateFlow<Boolean> = _pendingMode.asStateFlow()
 
-    /** Long-pressing the Home clock asks to enter focus mode; surfaces the confirmation dialog. */
-    fun requestFocus() {
-        _pendingFocus.value = true
+    /** Long-pressing the Home clock asks which mode to enter; surfaces the chooser. */
+    fun requestMode() {
+        _pendingMode.value = true
     }
 
-    fun cancelFocus() {
-        _pendingFocus.value = false
+    fun cancelMode() {
+        _pendingMode.value = false
     }
 
-    /** Confirm the pending request and step into the full-screen focus page. */
-    fun confirmFocus() {
-        _pendingFocus.value = false
-        goFocus()
-    }
-
-    private fun goFocus() {
-        _screen.value = Screen.Focus
+    /**
+     * Commit to a mode and hand the whole window to it.
+     *
+     * A mode is not a screen the dock can wander back from: each takes the window, and the gym keeps
+     * running state of its own. So the chooser closes first and the screen changes second, and there
+     * is deliberately no `goGym()`/`goFocus()` pair for anything else to call — [Screen.Focus] and
+     * [Screen.Gym] are reachable only through a mode the user picked out loud.
+     */
+    fun confirmMode(mode: LauncherMode) {
+        _pendingMode.value = false
+        _screen.value = when (mode) {
+            LauncherMode.Focus -> Screen.Focus
+            LauncherMode.Gym -> Screen.Gym
+        }
     }
 
     // ----- app blockade (10-day hide) -----
@@ -207,7 +223,7 @@ class LauncherViewModel(
         // Leaving Focus this way unmounts FocusScreen, which restores orientation and system bars.
         _pendingBlock.value = null
         _lockedTap.value = null
-        _pendingFocus.value = false
+        _pendingMode.value = false
         _composing.value = null
         _pendingWrite.value = null
         _calendarFault.value = null
