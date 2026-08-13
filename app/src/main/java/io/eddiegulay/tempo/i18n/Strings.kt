@@ -49,11 +49,31 @@ interface Strings {
     /** Which language this table is. Callers branch on it only for genuine behaviour splits (§L7). */
     val lang: Lang
 
+    /** Numbers, dates and counters. Behaviour, not copy — see [Formats]. */
+    val fmt: Formats
+
     val app: AppStrings
     val onboarding: OnboardingStrings
     val search: SearchStrings
     val dialog: DialogStrings
     val gym: GymStrings
+    val home: HomeStrings
+    val filter: FilterStrings
+    val focus: FocusStrings
+    val calendar: CalendarStrings
+    val notifications: NotificationsStrings
+    val block: BlockStrings
+    val fault: FaultStrings
+    val gymShared: GymSharedStrings
+    val gymHome: GymHomeStrings
+    val gymLibrary: GymLibraryStrings
+    val gymExercise: GymExerciseStrings
+    val gymBuilder: GymBuilderStrings
+    val gymSettings: GymSettingsStrings
+    val gymSession: GymSessionStrings
+    val gymRecords: GymRecordsStrings
+    val gymCue: GymCueStrings
+    val catalog: CatalogStrings
 }
 
 /** App-wide chrome: the dock, and the names of the two modes. */

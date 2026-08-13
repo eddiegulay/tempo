@@ -100,4 +100,24 @@ object StringsEn : Strings {
         override val tierIntermediate = "Intermediate"
         override val tierAdvanced = "Advanced"
     }
+
+    override val fmt: Formats = EnFormats
+
+    override val home: HomeStrings = EnHome
+    override val filter: FilterStrings = EnFilter
+    override val focus: FocusStrings = EnFocus
+    override val calendar: CalendarStrings = EnCalendar
+    override val notifications: NotificationsStrings = EnNotifications
+    override val block: BlockStrings = EnBlock
+    override val fault: FaultStrings = EnFault
+    override val gymShared: GymSharedStrings = EnGymShared
+    override val gymHome: GymHomeStrings = EnGymHome
+    override val gymLibrary: GymLibraryStrings = EnGymLibrary
+    override val gymExercise: GymExerciseStrings = EnGymExercise
+    override val gymBuilder: GymBuilderStrings = EnGymBuilder
+    override val gymSettings: GymSettingsStrings = EnGymSettings
+    override val gymSession: GymSessionStrings = EnGymSession
+    override val gymRecords: GymRecordsStrings = EnGymRecords
+    override val gymCue: GymCueStrings = EnGymCue
+    override val catalog: CatalogStrings = EnCatalog
 }

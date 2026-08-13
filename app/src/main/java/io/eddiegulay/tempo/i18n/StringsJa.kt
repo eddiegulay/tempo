@@ -80,4 +80,24 @@ object StringsJa : Strings {
         override val tierIntermediate = "中級"
         override val tierAdvanced = "上級"
     }
+
+    override val fmt: Formats = JaFormats
+
+    override val home: HomeStrings = JaHome
+    override val filter: FilterStrings = JaFilter
+    override val focus: FocusStrings = JaFocus
+    override val calendar: CalendarStrings = JaCalendar
+    override val notifications: NotificationsStrings = JaNotifications
+    override val block: BlockStrings = JaBlock
+    override val fault: FaultStrings = JaFault
+    override val gymShared: GymSharedStrings = JaGymShared
+    override val gymHome: GymHomeStrings = JaGymHome
+    override val gymLibrary: GymLibraryStrings = JaGymLibrary
+    override val gymExercise: GymExerciseStrings = JaGymExercise
+    override val gymBuilder: GymBuilderStrings = JaGymBuilder
+    override val gymSettings: GymSettingsStrings = JaGymSettings
+    override val gymSession: GymSessionStrings = JaGymSession
+    override val gymRecords: GymRecordsStrings = JaGymRecords
+    override val gymCue: GymCueStrings = JaGymCue
+    override val catalog: CatalogStrings = JaCatalog
 }
