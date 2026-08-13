@@ -1,5 +1,6 @@
 package io.eddiegulay.tempo.ui.gym
 
+import io.eddiegulay.tempo.i18n.StringsJa
 import io.eddiegulay.tempo.calendar.Loadable
 import io.eddiegulay.tempo.data.GymFault
 import io.eddiegulay.tempo.gym.AdvanceRule
@@ -256,13 +257,13 @@ class LibraryDetailCopyTest {
 
     @Test
     fun `the subtitle is the engine and the tier`() {
-        assertEquals("時間内 ・ 中級", detailSubtitle(Engine.AMRAP, Tier.INTERMEDIATE))
+        assertEquals("時間内 ・ 中級", detailSubtitle(Engine.AMRAP, Tier.INTERMEDIATE, StringsJa))
     }
 
     @Test
     fun `a user routine with no tier subtitles with the engine alone`() {
         // `derivedTier` has not guessed one yet, and 「巡回 ・ 」 would be a dangling separator.
-        assertEquals("巡回", detailSubtitle(Engine.INTERVAL_CIRCUIT, null))
+        assertEquals("巡回", detailSubtitle(Engine.INTERVAL_CIRCUIT, null, StringsJa))
     }
 
     @Test

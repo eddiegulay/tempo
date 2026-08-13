@@ -64,6 +64,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.calendar.Loadable
 import io.eddiegulay.tempo.data.JapaneseDate
+import io.eddiegulay.tempo.gym.label
+import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.i18n.Strings
 import io.eddiegulay.tempo.gym.DurationBucket
 import io.eddiegulay.tempo.gym.Engine
 import io.eddiegulay.tempo.gym.GymRoute
@@ -169,7 +172,7 @@ private const val BEST_PREFIX = "最高"
  * for — is treated as no best at all, so the card falls back to its engine label rather than printing
  * a bare number under a missing heading.
  */
-fun routineCardCopy(summary: RoutineSummary): RoutineCardCopy {
+fun routineCardCopy(summary: RoutineSummary, strings: Strings): RoutineCardCopy {
     val structure = JapaneseDate.kanjiExtended(summary.stationCount) + "種目"
     val cap = summary.timeCapSeconds
         ?.takeIf { summary.engine == Engine.AMRAP }
@@ -199,14 +202,14 @@ fun routineCardCopy(summary: RoutineSummary): RoutineCardCopy {
 
     return RoutineCardCopy(
         name = summary.name,
-        tier = summary.tier?.label,
+        tier = summary.tier?.label(strings),
         detail = detail,
         engine = if (best == null) engineLabel else null,
         best = best,
         count = count,
         description = listOfNotNull(
             summary.name,
-            summary.tier?.label,
+            summary.tier?.label(strings),
             structure,
             cap,
             estimate,
@@ -506,6 +509,7 @@ private fun SearchAndFilters(
     onDuration: (DurationBucket?) -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val focusRequester = remember { FocusRequester() }
 
     Column(Modifier.fillMaxWidth().animateContentSize(tween(220, easing = LinearOutSlowInEasing))) {
@@ -548,7 +552,7 @@ private fun SearchAndFilters(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Tier.entries.forEach { tier ->
-                FilterChip(tier.label, tier in filter.tiers) { onTier(tier) }
+                FilterChip(tier.label(s), tier in filter.tiers) { onTier(tier) }
             }
             ChipDivider()
             ENGINE_CHIPS.forEach { engine ->
@@ -743,9 +747,10 @@ private fun RoutineCardRow(
     onMenu: (RoutineMenuItem) -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     var menuOpen by remember { mutableStateOf(false) }
 
-    val copy = remember(summary) { routineCardCopy(summary) }
+    val copy = remember(summary, s) { routineCardCopy(summary, s) }
     val items = remember(summary.builtIn, summary.favourite) { routineMenuItems(summary) }
     val actions = remember(items, onMenu) {
         items.map { item -> CustomAccessibilityAction(label = item.label) { onMenu(item); true } }

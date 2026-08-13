@@ -18,6 +18,7 @@ import io.eddiegulay.tempo.data.AppRepository
 import io.eddiegulay.tempo.data.BlockadeRepository
 import io.eddiegulay.tempo.data.TempoTheme
 import io.eddiegulay.tempo.data.ThemeRepository
+import io.eddiegulay.tempo.i18n.Lang
 import io.eddiegulay.tempo.notification.NotificationGroup
 import io.eddiegulay.tempo.notification.NotificationRepository
 import io.eddiegulay.tempo.notification.TempoNotification
@@ -73,6 +74,18 @@ class LauncherViewModel(
 
     val theme: StateFlow<TempoTheme> = themeRepository.theme
         .stateIn(viewModelScope, SharingStarted.Eagerly, initialSettings.theme)
+
+    /**
+     * The UI language, seeded from the same synchronous read as [theme] and for the same reason: it
+     * must be correct on the **first frame**. A language that arrives one frame late is a visible
+     * flash of the wrong language on every cold start, which is worse than a theme flash — a user
+     * sees words they cannot read and assumes the setting did not save.
+     *
+     * `Eagerly`, deliberately, matching [theme]: `WhileSubscribed` would drop the value whenever the
+     * last collector goes away and re-emit the seed on return.
+     */
+    val lang: StateFlow<Lang> = themeRepository.language
+        .stateIn(viewModelScope, SharingStarted.Eagerly, initialSettings.lang)
 
     /**
      * First-launch gate: true once the user has worked through the onboarding walkthrough. Seeded
@@ -258,6 +271,15 @@ class LauncherViewModel(
             val next = if (theme.value == TempoTheme.Sumi) TempoTheme.Paper else TempoTheme.Sumi
             themeRepository.setTheme(next)
         }
+    }
+
+    /**
+     * Choose the UI language. Writes to DataStore only; [lang] updates when the store echoes it back,
+     * so there is one source of truth and no window where the flow and the disk disagree. Exactly
+     * how [toggleTheme] behaves.
+     */
+    fun setLanguage(next: Lang) {
+        viewModelScope.launch { themeRepository.setLanguage(next) }
     }
 
     fun ensureAppsLoaded() = appRepository.start()

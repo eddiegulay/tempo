@@ -34,6 +34,8 @@ import io.eddiegulay.tempo.data.TempoTheme
 import io.eddiegulay.tempo.gym.GymViewModel
 import io.eddiegulay.tempo.gym.GymViewModelFactory
 import io.eddiegulay.tempo.ui.gym.GymShell
+import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.i18n.stringsFor
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.PaperColors
 import io.eddiegulay.tempo.ui.theme.SumiColors
@@ -71,6 +73,7 @@ fun TempoApp(
     showSeal: Boolean = true,
 ) {
     val theme by viewModel.theme.collectAsStateWithLifecycle()
+    val lang by viewModel.lang.collectAsStateWithLifecycle()
     val screen by viewModel.screen.collectAsStateWithLifecycle()
     val isDefaultLauncher by viewModel.isDefaultLauncher.collectAsStateWithLifecycle()
     val onboardingComplete by viewModel.onboardingComplete.collectAsStateWithLifecycle()
@@ -141,13 +144,22 @@ fun TempoApp(
         else -> Layer.Launcher
     }
 
-    CompositionLocalProvider(LocalTempoColors provides colors) {
+    // Copy and colour are provided together, and both are `staticCompositionLocalOf` — neither tracks
+    // reads, so changing either recomposes this whole content lambda rather than invalidating call
+    // sites one at a time. That is what makes a language switch land everywhere in one frame,
+    // including inside 鍛錬, which composes within this provider and so inherits both for free.
+    CompositionLocalProvider(
+        LocalTempoColors provides colors,
+        LocalStrings provides stringsFor(lang),
+    ) {
         Box(Modifier.fillMaxSize().tempoBackground(colors)) {
             when (layer) {
                 Layer.Onboarding -> OnboardingScreen(
                     isDefaultLauncher = isDefaultLauncher,
                     onRequestDefault = onRequestDefault,
                     onComplete = viewModel::completeOnboarding,
+                    lang = lang,
+                    onChooseLanguage = viewModel::setLanguage,
                     modifier = Modifier.systemBarsPadding(),
                 )
 

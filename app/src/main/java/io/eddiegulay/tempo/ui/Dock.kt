@@ -25,6 +25,7 @@ import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 
 /**
@@ -56,6 +57,7 @@ fun Dock(
     frosted: Boolean = false,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val pillShape = RoundedCornerShape(percent = 50)
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -78,7 +80,7 @@ fun Dock(
                 }
                 .semantics {
                     if (!isDefaultLauncher) {
-                        onLongClick(label = "Tempoを既定のホームに設定") {
+                        onLongClick(label = s.app.dockSetDefault) {
                             onRequestDefault()
                             true
                         }
@@ -88,10 +90,10 @@ fun Dock(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            DockButton(TempoIcons.Home, active = current == Screen.Home, contentDescription = "ホーム", onClick = onHome)
-            DockButton(TempoIcons.Search, active = current == Screen.Search, contentDescription = "検索", onClick = onSearch)
-            DockButton(TempoIcons.Bell, active = current == Screen.Notifications, contentDescription = "通知", onClick = onNotifications)
-            DockButton(TempoIcons.Dumbbell, active = current == Screen.Gym, contentDescription = "鍛錬", onClick = onGym)
+            DockButton(TempoIcons.Home, active = current == Screen.Home, contentDescription = s.app.dockHome, onClick = onHome)
+            DockButton(TempoIcons.Search, active = current == Screen.Search, contentDescription = s.app.dockSearch, onClick = onSearch)
+            DockButton(TempoIcons.Bell, active = current == Screen.Notifications, contentDescription = s.app.dockNotifications, onClick = onNotifications)
+            DockButton(TempoIcons.Dumbbell, active = current == Screen.Gym, contentDescription = s.app.dockGym, onClick = onGym)
         }
     }
 }

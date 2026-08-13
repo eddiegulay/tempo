@@ -53,6 +53,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.LauncherViewModel
 import io.eddiegulay.tempo.data.AppInfo
 import io.eddiegulay.tempo.ui.theme.Gothic
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import java.time.Instant
@@ -78,9 +79,15 @@ fun SearchScreen(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val context = LocalContext.current
 
     val query by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val lang by viewModel.lang.collectAsStateWithLifecycle()
+
+    // Local, not hoisted: the picker is a transient sheet over this page and nothing outside Search
+    // needs to know it is open. Same treatment the app-info menu below already gets.
+    var showLanguage by remember { mutableStateOf(false) }
     val apps by viewModel.visibleApps.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { viewModel.ensureAppsLoaded() }
@@ -111,7 +118,7 @@ fun SearchScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "けんさく",
+                    text = s.search.heading,
                     style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 6.sp, color = c.inkFaint),
                 )
                 // Trailing controls: hidden-apps filter page, then the theme toggle (relocated from
@@ -119,13 +126,18 @@ fun SearchScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     HeaderIconButton(
                         paths = TempoIcons.EyeOff,
-                        contentDescription = "非表示アプリ",
+                        contentDescription = s.search.hiddenApps,
                         onClick = onOpenFilter,
                     )
                     HeaderIconButton(
                         paths = if (isDark) TempoIcons.Sun else TempoIcons.Moon,
-                        contentDescription = if (isDark) "ライトテーマに切り替え" else "ダークテーマに切り替え",
+                        contentDescription = if (isDark) s.search.toLightTheme else s.search.toDarkTheme,
                         onClick = onToggleTheme,
+                    )
+                    HeaderIconButton(
+                        paths = TempoIcons.Globe,
+                        contentDescription = s.search.language,
+                        onClick = { showLanguage = true },
                     )
                 }
             }
@@ -144,7 +156,7 @@ fun SearchScreen(
                         Box(Modifier.padding(vertical = 8.dp, horizontal = 2.dp)) {
                             if (query.isEmpty()) {
                                 Text(
-                                    text = "検索",
+                                    text = s.search.placeholder,
                                     style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, color = c.inkFaint),
                                 )
                             }
@@ -165,7 +177,7 @@ fun SearchScreen(
                 item {
                     Box(Modifier.fillMaxWidth().padding(top = 70.dp), contentAlignment = Alignment.Center) {
                         Text(
-                            text = if (loading) "・・・" else "見つかりません",
+                            text = if (loading) s.search.loading else s.search.empty,
                             style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
                         )
                     }
@@ -176,12 +188,27 @@ fun SearchScreen(
             }
         }
     }
+
+    // Choosing dismisses: the picker has done its job the moment a language is chosen, and the whole
+    // screen behind it is already redrawing in the new language, so leaving the sheet up would make
+    // the user close a dialog whose question has visibly been answered.
+    if (showLanguage) {
+        LanguageDialog(
+            current = lang,
+            onChoose = {
+                viewModel.setLanguage(it)
+                showLanguage = false
+            },
+            onDismiss = { showLanguage = false },
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AppRow(viewModel: LauncherViewModel, app: AppInfo) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val context = LocalContext.current
     val rootView = LocalView.current
 
@@ -198,8 +225,8 @@ private fun AppRow(viewModel: LauncherViewModel, app: AppInfo) {
                     rowBounds = android.graphics.Rect(r.left.toInt(), r.top.toInt(), r.right.toInt(), r.bottom.toInt())
                 }
                 .combinedClickable(
-                    onClickLabel = "起動",
-                    onLongClickLabel = "メニュー",
+                    onClickLabel = s.search.launch,
+                    onLongClickLabel = s.search.menu,
                     onClick = {
                         val b = rowBounds
                         val opts = if (b != null) {
@@ -221,9 +248,9 @@ private fun AppRow(viewModel: LauncherViewModel, app: AppInfo) {
                 )
                 // Subtitle: app category and last-updated date (e.g. "生産性 · 更新 6月10日"), each
                 // dropped when unavailable. Replaces the developer-facing package name.
-                val subtitle = remember(app.category, app.lastUpdated) {
+                val subtitle = remember(app.category, app.lastUpdated, s) {
                     val date = app.lastUpdated.takeIf { it > 0L }?.let {
-                        "更新 " + Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).format(updatedFormatter)
+                        s.search.updatedPrefix + Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).format(updatedFormatter)
                     }
                     listOfNotNull(app.category, date).joinToString(" · ")
                 }
@@ -238,21 +265,21 @@ private fun AppRow(viewModel: LauncherViewModel, app: AppInfo) {
 
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             DropdownMenuItem(
-                text = { Text("アプリ情報", style = TextStyle(fontFamily = Mincho, color = c.ink)) },
+                text = { Text(s.search.appInfo, style = TextStyle(fontFamily = Mincho, color = c.ink)) },
                 onClick = {
                     menuOpen = false
                     viewModel.openAppInfo(context, app)
                 },
             )
             DropdownMenuItem(
-                text = { Text("非表示にする", style = TextStyle(fontFamily = Mincho, color = c.ink)) },
+                text = { Text(s.search.hideApp, style = TextStyle(fontFamily = Mincho, color = c.ink)) },
                 onClick = {
                     menuOpen = false
                     viewModel.requestBlock(app)
                 },
             )
             DropdownMenuItem(
-                text = { Text("アンインストール", style = TextStyle(fontFamily = Mincho, color = c.ink)) },
+                text = { Text(s.search.uninstall, style = TextStyle(fontFamily = Mincho, color = c.ink)) },
                 onClick = {
                     menuOpen = false
                     viewModel.requestUninstall(context, app)

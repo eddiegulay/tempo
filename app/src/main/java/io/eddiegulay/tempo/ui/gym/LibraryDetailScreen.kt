@@ -48,6 +48,9 @@ import io.eddiegulay.tempo.calendar.Loadable
 import io.eddiegulay.tempo.data.GymFault
 import io.eddiegulay.tempo.data.JapaneseDate
 import io.eddiegulay.tempo.data.TempoFault
+import io.eddiegulay.tempo.gym.label
+import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.i18n.Strings
 import io.eddiegulay.tempo.gym.BestTile
 import io.eddiegulay.tempo.gym.Engine
 import io.eddiegulay.tempo.gym.GymRoute
@@ -362,8 +365,8 @@ internal fun bestTileIsThisMonth(tile: BestTile, bests: List<RoutineBest>, today
     }
 
 /** 時間内 ・ 中級 — the header subtitle. A user routine has no tier until `derivedTier` guesses one. */
-internal fun detailSubtitle(engine: Engine, tier: Tier?): String =
-    listOfNotNull(engine.label, tier?.label).joinToString(" ・ ")
+internal fun detailSubtitle(engine: Engine, tier: Tier?, strings: Strings): String =
+    listOfNotNull(engine.label, tier?.label(strings)).joinToString(" ・ ")
 
 /**
  * 決めた時間で何巡できるか — the one engine whose name needs explaining, on the one page that explains it.
@@ -522,6 +525,7 @@ internal fun detailFavouriteLabel(favourite: Boolean): String =
  */
 @Composable
 fun LibraryDetailScreen(gym: GymViewModel, routineId: String, modifier: Modifier = Modifier) {
+    val s = LocalStrings.current
     val tierChoice by gym.selectedTier.collectAsStateWithLifecycle()
     val renderedId = tierChoice[routineId] ?: routineId
 
@@ -552,7 +556,7 @@ fun LibraryDetailScreen(gym: GymViewModel, routineId: String, modifier: Modifier
     Column(modifier.fillMaxSize()) {
         DetailHeader(
             title = detailHeaderTitle(detail, library, renderedId),
-            subtitle = detail.valueOrNull()?.let { detailSubtitle(it.snapshot.engine, it.tier) },
+            subtitle = detail.valueOrNull()?.let { detailSubtitle(it.snapshot.engine, it.tier, s) },
             gloss = detail.valueOrNull()?.let { detailEngineGloss(it.snapshot.engine) },
             archived = detail.valueOrNull()?.archived == true,
             onClose = { if (gym.stack.value.size > 1) gym.onBack() },

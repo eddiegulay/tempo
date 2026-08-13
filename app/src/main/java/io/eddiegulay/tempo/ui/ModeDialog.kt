@@ -22,6 +22,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.eddiegulay.tempo.LauncherMode
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
@@ -45,6 +46,7 @@ fun ModeDialog(
     onDismiss: () -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -52,8 +54,8 @@ fun ModeDialog(
         text = {
             Column {
                 ModeRow(
-                    title = "集中",
-                    subtitle = "時計だけの画面",
+                    title = s.dialog.modeFocusTitle,
+                    subtitle = s.dialog.modeFocusSubtitle,
                     onClick = { onChoose(LauncherMode.Focus) },
                 )
                 Box(
@@ -63,8 +65,8 @@ fun ModeDialog(
                         .background(c.hair),
                 )
                 ModeRow(
-                    title = "鍛錬",
-                    subtitle = "体を動かす",
+                    title = s.dialog.modeGymTitle,
+                    subtitle = s.dialog.modeGymSubtitle,
                     onClick = { onChoose(LauncherMode.Gym) },
                 )
             }
@@ -73,7 +75,7 @@ fun ModeDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(
-                    text = "やめる",
+                    text = s.dialog.dismiss,
                     style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, color = c.inkFaint),
                 )
             }

@@ -1,5 +1,6 @@
 package io.eddiegulay.tempo.gym
 
+import io.eddiegulay.tempo.i18n.Strings
 import java.time.LocalDate
 
 /*
@@ -113,26 +114,45 @@ enum class Measure(val label: String) {
  * A routine's difficulty band — `routine.tier`, nullable because a user routine has none until
  * `derivedTier` guesses one.
  *
- * Unusually, the **stored value is the Japanese label**, because that is what the schema's CHECK
- * constraint spells (`tier IN ('入門','中級','上級')`). [storageValue] exists so no call site has to
- * know that, and so the day someone regrets it there is one place to change.
+ * The stored value is a **Japanese-spelled token**, because that is what the schema's CHECK constraint
+ * spells (`tier IN ('入門','中級','上級')`). It stays that way in every language, exactly as
+ * `ThemeRepository` still stores `"amoled"` for a mode now called Sumi: what is on disk means what it
+ * has always meant, and nothing on disk has to move.
+ *
+ * That is not merely convenient. SQLite 3.28 (minSdk 29) cannot alter a CHECK constraint without
+ * rebuilding the table, and `routine` carries mutual foreign keys — so translating this token would
+ * have cost a table rebuild *and* orphaned every existing row's tier. Keeping it opaque costs
+ * nothing (`.planning/i18n/DECISIONS.md` §L3).
+ *
+ * The **display word** is not here. It used to be, as a constructor argument, which meant it was
+ * fixed at class-init and could not be re-resolved when the user changed language. It now lives in
+ * the string table; see `Tier.label(Strings)`.
  *
  * Not to be confused with the player's scaling tier (やさしい / 基本 / きつい). Those are *separate
  * stored routines* joined by `scaled_from_routine_id` (`04-library-records.md` §1), not values of
- * this enum.
+ * this enum. Nor with `session.tier`, a different column holding ASCII enum names.
  */
-enum class Tier(val label: String) {
+enum class Tier(val storageValue: String) {
     BEGINNER("入門"),
     INTERMEDIATE("中級"),
     ADVANCED("上級"),
     ;
 
-    /** What goes in the column. Identical to [label] by schema design; named apart on purpose. */
-    val storageValue: String get() = label
-
     companion object {
         fun fromStorage(raw: String?): Tier? = entries.firstOrNull { it.storageValue == raw }
     }
+}
+
+/**
+ * The word a user reads for this tier.
+ *
+ * An extension rather than a property so the enum carries no language at all — a label on the enum
+ * is resolved once, at class-init, and would silently keep the language the app started in.
+ */
+fun Tier.label(strings: Strings): String = when (this) {
+    Tier.BEGINNER -> strings.gym.tierBeginner
+    Tier.INTERMEDIATE -> strings.gym.tierIntermediate
+    Tier.ADVANCED -> strings.gym.tierAdvanced
 }
 
 /**

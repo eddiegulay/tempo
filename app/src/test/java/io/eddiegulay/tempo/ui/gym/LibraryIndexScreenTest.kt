@@ -1,5 +1,6 @@
 package io.eddiegulay.tempo.ui.gym
 
+import io.eddiegulay.tempo.i18n.StringsJa
 import io.eddiegulay.tempo.gym.BestMetric
 import io.eddiegulay.tempo.gym.Engine
 import io.eddiegulay.tempo.gym.RoutineBest
@@ -50,7 +51,7 @@ class LibraryIndexScreenTest {
 
     @Test
     fun `a circuit states its shape, its estimate, and the engine on the line below`() {
-        val copy = routineCardCopy(sevenMinute)
+        val copy = routineCardCopy(sevenMinute, StringsJa)
 
         assertEquals("入門", copy.tier)
         assertEquals("十二種目 ・ 約 八分", copy.detail)
@@ -62,12 +63,12 @@ class LibraryIndexScreenTest {
     @Test
     fun `七分間 rounds to eight minutes, because 約 is not a licence to repeat the marketing`() {
         // `00-plan.md` §2 row 18: the routine is named 七分間 and the app says 約 八分, deliberately.
-        assertTrue(routineCardCopy(sevenMinute).detail.contains("約 八分"))
+        assertTrue(routineCardCopy(sevenMinute, StringsJa).detail.contains("約 八分"))
     }
 
     @Test
     fun `a record takes the meta line and the engine moves up, so it is stated exactly once`() {
-        val copy = routineCardCopy(cindy)
+        val copy = routineCardCopy(cindy, StringsJa)
 
         assertEquals("三種目 ・ 二十分 ・ 時間内", copy.detail)
         assertEquals("最高 十七巡", copy.best)
@@ -77,7 +78,7 @@ class LibraryIndexScreenTest {
     @Test
     fun `a time cap is the routine's duration and is never restated as an estimate`() {
         // Without a record the engine stays below, and 二十分 appears once — never beside 約 二十分.
-        val copy = routineCardCopy(cindy.copy(best = null))
+        val copy = routineCardCopy(cindy.copy(best = null), StringsJa)
 
         assertEquals("三種目 ・ 二十分", copy.detail)
         assertEquals("時間内", copy.engine)
@@ -90,6 +91,7 @@ class LibraryIndexScreenTest {
         // the detail page about which routines have a clock.
         val copy = routineCardCopy(
             cindy.copy(engine = Engine.FOR_TIME, best = null, estimatedDurationSeconds = 2700),
+            StringsJa,
         )
 
         assertEquals("三種目 ・ 約 四十五分", copy.detail)
@@ -97,7 +99,7 @@ class LibraryIndexScreenTest {
 
     @Test
     fun `a routine nobody has done yet carries no count`() {
-        val copy = routineCardCopy(sevenMinute.copy(timesDone = 0))
+        val copy = routineCardCopy(sevenMinute.copy(timesDone = 0), StringsJa)
 
         assertNull(copy.count)
         assertFalse(copy.description.contains("〇"))
@@ -108,7 +110,7 @@ class LibraryIndexScreenTest {
         // HIGHEST_STEP is the one `BestMetric` with no Japanese word anywhere in the specs, and
         // `DECISIONS.md` §Q9 forbids inventing one. The card falls back to its engine rather than
         // printing a bare number under a heading that does not exist.
-        val copy = routineCardCopy(sevenMinute.copy(best = best(BestMetric.HIGHEST_STEP, 9.0)))
+        val copy = routineCardCopy(sevenMinute.copy(best = best(BestMetric.HIGHEST_STEP, 9.0)), StringsJa)
 
         assertNull(copy.best)
         assertEquals("巡回", copy.engine)
@@ -116,7 +118,7 @@ class LibraryIndexScreenTest {
 
     @Test
     fun `a user routine with no tier says nothing about its difficulty`() {
-        val copy = routineCardCopy(sevenMinute.copy(tier = null, builtIn = false))
+        val copy = routineCardCopy(sevenMinute.copy(tier = null, builtIn = false), StringsJa)
 
         assertNull(copy.tier)
         assertFalse(copy.description.contains("入門"))
@@ -127,8 +129,8 @@ class LibraryIndexScreenTest {
         // §3's accessibility line fixes it: name → tier → structure → estimate → engine → count, "so
         // the first two words disambiguate". A description that reordered itself when a PR landed
         // would be two readings of one card.
-        assertEquals("七分間、入門、十二種目、約 八分、巡回、十四回", routineCardCopy(sevenMinute).description)
-        assertEquals("シンディ、中級、三種目、二十分、時間内、最高 十七巡、六回", routineCardCopy(cindy).description)
+        assertEquals("七分間、入門、十二種目、約 八分、巡回、十四回", routineCardCopy(sevenMinute, StringsJa).description)
+        assertEquals("シンディ、中級、三種目、二十分、時間内、最高 十七巡、六回", routineCardCopy(cindy, StringsJa).description)
     }
 
     @Test
