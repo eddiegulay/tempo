@@ -3,12 +3,12 @@ package io.eddiegulay.tempo.ui
 import android.content.Intent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -50,7 +51,6 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onClick
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
@@ -63,7 +63,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.DisposableEffect
 import io.eddiegulay.tempo.LauncherViewModel
-import io.eddiegulay.tempo.data.JapaneseDate
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.notification.NotificationGroup
 import io.eddiegulay.tempo.notification.TempoNotification
 import io.eddiegulay.tempo.notification.TempoNotificationAction
@@ -71,6 +71,8 @@ import io.eddiegulay.tempo.notification.TempoNotificationListener
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 
 /**
  * Notifications (通知): a quiet, sparse list of the device's current notifications.
@@ -82,6 +84,7 @@ import io.eddiegulay.tempo.ui.theme.Mincho
 @Composable
 fun NotificationsScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val context = LocalContext.current
     val now by rememberMinuteTime()
 
@@ -99,7 +102,7 @@ fun NotificationsScreen(viewModel: LauncherViewModel, modifier: Modifier = Modif
 
     val groups by viewModel.grouped.collectAsStateWithLifecycle()
     val pending by viewModel.pendingDismiss.collectAsStateWithLifecycle()
-    // Per-app expand state for the 他X件 collapse; keyed by package, survives recomposition.
+    // Per-app expand state for the "N more" collapse; keyed by package, survives recomposition.
     val expanded = remember { mutableStateMapOf<String, Boolean>() }
 
     // Nudge the system to reconnect the listener if access is granted but it isn't bound yet
@@ -116,12 +119,12 @@ fun NotificationsScreen(viewModel: LauncherViewModel, modifier: Modifier = Modif
         ) {
             Column {
                 Text(
-                    text = "通知",
+                    text = s.notifications.title,
                     style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
                 )
                 Spacer(Modifier.height(7.dp))
                 Text(
-                    text = "${JapaneseDate.era(now)} ・ ${JapaneseDate.monthDay(now)}",
+                    text = s.fmt.era(now) + s.fmt.separator + s.fmt.monthDay(now),
                     style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 4.sp, color = c.inkFaint),
                 )
             }
@@ -143,7 +146,13 @@ fun NotificationsScreen(viewModel: LauncherViewModel, modifier: Modifier = Modif
 
                 groups.isEmpty() -> QuietState()
 
-                else -> LazyColumn(Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 6.dp)) {
+                // The bottom inset clears the floating dock pill, exactly as the Calendar, Search and
+                // Filter lists do. Without it the last notification — and the swipe that clears it —
+                // sat underneath the capsule and could not be reached.
+                else -> LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 6.dp),
+                    contentPadding = PaddingValues(bottom = 96.dp),
+                ) {
                     groups.forEach { group ->
                         val collapsible = group.items.size > COLLAPSE_THRESHOLD
                         val isExpanded = expanded[group.packageName] == true
@@ -199,17 +208,18 @@ private fun NotifRow(
     onReply: (Int, String) -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
 
     // A single, readable TalkBack announcement for the whole row, plus an explicit "dismiss" action
     // (the swipe gesture below is invisible to accessibility services, so without this a screen-reader
     // user could read a notification but never clear it).
-    val rowDescription = remember(n.appLabel, n.title, n.body, n.time) {
+    val rowDescription = remember(n.appLabel, n.title, n.body, n.time, s) {
         listOf(n.appLabel, n.title, n.body.takeIf { it.isNotBlank() }, n.time)
             .filterNotNull()
-            .joinToString("、")
+            .joinToString(s.fmt.listSeparator)
     }
-    val dismissAction = remember(onDismiss) {
-        listOf(CustomAccessibilityAction(label = "消去") { onDismiss(); true })
+    val dismissAction = remember(onDismiss, s) {
+        listOf(CustomAccessibilityAction(label = s.notifications.rowDismiss) { onDismiss(); true })
     }
 
     // Swipe either direction to clear; the list removes the row once the service reports it gone.
@@ -235,18 +245,28 @@ private fun NotifRow(
             Modifier
                 .fillMaxWidth()
                 .padding(vertical = 5.dp)
-                .clip(RoundedCornerShape(18.dp))
+                .clip(TempoShapes.Card)
                 .background(c.card),
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onOpen)
+                    // The summary is the pressable part of the card, not the whole card: the action
+                    // chips below open nothing. So the wash takes the card's own corners at the top
+                    // and squares off at the bottom whenever there are actions under it, meeting them
+                    // flush instead of curving away from a card that visibly continues.
+                    .pressable(
+                        shape = if (n.actions.isEmpty()) TempoShapes.Card else SUMMARY_OVER_ACTIONS,
+                        onClick = onOpen,
+                    )
                     // The tappable summary is one TalkBack node: open on activate, dismiss as an
                     // action. Inline actions below stay separately focusable (not in this subtree).
+                    // Role and label stay in this block rather than moving to `pressable`:
+                    // `clearAndSetSemantics` replaces whatever the click modifier declared, so a role
+                    // passed there would be discarded on the way past.
                     .clearAndSetSemantics {
                         contentDescription = rowDescription
-                        onClick(label = "開く") { onOpen(); true }
+                        onClick(label = s.notifications.rowOpen) { onOpen(); true }
                         customActions = dismissAction
                     }
                     .padding(horizontal = 18.dp, vertical = 16.dp),
@@ -341,14 +361,22 @@ private fun ActionsRow(
     }
 }
 
+/**
+ * One inline action.
+ *
+ * A lozenge rather than the row shape: this is a bare accent word with no fill of its own, so the
+ * press wash is the only outline it ever draws, and a rounded rectangle around 返信 would look like a
+ * button that forgot its border. `minWidth` grows the target rightward into the gap between chips —
+ * a two-character label is 30dp wide, which is not a touch target — while `CenterStart` keeps the word
+ * itself exactly where it was.
+ */
 @Composable
 private fun ActionChip(label: String, onClick: () -> Unit) {
     val c = LocalTempoColors.current
     Box(
         modifier = Modifier
-            .sizeIn(minHeight = 48.dp)
-            .clickable(onClick = onClick)
-            .semantics(mergeDescendants = true) { role = Role.Button },
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .pressable(TempoShapes.Word, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.CenterStart,
     ) {
         Text(
@@ -361,6 +389,7 @@ private fun ActionChip(label: String, onClick: () -> Unit) {
 @Composable
 private fun ReplyField(onSend: (String) -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     var text by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
@@ -377,13 +406,13 @@ private fun ReplyField(onSend: (String) -> Unit) {
             .fillMaxWidth()
             .padding(top = 4.dp, bottom = 4.dp)
             .focusRequester(focusRequester)
-            .semantics { contentDescription = "返信を入力" },
+            .semantics { contentDescription = s.notifications.replyDescription },
         decorationBox = { inner ->
             Column {
                 Box(Modifier.padding(vertical = 6.dp)) {
                     if (text.isEmpty()) {
                         Text(
-                            text = "返信",
+                            text = s.notifications.replyPlaceholder,
                             style = TextStyle(fontFamily = Gothic, fontSize = 15.sp, color = c.inkFaint),
                         )
                     }
@@ -395,19 +424,33 @@ private fun ReplyField(onSend: (String) -> Unit) {
     )
 }
 
-/** Beyond this many notifications, an app's bucket collapses behind a 他X件 toggle. */
+/** Beyond this many notifications, an app's bucket collapses behind an "N more" toggle. */
 private const val COLLAPSE_THRESHOLD = 4
+
+/**
+ * The card corner with its bottom squared off: the press shape of a notification summary that has
+ * action chips beneath it inside the same card.
+ *
+ * Derived from [TempoShapes.Card] rather than restated, so the two halves of a card can never round
+ * by different amounts, and hoisted to a file constant so the branch in [NotifRow] allocates nothing
+ * per frame.
+ */
+private val SUMMARY_OVER_ACTIONS: RoundedCornerShape =
+    TempoShapes.Card.copy(bottomStart = CornerSize(0.dp), bottomEnd = CornerSize(0.dp))
 
 /** A quiet per-app header: faint tinted icon, mincho label, count. One TalkBack node. */
 @Composable
 private fun GroupHeader(group: NotificationGroup) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             // Inset to the card's internal padding so the header icon lines up with the row icons.
             .padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 6.dp)
-            .clearAndSetSemantics { contentDescription = "${group.appLabel}、${group.items.size}件" },
+            .clearAndSetSemantics {
+                contentDescription = s.notifications.groupHeader(group.appLabel, group.items.size)
+            },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(9.dp),
     ) {
@@ -425,22 +468,34 @@ private fun GroupHeader(group: NotificationGroup) {
             style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
         )
         Text(
+            // Left as arabic in both languages, deliberately. `fmt.count` would spell this 三 in
+            // Japanese per §Q4 (a stopped value is kanji), but this is a badge beside the app name,
+            // not a value in a sentence, and it draws identically in both languages today. Changing
+            // what a Japanese user sees here is a design decision about badges, not a translation.
             text = group.items.size.toString(),
             style = TextStyle(fontFamily = Gothic, fontSize = 11.sp, letterSpacing = 1.sp, color = c.inkFaint),
         )
     }
 }
 
-/** The 他X件 / 折りたたむ expander for an over-long app bucket. */
+/**
+ * The "N more" / "show less" expander for an over-long app bucket.
+ *
+ * It spans the list's width and sits between two washi cards, so it takes the card corner rather than
+ * a lozenge — pressed, it reads as the gap between the cards darkening, which is what it acts on. It
+ * was 40dp tall before the `sizeIn`, which is under the floor for a control this easy to mis-tap.
+ */
 @Composable
 private fun CollapseToggle(expanded: Boolean, hiddenCount: Int, onToggle: () -> Unit) {
     val c = LocalTempoColors.current
-    val label = if (expanded) "折りたたむ" else "他 $hiddenCount 件"
+    val s = LocalStrings.current
+    val label = if (expanded) s.notifications.collapse else s.notifications.more(hiddenCount)
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onToggle)
-            .semantics { role = Role.Button; contentDescription = label }
+            .sizeIn(minHeight = 48.dp)
+            .pressable(TempoShapes.Card, role = Role.Button, onClick = onToggle)
+            .semantics { contentDescription = label }
             .padding(vertical = 11.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -451,51 +506,62 @@ private fun CollapseToggle(expanded: Boolean, hiddenCount: Int, onToggle: () -> 
     }
 }
 
-/** The quiet すべて消去 (clear all) control in the header. */
+/** The quiet clear-all control in the header. A word, so a lozenge — see [ActionChip]. */
 @Composable
 private fun ClearAllButton(onClick: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Box(
         modifier = Modifier
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .clickable(onClick = onClick)
-            .semantics { role = Role.Button; contentDescription = "すべて消去" }
-            .padding(horizontal = 6.dp),
+            .pressable(TempoShapes.Word, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = s.notifications.clearAll }
+            .padding(horizontal = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = "すべて消去",
+            text = s.notifications.clearAll,
             style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 2.sp, color = c.inkFaint),
         )
     }
 }
 
-/** Bottom strip offering to undo the in-flight dismissals before they commit. */
+/**
+ * Bottom strip offering to undo the in-flight dismissals before they commit.
+ *
+ * A floating washi card, not a full-bleed bar. It used to be an edge-to-edge rectangle pinned to the
+ * bottom of the list — square corners, hard edges, and sitting *underneath* the floating dock, which
+ * put the one control with a deadline where a finger could not reach it. Inset and rounded, it is the
+ * same object as the notification cards it hovers over, and the bottom margin clears the capsule.
+ */
 @Composable
 private fun UndoStrip(count: Int, onUndo: () -> Unit, modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .padding(start = 22.dp, end = 22.dp, bottom = 84.dp)
+            .clip(TempoShapes.Card)
             .background(c.card)
-            .padding(start = 28.dp, end = 22.dp, top = 14.dp, bottom = 14.dp),
+            .padding(start = 18.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "$count 件を消去",
+            text = s.notifications.undoCount(count),
             style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 2.sp, color = c.inkSoft),
         )
         Box(
             modifier = Modifier
                 .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                .clickable(onClick = onUndo)
-                .semantics { role = Role.Button; contentDescription = "元に戻す" }
-                .padding(horizontal = 6.dp),
+                .pressable(TempoShapes.Word, role = Role.Button, onClick = onUndo)
+                .semantics { contentDescription = s.notifications.undo }
+                .padding(horizontal = 10.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = "元に戻す",
+                text = s.notifications.undo,
                 style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 2.sp, color = c.accent),
             )
         }
@@ -505,15 +571,22 @@ private fun UndoStrip(count: Int, onUndo: () -> Unit, modifier: Modifier = Modif
 @Composable
 private fun EnableAccessPrompt(onClick: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(
-                text = "通知へのアクセス",
+                text = s.notifications.accessTitle,
                 style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, letterSpacing = 4.sp, color = c.inkSoft),
             )
+            // Was a bare `clickable` on a 22dp-tall line with no role: a tap target under half the
+            // floor, and a screen reader could read the sentence but not learn it was a button. Same
+            // treatment as the calendar's identical gate.
             Text(
-                text = "タップして許可",
-                modifier = Modifier.clickable(onClick = onClick),
+                text = s.notifications.accessAction,
+                modifier = Modifier
+                    .sizeIn(minHeight = 48.dp)
+                    .pressable(TempoShapes.Word, role = Role.Button, onClick = onClick)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = 3.sp, color = c.accent),
             )
         }
@@ -523,9 +596,10 @@ private fun EnableAccessPrompt(onClick: () -> Unit) {
 @Composable
 private fun QuietState() {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
-            text = "通知はありません",
+            text = s.notifications.empty,
             style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
         )
     }

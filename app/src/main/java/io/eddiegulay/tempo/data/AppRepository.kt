@@ -1,5 +1,6 @@
 package io.eddiegulay.tempo.data
 
+import io.eddiegulay.tempo.i18n.Strings
 import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.ComponentName
@@ -121,7 +122,13 @@ class AppRepository private constructor(private val appContext: Context) {
 
     // ----- launching & per-app actions -----
 
-    fun launch(context: Context, app: AppInfo, sourceBounds: android.graphics.Rect? = null, opts: Bundle? = null) {
+    fun launch(
+        context: Context,
+        app: AppInfo,
+        strings: Strings,
+        sourceBounds: android.graphics.Rect? = null,
+        opts: Bundle? = null,
+    ) {
         try {
             val la = launcherApps
             if (la != null) {
@@ -132,9 +139,9 @@ class AppRepository private constructor(private val appContext: Context) {
                     ?.let { context.startActivity(it) }
             }
         } catch (_: ActivityNotFoundException) {
-            toast(context, "起動できませんでした") // "couldn't launch"
+            toast(context, strings.fault.launchFailed)
         } catch (_: SecurityException) {
-            toast(context, "起動できませんでした")
+            toast(context, strings.fault.launchFailed)
         }
     }
 
@@ -151,13 +158,13 @@ class AppRepository private constructor(private val appContext: Context) {
         }
     }
 
-    fun requestUninstall(context: Context, app: AppInfo) {
+    fun requestUninstall(context: Context, app: AppInfo, strings: Strings) {
         runCatching {
             context.startActivity(
                 Intent(Intent.ACTION_DELETE, Uri.fromParts("package", app.packageName, null))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
-        }.onFailure { toast(context, "アンインストールできませんでした") }
+        }.onFailure { toast(context, strings.fault.uninstallFailed) }
     }
 
     private fun toast(context: Context, message: String) {

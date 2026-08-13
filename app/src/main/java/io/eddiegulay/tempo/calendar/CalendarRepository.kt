@@ -182,7 +182,14 @@ class CalendarRepository(context: Context) {
                     add(
                         CalendarEvent(
                             eventId = c.getLong(0),
-                            title = c.getString(1)?.takeIf { it.isNotBlank() } ?: "（無題）",
+                            // The provider's title as it stands, blank included. A placeholder here
+                            // would be prefilled into the composer, would be what enabled 保存, and
+                            // would be written straight back to Events.TITLE — so opening an untitled
+                            // event to move it by an hour would name it, and the sync adapter would
+                            // carry that name to the user's account, their other devices and every
+                            // guest on the invite. What a blank title looks like is decided where it
+                            // is drawn: see [displayTitle].
+                            title = c.getString(1).orEmpty(),
                             begin = begin,
                             end = end,
                             allDay = allDay,
@@ -328,10 +335,15 @@ class CalendarRepository(context: Context) {
  * All-day events are stored as midnight-UTC on their date, and DTEND is exclusive: a one-day event
  * on the 12th ends at midnight-UTC on the 13th. Getting that wrong yields a zero-length event that
  * renders nowhere.
+ *
+ * **An untitled event stays untitled.** A blank title is written as NULL — which is what the provider
+ * holds for an event nobody named, and what every other calendar app writes — rather than as a word
+ * Tempo chose to stand in for the absence. This is not a display decision; it is a decision about
+ * somebody else's data, on somebody else's server, in front of somebody else's guests.
  */
 private fun EventDraft.toValues(includeCalendar: Boolean): ContentValues = ContentValues().apply {
     if (includeCalendar) put(CalendarContract.Events.CALENDAR_ID, calendarId)
-    put(CalendarContract.Events.TITLE, title)
+    put(CalendarContract.Events.TITLE, title.ifBlank { null })
     put(CalendarContract.Events.EVENT_LOCATION, location)
     put(CalendarContract.Events.ALL_DAY, if (allDay) 1 else 0)
     if (allDay) {

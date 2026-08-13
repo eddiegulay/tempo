@@ -5,8 +5,27 @@
    The 10-day blockade ledger lives in app-private files (filesDir/blockade.json). Including it here
    means it is uploaded to the user's Google cloud backup and restored on reinstall, giving the
    blockade best-effort uninstall survival without any storage permission.
+
+   The 鍛錬 training history lives in exercise.db. Only the main database file is included, never the
+   -wal or -shm siblings: backing up a WAL without its exact matching main file restores an
+   inconsistent pair. The backup agent copies the file while the app is not running, and an unclean
+   WAL is recovered on the next open, so the main file alone is the safe, standard choice.
+
+   These are include-lists: anything not named here is NOT restored. 鍛錬 keeps its state in two
+   DataStore files besides the database, and both must be named or a restore brings a year of training
+   back with every setting silently reset —
+
+     · tempo_gym.preferences_pb — the 鍛錬 preferences: 振動 / 音 / 音声, 支度の長さ, both rest defaults,
+       単位, 画面を消さない and safetyNoteAcknowledged. A restored install that re-asks the safety note
+       and re-arms sounds the user switched off is a worse first impression than a fresh one.
+     · gym_store.preferences_pb — the durable history-lost flag. It travels with the database on
+       purpose: restoring a corrupt-flagged history without its flag would render the loss as
+       記録はありません, which is the one thing §7.1 forbids.
 -->
 <full-backup-content>
     <include domain="file" path="blockade.json"/>
     <include domain="file" path="datastore/tempo_settings.preferences_pb"/>
+    <include domain="file" path="datastore/tempo_gym.preferences_pb"/>
+    <include domain="file" path="datastore/gym_store.preferences_pb"/>
+    <include domain="database" path="exercise.db"/>
 </full-backup-content>

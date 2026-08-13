@@ -6,6 +6,78 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-14
+
+### Added
+- **鍛錬 (Training)** — Tempo now runs your workout. Not a log you fill in afterwards: a timer you
+  train against, built around the same idea as the rest of the launcher, which is that the screen
+  should ask for as little of your attention as possible while you are busy doing something else.
+  - **The ensō is the timer.** The brushed circle on the player is not decoration next to a countdown
+    — it *is* the countdown, closing as the interval runs out. Mid-set you can read a nearly-closed
+    circle from arm's length in a way you cannot read a two-digit number.
+  - **Seven kinds of workout**, because "a workout" is not one shape: fixed circuits, as-many-rounds-
+    as-possible against a clock, for-time, for-time with rest, every-minute-on-the-minute, ascending
+    EMOM, and fixed sets. Nine built-in routines ship with the app, including the benchmark workouts
+    people actually train — Cindy, Murph, Tabata, Death by Burpees.
+  - **Nothing advances past a rep-based exercise on its own.** A timer that decides you have finished
+    twenty push-ups has decided something it cannot know. You press 済 when you are done, and until
+    then it waits.
+  - **A workout you cut short is still a workout.** Stop halfway and the session is recorded as what
+    it was — marked 途中まで, no personal-record claim, no ceremony — rather than discarded. The
+    alternative teaches you to fake the last round.
+  - **Records that answer questions you would actually ask**: what you have done, how often, your
+    personal bests, and how your load has moved. Tempo computes a training-load ratio internally to
+    pace how fast a routine is allowed to ramp — and deliberately never draws it. The injury-risk
+    bands that number is famous for have substantially failed to replicate, and a launcher is in no
+    position to make a medical claim.
+  - **It speaks and it buzzes**, so you can put the phone down. Cues at the half-way point, the last
+    round, and the end, with the screen kept awake only while a session is actually running.
+  - **Reached from the dock** — a fourth button beside Home, Search and Notifications.
+- **English.** Tempo was written in Japanese, from the ground up, and stays that way by default. It
+  now also speaks English, chosen from a picker in the Search header or on the very first screen.
+  - **The language is offered before anything is explained.** The first-launch walkthrough asks for
+    notification access and the home-app role, and explains in prose why it wants each and that
+    nothing leaves your device. Reading that is the point of it. The language row therefore sits above
+    the greeting, not buried in a settings page you would find afterwards.
+  - **It is a picker, not a switch**, and both options are written in their own language — 日本語 and
+    English. A blind toggle is fine for a theme, where a wrong guess is undone by eye. Guess wrong on
+    a language and you may not be able to read the control that would put it back.
+  - **The catalogue was already bilingual.** Every built-in exercise has carried an English name in
+    the database since the first version; it had simply never been shown.
+  - **Numbers and dates are translated, not just words.** Japanese counts in kanji and marks a
+    duration differently depending on whether you chose it or the app measured it. English does
+    neither, so those rules end at the language boundary rather than being mimicked badly.
+  - Japanese is unchanged. Every Japanese string in the app is the one that shipped before.
+
+### Changed
+- **Everything you press now responds like ink on paper.** Buttons, rows, chips and tabs used to flash
+  a grey rectangle when touched — a Material default that had nothing to do with Tempo's palette and
+  square corners on an app with none. The press now settles into the shape of the control it belongs
+  to, in the theme's own ink, and fades out more slowly than it comes in.
+- **Home's corner turns with the writing.** The date, weekday and next event are set vertically in
+  Japanese, as they should be. In English they are laid out horizontally, because stacking Latin
+  letters one per line is a ransom note rather than typography.
+
+### Fixed
+- **Tempo no longer writes a placeholder into your real calendar.** An event with no title was shown
+  as （無題）, and editing anything about it — moving it an hour, say — saved that placeholder as the
+  event's actual name. It then synced to Google and to everyone invited. Untitled events now stay
+  untitled, and you can reschedule one without renaming it.
+- **The gym no longer crashes on first open.**
+- **Opening a station no longer destroys its note**, unfolding a wheel no longer rewrites the value it
+  is showing you, and a settings change followed by Back is no longer discarded.
+- **Timestamps read consistently.** Notification times used a date format found nowhere else in the
+  app and ambiguous outside Japan and the US — 6/17 could be June 17th or the 6th of July.
+- **Digits stay digits.** Several clocks and countdowns were formatted without a locale, so on some
+  devices they rendered in a numeral system the layout had no room for.
+- **"Undo" is reachable again.** The strip that lets you take back a cleared notification was drawn
+  underneath the floating dock — the one control in the app with a deadline on it, and you could not
+  press it. The last notification in the list was hidden the same way.
+- **The Pomodoro controls can be used with a screen reader.** They were drawn as raw gesture targets,
+  which publish no button to TalkBack, so they were invisible to it. Several controls that were too
+  small to hit comfortably — some barely half the recommended size, including the one you reach for
+  when something has already gone wrong — are now full-sized.
+
 ## [0.1.0] - 2026-07-12
 
 ### Added

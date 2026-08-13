@@ -63,6 +63,32 @@ object TempoIcons {
     )
     val Moon = listOf("M20 13.5A8 8 0 1 1 10.5 4a6.2 6.2 0 0 0 9.5 9.5z")
 
+    /**
+     * 鍛錬. A dumbbell in three strokes — two weights and the bar between them.
+     *
+     * Literal rather than allusive, unlike the rest of this set, and deliberately so: the dock is
+     * the one place in Tempo a glyph has to be recognised cold, with no label beside it. A more
+     * characterful mark (an ensō, a mountain) was rejected twice over — the ensō is already the
+     * session timer and would promise something this button does not do, and nothing else reads as
+     * "exercise" at 23.dp without a caption.
+     */
+    val Dumbbell = listOf("M6 8v8", "M18 8v8", "M6 12h12")
+
+    /**
+     * Language. A globe: circle, equator, meridian.
+     *
+     * The same reasoning as [Dumbbell] — the Search header's controls are icon-only, so the mark has
+     * to be recognised without a caption. A globe is the near-universal convention for this control
+     * and that convention is worth more here than a more characterful mark would be. Rejected: the
+     * letter pair 「あA」, which is legible only to someone who already reads one of the two scripts
+     * and so fails exactly the user who most needs to find this button.
+     */
+    val Globe = listOf(
+        "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z",
+        "M3 12h18",
+        "M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z",
+    )
+
     // Hidden-apps filter
     val Eye = listOf(
         "M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z",

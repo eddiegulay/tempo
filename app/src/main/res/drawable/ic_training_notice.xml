@@ -1,0 +1,29 @@
+<!--
+  鍛錬's status-bar mark: the ensō, at 24dp.
+
+  The same geometry the whole feature is drawn from — `ui/Enso.kt`'s ENSO_START_ANGLE = -60° and
+  ENSO_SWEEP_DEGREES = 312°, on a radius-8 circle centred in a 24×24 box. The gap sits upper-right,
+  exactly as it does on the player's ring, so the notification carries the app's own mark rather than
+  a generic dumbbell.
+
+  White on transparent with alpha carrying the shape, because the system tints a notification's small
+  icon and reads nothing but its alpha channel. The launcher's adaptive icon was rejected for this
+  slot: its glyph occupies only the inner safe zone, so at 24dp it renders as a small mark floating in
+  empty space.
+
+  Arc endpoints, for anyone re-deriving them: start (12+8·cos(-60°), 12+8·sin(-60°)) = (16, 5.072);
+  end at -60°+312° = 252°, (12+8·cos252°, 12+8·sin252°) = (9.528, 4.392). The sweep exceeds 180°, so
+  large-arc-flag is 1, and sweep-flag 1 is the clockwise direction of a y-down canvas.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M16,5.072 A8,8 0 1 1 9.528,4.392"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="2" />
+</vector>
