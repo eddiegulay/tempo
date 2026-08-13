@@ -18,6 +18,8 @@ import io.eddiegulay.tempo.data.AppRepository
 import io.eddiegulay.tempo.data.BlockadeRepository
 import io.eddiegulay.tempo.data.TempoTheme
 import io.eddiegulay.tempo.data.ThemeRepository
+import io.eddiegulay.tempo.i18n.Lang
+import io.eddiegulay.tempo.i18n.stringsFor
 import io.eddiegulay.tempo.notification.NotificationGroup
 import io.eddiegulay.tempo.notification.NotificationRepository
 import io.eddiegulay.tempo.notification.TempoNotification
@@ -42,6 +44,16 @@ import kotlinx.coroutines.launch
 private const val UNDO_WINDOW_MS = 4_000L
 
 /**
+ * What the Home clock's long-press can lead to.
+ *
+ * A named choice rather than a boolean or the destination [Screen] itself: the dialog reports what
+ * the user *meant*, and the ViewModel decides where that lands. Keeping the mapping in one `when`
+ * means a third mode cannot be half-added — and it keeps the dialog from being able to navigate the
+ * launcher to any screen it likes.
+ */
+enum class LauncherMode { Focus, Gym }
+
+/**
  * Single source of truth for launcher UI state: active screen, theme, search query, the app
  * inventory, live notifications, and whether Tempo is the default home app.
  *
@@ -63,6 +75,18 @@ class LauncherViewModel(
 
     val theme: StateFlow<TempoTheme> = themeRepository.theme
         .stateIn(viewModelScope, SharingStarted.Eagerly, initialSettings.theme)
+
+    /**
+     * The UI language, seeded from the same synchronous read as [theme] and for the same reason: it
+     * must be correct on the **first frame**. A language that arrives one frame late is a visible
+     * flash of the wrong language on every cold start, which is worse than a theme flash — a user
+     * sees words they cannot read and assumes the setting did not save.
+     *
+     * `Eagerly`, deliberately, matching [theme]: `WhileSubscribed` would drop the value whenever the
+     * last collector goes away and re-emit the seed on return.
+     */
+    val lang: StateFlow<Lang> = themeRepository.language
+        .stateIn(viewModelScope, SharingStarted.Eagerly, initialSettings.lang)
 
     /**
      * First-launch gate: true once the user has worked through the onboarding walkthrough. Seeded
@@ -132,34 +156,59 @@ class LauncherViewModel(
         _searchQuery.value = "" // drop the search query whenever we leave Search
     }
 
+    /**
+     * Open 鍛錬 from the dock.
+     *
+     * This exists because the gym earned a dock button. [confirmMode] still reaches [Screen.Gym] from
+     * the clock's mode dialog and both routes are wanted: the dialog is how you *choose* between
+     * 集中 and 鍛錬, the dock is how you *return* to a log you keep. 集中 keeps no such button — it
+     * hides everything by design, so there is nothing to come back to.
+     *
+     * The gym's own back stack is untouched here. Re-entering always lands on 鍛錬 because
+     * `GymViewModel.onLeaveShell` rebased the stack on the way out, and a live session survives both
+     * — leaving the gym is not leaving the workout.
+     */
+    fun goGym() {
+        _screen.value = Screen.Gym
+        _searchQuery.value = ""
+    }
+
     /** Open the hidden-apps filter page (launched from the Search header). */
     fun goFilter() {
         _screen.value = Screen.Filter
     }
 
-    // ----- focus mode (landscape flip clock / pomodoro) -----
+    // ----- modes (landscape flip clock / pomodoro, and the gym) -----
 
-    /** True while the "enter focus mode?" confirmation dialog is showing. */
-    private val _pendingFocus = MutableStateFlow(false)
-    val pendingFocus: StateFlow<Boolean> = _pendingFocus.asStateFlow()
+    /** True while the mode chooser is showing. */
+    private val _pendingMode = MutableStateFlow(false)
+    val pendingMode: StateFlow<Boolean> = _pendingMode.asStateFlow()
 
-    /** Long-pressing the Home clock asks to enter focus mode; surfaces the confirmation dialog. */
-    fun requestFocus() {
-        _pendingFocus.value = true
+    /** Long-pressing the Home clock asks which mode to enter; surfaces the chooser. */
+    fun requestMode() {
+        _pendingMode.value = true
     }
 
-    fun cancelFocus() {
-        _pendingFocus.value = false
+    fun cancelMode() {
+        _pendingMode.value = false
     }
 
-    /** Confirm the pending request and step into the full-screen focus page. */
-    fun confirmFocus() {
-        _pendingFocus.value = false
-        goFocus()
-    }
-
-    private fun goFocus() {
-        _screen.value = Screen.Focus
+    /**
+     * Commit to a mode and hand the whole window to it.
+     *
+     * A mode is not a screen the dock can wander back from: each takes the window, and the gym keeps
+     * running state of its own. So the chooser closes first and the screen changes second, and there
+     * There is deliberately no `goFocus()`: [Screen.Focus] is reachable only through a mode the user
+     * picked out loud, because 集中 hides the launcher and should never be one stray tap away.
+     * [Screen.Gym] used to share that rule and no longer does — it has a dock button and [goGym],
+     * since a training log is somewhere you return to rather than somewhere you commit to.
+     */
+    fun confirmMode(mode: LauncherMode) {
+        _pendingMode.value = false
+        _screen.value = when (mode) {
+            LauncherMode.Focus -> Screen.Focus
+            LauncherMode.Gym -> Screen.Gym
+        }
     }
 
     // ----- app blockade (10-day hide) -----
@@ -207,7 +256,7 @@ class LauncherViewModel(
         // Leaving Focus this way unmounts FocusScreen, which restores orientation and system bars.
         _pendingBlock.value = null
         _lockedTap.value = null
-        _pendingFocus.value = false
+        _pendingMode.value = false
         _composing.value = null
         _pendingWrite.value = null
         _calendarFault.value = null
@@ -225,6 +274,15 @@ class LauncherViewModel(
         }
     }
 
+    /**
+     * Choose the UI language. Writes to DataStore only; [lang] updates when the store echoes it back,
+     * so there is one source of truth and no window where the flow and the disk disagree. Exactly
+     * how [toggleTheme] behaves.
+     */
+    fun setLanguage(next: Lang) {
+        viewModelScope.launch { themeRepository.setLanguage(next) }
+    }
+
     fun ensureAppsLoaded() = appRepository.start()
 
     fun launchApp(
@@ -232,11 +290,12 @@ class LauncherViewModel(
         app: AppInfo,
         sourceBounds: android.graphics.Rect? = null,
         opts: android.os.Bundle? = null,
-    ) = appRepository.launch(context, app, sourceBounds, opts)
+    ) = appRepository.launch(context, app, stringsFor(lang.value), sourceBounds, opts)
 
     fun openAppInfo(context: Context, app: AppInfo) = appRepository.openAppInfo(context, app)
 
-    fun requestUninstall(context: Context, app: AppInfo) = appRepository.requestUninstall(context, app)
+    fun requestUninstall(context: Context, app: AppInfo) =
+        appRepository.requestUninstall(context, app, stringsFor(lang.value))
 
     fun setDefaultLauncher(isDefault: Boolean) {
         _isDefaultLauncher.value = isDefault

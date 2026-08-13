@@ -1,6 +1,5 @@
 package io.eddiegulay.tempo.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -20,16 +18,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.LauncherViewModel
 import io.eddiegulay.tempo.data.AppInfo
+import io.eddiegulay.tempo.data.BlockadeRepository
+import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.i18n.Strings
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 import kotlin.math.ceil
 
 /**
@@ -40,6 +43,7 @@ import kotlin.math.ceil
 @Composable
 fun FilterScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
 
     val apps by viewModel.apps.collectAsStateWithLifecycle()
     val blockade by viewModel.blockade.collectAsStateWithLifecycle()
@@ -48,18 +52,26 @@ fun FilterScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifier) {
 
     Column(modifier.fillMaxSize()) {
         Column(Modifier.padding(start = 26.dp, end = 26.dp, top = 20.dp)) {
-            Text(
-                text = "ひひょうじ",
-                style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 6.sp, color = c.inkFaint),
-            )
+            // Absent in English by design: the kana line is the *reading* of the title below it, and
+            // a language with no second script for the same word has nothing to put here. See
+            // `FilterStrings.kana`.
+            s.filter.kana?.let { kana ->
+                Text(
+                    text = kana,
+                    style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 6.sp, color = c.inkFaint),
+                )
+            }
             Box(Modifier.padding(top = 12.dp)) {
                 Text(
-                    text = "非表示アプリ",
+                    text = s.filter.title,
                     style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, color = c.ink),
                 )
             }
             Text(
-                text = "非表示にすると10日間は解除できません",
+                // The day count is read from the constant the dialogs read, not typed in again. It
+                // used to be a literal `10` here, which is a drift waiting for someone to change
+                // BLOCK_DAYS and not grep for the number.
+                text = s.filter.subtitle(BlockadeRepository.BLOCK_DAYS),
                 style = TextStyle(fontFamily = Gothic, fontSize = 11.sp, letterSpacing = 2.sp, color = c.inkFaint),
                 modifier = Modifier.padding(top = 8.dp),
             )
@@ -93,6 +105,7 @@ private fun FilterRow(
     onLocked: () -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
 
     val isBlocked = unlockAt != null
     val remaining = if (unlockAt != null) (unlockAt - now).coerceAtLeast(0L) else 0L
@@ -106,16 +119,17 @@ private fun FilterRow(
     }
     val subtitle = when {
         !isBlocked -> null
-        unlockable -> "解除できます"
-        else -> "あと${remainingLabel(remaining)}"
+        unlockable -> s.filter.rowUnlockable
+        else -> s.filter.rowRemaining(remainingLabel(remaining, s))
     }
     val dim = isBlocked && !unlockable
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
+            // The same row shape as Search's app list, because it is the same inventory seen through a
+            // different lens — the two pages must feel like one under a finger.
+            .pressable(TempoShapes.Row, role = Role.Button, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(18.dp),
@@ -152,8 +166,21 @@ private fun FilterRow(
     }
 }
 
-/** Coarse remaining-time label: days while >= 1 day, else hours, else "1時間". */
-private fun remainingLabel(millis: Long): String {
+/**
+ * Coarse remaining-time label: days while >= 1 day, else hours, floored at one hour.
+ *
+ * **The hours branch is not migrated, and that is an open escalation rather than an oversight.**
+ * [io.eddiegulay.tempo.i18n.Formats] carries counters for 回 巡 種目 秒 分 日 月 件 番目 — there is no
+ * hours counter, and the migration brief is explicit that a namespace must not grow a second one
+ * privately. Nothing else substitutes: `fmt.duration` is right in English (`23h`) and wrong in
+ * Japanese, where `durationKanji` has no hours at all and renders 23 hours as 千三百八十分, and
+ * `fmt.minutes` says the same thing in the same wrong unit. Rewriting the branch to report days would
+ * change what Japanese users see today, which this migration is not allowed to do.
+ *
+ * `Formats.hours(n)` exists for exactly this, and is the only correct way to say a number of hours in
+ * either language. The sub-day branch is reached on the last day of a ten-day block.
+ */
+private fun remainingLabel(millis: Long, strings: Strings): String {
     val hours = millis / (60L * 60L * 1000L)
-    return if (hours >= 24) "${ceil(hours / 24.0).toInt()}日" else "${maxOf(hours, 1L)}時間"
+    return if (hours >= 24) strings.fmt.days(ceil(hours / 24.0).toInt()) else strings.fmt.hours(maxOf(hours, 1L).toInt())
 }

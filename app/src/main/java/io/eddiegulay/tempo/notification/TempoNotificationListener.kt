@@ -12,6 +12,11 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.graphics.drawable.toBitmap
 import io.eddiegulay.tempo.data.BlockadeRepository
+import io.eddiegulay.tempo.data.ThemeRepository
+import io.eddiegulay.tempo.i18n.Lang
+import io.eddiegulay.tempo.i18n.Strings
+import io.eddiegulay.tempo.i18n.StringsJa
+import io.eddiegulay.tempo.i18n.stringsFor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,11 +39,35 @@ class TempoNotificationListener : NotificationListenerService() {
 
     private var scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val blockade by lazy { BlockadeRepository.getInstance(applicationContext) }
+    private val settings by lazy { ThemeRepository(applicationContext) }
+
+    /**
+     * The copy table this service formats timestamps with.
+     *
+     * A bound service has no composition, so it cannot read `LocalStrings`; it resolves its own and
+     * keeps it current. Seeded on connect and replaced from [ThemeRepository.language], because
+     * `TempoNotification.time` is **baked in at snapshot time** — a language switch is only visible
+     * once the snapshot is retaken, which is why the collector re-runs [refresh].
+     *
+     * Read and written on the service's main thread only (the callbacks and `Main.immediate` are the
+     * same thread), so this needs no synchronisation.
+     */
+    private var strings: Strings = StringsJa
 
     override fun onListenerConnected() {
         activeInstance = this
         // A disconnected scope is cancelled for good, so start a fresh one on (re)connect.
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        // Seed synchronously so the very first snapshot is already in the right language — the same
+        // single file read the first frame does, for the same reason. `drop(1)` below then skips the
+        // emission we just read.
+        strings = stringsFor(runCatching { settings.loadInitialSettings().lang }.getOrDefault(Lang.Ja))
+        scope.launch {
+            settings.language.drop(1).collect { lang ->
+                strings = stringsFor(lang)
+                refresh()
+            }
+        }
         // Re-suppress when the blocked set changes (e.g. an app is blocked while it has a live
         // notification). `drop(1)` skips the seeded value — onListenerConnected already refreshes.
         scope.launch { blockade.blockade.drop(1).collect { refresh() } }
@@ -150,14 +179,35 @@ class TempoNotificationListener : NotificationListenerService() {
         pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
     }.getOrDefault(packageName)
 
+    /**
+     * The timestamp on a notification card: clock today, a relative word yesterday, a date beyond.
+     *
+     * **This used to be the app's third relative-day vocabulary**, and the only one that was not
+     * `JapaneseDate`'s. It said 昨日 where `GymHomeCopy` says きのう, and it rendered older dates as
+     * `"%d/%d"` — arabic, slash-separated, no year, and day/month-ambiguous outside Japan and the US —
+     * where `JapaneseDate.monthDay` says 六月十七日. Two renderings of the same idea, disagreeing about
+     * both script and separator, in one app.
+     *
+     * It now goes through `fmt`, which changes three outputs and is meant to:
+     *
+     * | posted | before | ja now | en now |
+     * |---|---|---|---|
+     * | today | `09:05` | `09:05` | `09:05` |
+     * | yesterday | `昨日` | `きのう` | `Yesterday` |
+     * | older | `6/17` | `六月十七日` | `17 June` |
+     *
+     * The hiragana is `fmt.relativeDay`'s backward-looking vocabulary, which is the correct one here:
+     * a posted notification is in the past, and 昨日 was the odd one out (§H3, §L7).
+     */
     private fun formatTime(postTime: Long): String {
         val zone = ZoneId.systemDefault()
         val posted = Instant.ofEpochMilli(postTime).atZone(zone)
         val today = LocalDate.now(zone)
-        return when (posted.toLocalDate()) {
-            today -> "%02d:%02d".format(posted.hour, posted.minute)
-            today.minusDays(1) -> "昨日"
-            else -> "%d/%d".format(posted.monthValue, posted.dayOfMonth)
+        val date = posted.toLocalDate()
+        return when {
+            date == today -> strings.fmt.clockAt(posted.toLocalDateTime())
+            date == today.minusDays(1) -> strings.fmt.relativeDay(date, today)
+            else -> strings.fmt.monthDay(posted.toLocalDateTime())
         }
     }
 

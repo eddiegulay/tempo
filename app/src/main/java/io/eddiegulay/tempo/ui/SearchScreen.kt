@@ -1,10 +1,8 @@
 package io.eddiegulay.tempo.ui
 
 import android.app.ActivityOptions
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,7 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -53,14 +50,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.LauncherViewModel
 import io.eddiegulay.tempo.data.AppInfo
 import io.eddiegulay.tempo.ui.theme.Gothic
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.combinedPressable
 import java.time.Instant
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-
-/** Japanese month/day for the app subtitle, e.g. "6月10日". */
-private val updatedFormatter = DateTimeFormatter.ofPattern("M月d日")
 
 /**
  * Search (検索): a bottom-ruled mincho input over a live-filtered list of every installed app.
@@ -78,9 +74,15 @@ fun SearchScreen(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val context = LocalContext.current
 
     val query by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val lang by viewModel.lang.collectAsStateWithLifecycle()
+
+    // Local, not hoisted: the picker is a transient sheet over this page and nothing outside Search
+    // needs to know it is open. Same treatment the app-info menu below already gets.
+    var showLanguage by remember { mutableStateOf(false) }
     val apps by viewModel.visibleApps.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { viewModel.ensureAppsLoaded() }
@@ -111,7 +113,7 @@ fun SearchScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "けんさく",
+                    text = s.search.heading,
                     style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 6.sp, color = c.inkFaint),
                 )
                 // Trailing controls: hidden-apps filter page, then the theme toggle (relocated from
@@ -119,13 +121,18 @@ fun SearchScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     HeaderIconButton(
                         paths = TempoIcons.EyeOff,
-                        contentDescription = "非表示アプリ",
+                        contentDescription = s.search.hiddenApps,
                         onClick = onOpenFilter,
                     )
                     HeaderIconButton(
                         paths = if (isDark) TempoIcons.Sun else TempoIcons.Moon,
-                        contentDescription = if (isDark) "ライトテーマに切り替え" else "ダークテーマに切り替え",
+                        contentDescription = if (isDark) s.search.toLightTheme else s.search.toDarkTheme,
                         onClick = onToggleTheme,
+                    )
+                    HeaderIconButton(
+                        paths = TempoIcons.Globe,
+                        contentDescription = s.search.language,
+                        onClick = { showLanguage = true },
                     )
                 }
             }
@@ -144,7 +151,7 @@ fun SearchScreen(
                         Box(Modifier.padding(vertical = 8.dp, horizontal = 2.dp)) {
                             if (query.isEmpty()) {
                                 Text(
-                                    text = "検索",
+                                    text = s.search.placeholder,
                                     style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, color = c.inkFaint),
                                 )
                             }
@@ -165,7 +172,7 @@ fun SearchScreen(
                 item {
                     Box(Modifier.fillMaxWidth().padding(top = 70.dp), contentAlignment = Alignment.Center) {
                         Text(
-                            text = if (loading) "・・・" else "見つかりません",
+                            text = if (loading) s.search.loading else s.search.empty,
                             style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
                         )
                     }
@@ -176,12 +183,26 @@ fun SearchScreen(
             }
         }
     }
+
+    // Choosing dismisses: the picker has done its job the moment a language is chosen, and the whole
+    // screen behind it is already redrawing in the new language, so leaving the sheet up would make
+    // the user close a dialog whose question has visibly been answered.
+    if (showLanguage) {
+        LanguageDialog(
+            current = lang,
+            onChoose = {
+                viewModel.setLanguage(it)
+                showLanguage = false
+            },
+            onDismiss = { showLanguage = false },
+        )
+    }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AppRow(viewModel: LauncherViewModel, app: AppInfo) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val context = LocalContext.current
     val rootView = LocalView.current
 
@@ -192,14 +213,18 @@ private fun AppRow(viewModel: LauncherViewModel, app: AppInfo) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
                 .onGloballyPositioned { coords ->
                     val r = coords.boundsInWindow()
                     rowBounds = android.graphics.Rect(r.left.toInt(), r.top.toInt(), r.right.toInt(), r.bottom.toInt())
                 }
-                .combinedClickable(
-                    onClickLabel = "起動",
-                    onLongClickLabel = "メニュー",
+                // The launch animation scales the new app's window up out of *these* bounds, so the
+                // press wash and the window it hands off to are the same rounded rectangle.
+                .combinedPressable(
+                    shape = TempoShapes.Row,
+                    role = Role.Button,
+                    onClickLabel = s.search.launch,
+                    onLongClickLabel = s.search.menu,
+                    onLongClick = { menuOpen = true },
                     onClick = {
                         val b = rowBounds
                         val opts = if (b != null) {
@@ -207,7 +232,6 @@ private fun AppRow(viewModel: LauncherViewModel, app: AppInfo) {
                         } else null
                         viewModel.launchApp(context, app, b, opts)
                     },
-                    onLongClick = { menuOpen = true },
                 )
                 .padding(horizontal = 12.dp, vertical = 13.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -221,9 +245,10 @@ private fun AppRow(viewModel: LauncherViewModel, app: AppInfo) {
                 )
                 // Subtitle: app category and last-updated date (e.g. "生産性 · 更新 6月10日"), each
                 // dropped when unavailable. Replaces the developer-facing package name.
-                val subtitle = remember(app.category, app.lastUpdated) {
+                val subtitle = remember(app.category, app.lastUpdated, s) {
                     val date = app.lastUpdated.takeIf { it > 0L }?.let {
-                        "更新 " + Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).format(updatedFormatter)
+                        s.search.updatedPrefix +
+                            s.fmt.monthDay(Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDateTime())
                     }
                     listOfNotNull(app.category, date).joinToString(" · ")
                 }
@@ -238,21 +263,21 @@ private fun AppRow(viewModel: LauncherViewModel, app: AppInfo) {
 
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             DropdownMenuItem(
-                text = { Text("アプリ情報", style = TextStyle(fontFamily = Mincho, color = c.ink)) },
+                text = { Text(s.search.appInfo, style = TextStyle(fontFamily = Mincho, color = c.ink)) },
                 onClick = {
                     menuOpen = false
                     viewModel.openAppInfo(context, app)
                 },
             )
             DropdownMenuItem(
-                text = { Text("非表示にする", style = TextStyle(fontFamily = Mincho, color = c.ink)) },
+                text = { Text(s.search.hideApp, style = TextStyle(fontFamily = Mincho, color = c.ink)) },
                 onClick = {
                     menuOpen = false
                     viewModel.requestBlock(app)
                 },
             )
             DropdownMenuItem(
-                text = { Text("アンインストール", style = TextStyle(fontFamily = Mincho, color = c.ink)) },
+                text = { Text(s.search.uninstall, style = TextStyle(fontFamily = Mincho, color = c.ink)) },
                 onClick = {
                     menuOpen = false
                     viewModel.requestUninstall(context, app)
@@ -262,7 +287,14 @@ private fun AppRow(viewModel: LauncherViewModel, app: AppInfo) {
     }
 }
 
-/** A faint, 48dp-target line-icon button used in the Search header (filter + theme toggle). */
+/**
+ * A faint, 48dp-target line-icon button used in the Search header (filter + theme toggle).
+ *
+ * **No indication, deliberately** — and it is the one control in this file that keeps that. These
+ * three glyphs are page chrome sitting beside a 14sp heading; a wash under each would put three grey
+ * tiles across the top of the quietest screen in the app. The result of every one of them is instant
+ * and unmistakable (the page turns, the theme flips, a picker opens), which is the feedback.
+ */
 @Composable
 private fun HeaderIconButton(
     paths: List<String>,
@@ -273,7 +305,7 @@ private fun HeaderIconButton(
     Box(
         modifier = Modifier
             .size(48.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(TempoShapes.Glyph)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,

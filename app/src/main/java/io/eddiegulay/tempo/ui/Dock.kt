@@ -25,12 +25,23 @@ import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
+import io.eddiegulay.tempo.ui.theme.TempoShapes
 
 /**
- * The bottom dock: an iOS-style floating pill holding Home / Search / Notifications, the active tab
- * in vermillion accent. The capsule reads as floating over content via a faint card fill and a
- * hairline border. A slim indicator sits below — long-pressing it requests the default-home role.
+ * The bottom dock: an iOS-style floating pill holding Home / Search / Notifications / 鍛錬, the
+ * active tab in vermillion accent. The capsule reads as floating over content via a faint card fill
+ * and a hairline border. A slim indicator sits below — long-pressing it requests the default-home role.
+ *
+ * **鍛錬 is a fourth button rather than a long-press on ホーム.** Two reasons, and the second is the
+ * deciding one. A long-press is undiscoverable for a whole mode of the app — the clock's long-press
+ * was reasonable for 集中 because 集中 hides everything anyway, but a workout log you are meant to
+ * return to daily needs a place you can point at. And the pill *already* long-presses: the Row above
+ * claims that gesture for the default-home role, so a long-press on a child button would sit inside
+ * a parent that wants the same gesture, and which of the two won would depend on hit-test order.
+ *
+ * Four is still under the bar this dock sets for itself. A fifth would not be.
  *
  * The theme toggle no longer lives here; it moved to the Search screen's top-right.
  */
@@ -41,11 +52,13 @@ fun Dock(
     onHome: () -> Unit,
     onSearch: () -> Unit,
     onNotifications: () -> Unit,
+    onGym: () -> Unit,
     onRequestDefault: () -> Unit,
     modifier: Modifier = Modifier,
     frosted: Boolean = false,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val pillShape = RoundedCornerShape(percent = 50)
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -68,7 +81,7 @@ fun Dock(
                 }
                 .semantics {
                     if (!isDefaultLauncher) {
-                        onLongClick(label = "Tempoを既定のホームに設定") {
+                        onLongClick(label = s.app.dockSetDefault) {
                             onRequestDefault()
                             true
                         }
@@ -78,13 +91,23 @@ fun Dock(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            DockButton(TempoIcons.Home, active = current == Screen.Home, contentDescription = "ホーム", onClick = onHome)
-            DockButton(TempoIcons.Search, active = current == Screen.Search, contentDescription = "検索", onClick = onSearch)
-            DockButton(TempoIcons.Bell, active = current == Screen.Notifications, contentDescription = "通知", onClick = onNotifications)
+            DockButton(TempoIcons.Home, active = current == Screen.Home, contentDescription = s.app.dockHome, onClick = onHome)
+            DockButton(TempoIcons.Search, active = current == Screen.Search, contentDescription = s.app.dockSearch, onClick = onSearch)
+            DockButton(TempoIcons.Bell, active = current == Screen.Notifications, contentDescription = s.app.dockNotifications, onClick = onNotifications)
+            DockButton(TempoIcons.Dumbbell, active = current == Screen.Gym, contentDescription = s.app.dockGym, onClick = onGym)
         }
     }
 }
 
+/**
+ * One dock tab.
+ *
+ * **No indication, and it must stay that way.** The dock is a floating capsule barely wider than its
+ * four glyphs, so a press wash inside a tab would draw a tile *inside* the pill — a rectangle in a
+ * capsule, which is the exact fault the house press indication was written to remove. The tint moving
+ * to vermillion is the feedback, and it is the only one this control needs: every tab changes the
+ * whole page under it.
+ */
 @Composable
 private fun DockButton(
     paths: List<String>,
@@ -98,7 +121,7 @@ private fun DockButton(
         modifier = Modifier
             // 48dp meets the minimum accessible touch target while the glyph stays 23dp.
             .size(48.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(TempoShapes.Glyph)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,

@@ -8,7 +8,27 @@
       the internal ledger (blockade.json) is included in cloud backup (see @xml/backup_rules and
       @xml/data_extraction_rules) and restored on reinstall, keyed to the user's Google account. This
       requires no runtime permission.
+
+      The 鍛錬 training history (exercise.db) is included in the same two rule files, main database
+      file only. A year of training is worth restoring, and there is nothing sensitive in it.
+
+      鍛錬 adds one component: the health foreground service declared at the foot of this file
+      (00-plan.md §6 Phase 3). It is NOT what makes a backgrounded session correct — the player keeps
+      the screen on with FLAG_KEEP_SCREEN_ON and derives its timeline from a monotonic clock, which
+      03-player.md §E.5 documents as already correct on return without any service. What the service
+      buys is the audio and haptic cue channel surviving a pocket, and it is written so that a user who
+      grants nothing trains exactly as they did in Phase 1.
     -->
+
+    <!--
+      The session player's haptic channel: a pulse at each phase change, so a countdown can be felt
+      through a pocket rather than watched. VIBRATE is a normal install-time permission — it is granted
+      at install, there is no runtime prompt and no user-visible ceremony, which is why it does not
+      engage 03-player.md §E.5's Phase-1 refusal of runtime and foreground-service entries. Vibrator
+      calls are unconditional in GymHaptics, so without this the whole channel is silently inert and
+      lint fails with MissingPermission.
+    -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!--
       The 予定 page reads the device's calendar through CalendarContract — the same provider the
@@ -19,6 +39,39 @@
     -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+
+    <!--
+      GYM.SESSION.COMPLETE's 予定に入れる hand-off adds NO permission: it writes through the very
+      CalendarRepository the 予定 composer writes through, behind the same EventConfirmDialog gate, so
+      the two lines above are the whole of what it needs (04-library-records.md §4 row 8).
+    -->
+
+    <!--
+      The health foreground service (gym/TrainingService.kt).
+
+      FOREGROUND_SERVICE and FOREGROUND_SERVICE_HEALTH are normal install-time permissions: they are
+      the right to run the service at all, and neither prompts.
+
+      POST_NOTIFICATIONS is a RUNTIME permission from API 33. It is requested exactly once, on the
+      record screen after a session has ended (TrainingConsentMount), and never on launch and never in
+      front of a workout. A denial suppresses the notification and the service still runs.
+
+      ACTIVITY_RECOGNITION is a RUNTIME permission and is here for one concrete, checkable reason: from
+      API 34 a service declaring foregroundServiceType="health" may only call startForeground() while
+      the app holds at least one of BODY_SENSORS, READ_HEART_RATE, READ_SKIN_TEMPERATURE,
+      READ_OXYGEN_SATURATION or ACTIVITY_RECOGNITION. Without one of them the service cannot be created
+      at all. It is therefore requested only on API 34+ (TrainingConsent.required), and a denial costs
+      the notification, never the workout — startForeground is wrapped and the service stops itself.
+
+      REJECTED: HIGH_SAMPLING_RATE_SENSORS, which satisfies the same API 34 prerequisite by manifest
+      declaration alone with no runtime prompt. Tempo reads no sensor at any rate, and taking a sensor
+      permission by install-time default *because* the user cannot decline it is worse than asking for
+      the one they can.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
 
     <!--
       A home app legitimately needs to see every launchable app to populate Search.
@@ -74,6 +127,27 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <!--
+          鍛錬's live session, held in the foreground so its cues survive a pocket (00-plan.md §6).
+
+          exported="false": the two notification actions are PendingIntents this app creates for
+          itself, and nothing outside Tempo has any business starting a workout.
+
+          stopWithTask="true": one of three independent guarantees that the service never outlives a
+          session. The other two are in Kotlin — START_NOT_STICKY and the mount's onDispose — because
+          a stuck foreground notification is worse than no notification at all.
+
+          It is three and not four because this attribute *removes* a hook rather than adding one:
+          with FLAG_STOP_WITH_TASK set the framework stops the service itself and Service.onTaskRemoved
+          is never delivered, so an override for it is dead code claiming a guarantee. Setting this and
+          overriding that is the contradiction TrainingManifestTest refuses.
+        -->
+        <service
+            android:name=".gym.TrainingService"
+            android:exported="false"
+            android:foregroundServiceType="health"
+            android:stopWithTask="true" />
 
     </application>
 

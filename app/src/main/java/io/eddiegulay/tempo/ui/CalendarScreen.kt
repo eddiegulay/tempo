@@ -2,7 +2,6 @@ package io.eddiegulay.tempo.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,7 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -25,7 +23,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -45,12 +42,15 @@ import io.eddiegulay.tempo.LauncherViewModel
 import io.eddiegulay.tempo.calendar.CalendarEvent
 import io.eddiegulay.tempo.calendar.CalendarFault
 import io.eddiegulay.tempo.calendar.Loadable
+import io.eddiegulay.tempo.calendar.displayTitle
 import io.eddiegulay.tempo.calendar.rememberCalendarPermissionState
 import io.eddiegulay.tempo.calendar.toEpochMillis
-import io.eddiegulay.tempo.data.JapaneseDate
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 import java.time.LocalDate
 
 /**
@@ -67,6 +67,7 @@ import java.time.LocalDate
 @Composable
 fun CalendarScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val context = LocalContext.current
     val now by rememberMinuteTime()
 
@@ -102,19 +103,19 @@ fun CalendarScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifier) 
         ) {
             Column {
                 Text(
-                    text = "予定",
+                    text = s.calendar.title,
                     style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
                 )
                 Spacer(Modifier.height(7.dp))
                 Text(
-                    text = "${JapaneseDate.era(now)} ・ ${JapaneseDate.monthDay(now)}",
+                    text = s.fmt.era(now) + s.fmt.separator + s.fmt.monthDay(now),
                     style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 4.sp, color = c.inkFaint),
                 )
             }
             if (granted) {
                 HeaderAction(
-                    label = "加える",
-                    description = "予定を加える",
+                    label = s.calendar.add,
+                    description = s.calendar.addEvent,
                     color = c.accent,
                     onClick = { viewModel.composeNewEvent() },
                 )
@@ -128,7 +129,7 @@ fun CalendarScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifier) 
                     onClick = permission.request,
                 )
 
-                // Never "予定はありません" for a calendar we failed to read — see [Loadable].
+                // Never `calendar.empty` for a calendar we failed to read — see [Loadable].
                 agenda is Loadable.Failed -> FaultPanel(
                     fault = (agenda as Loadable.Failed).fault,
                     onRecover = {
@@ -137,9 +138,9 @@ fun CalendarScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifier) 
                     },
                 )
 
-                agenda is Loadable.Loading -> EmptyState(text = "読み込み中")
+                agenda is Loadable.Loading -> EmptyState(text = s.calendar.loading)
 
-                events.isEmpty() -> EmptyState(text = "予定はありません")
+                events.isEmpty() -> EmptyState(text = s.calendar.empty)
 
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 6.dp),
@@ -166,13 +167,17 @@ fun CalendarScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifier) 
 @Composable
 private fun DayHeader(date: LocalDate, today: LocalDate, count: Int) {
     val c = LocalTempoColors.current
-    val label = JapaneseDate.dayHeading(date, today)
+    val s = LocalStrings.current
+    val label = s.fmt.dayHeading(date, today)
+    // The badge beside the label stays arabic in both languages — it is a numeral in a fixed slot,
+    // drawn in Gothic, not a sentence. Only the spoken form is a counter, and a counter is `fmt`'s.
+    val spoken = label + s.fmt.listSeparator + s.fmt.items(count)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             // Inset to the card's internal padding so the label lines up with the card titles.
             .padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 6.dp)
-            .clearAndSetSemantics { contentDescription = "$label、${count}件" },
+            .clearAndSetSemantics { contentDescription = spoken },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(9.dp),
     ) {
@@ -195,44 +200,51 @@ private fun DayHeader(date: LocalDate, today: LocalDate, count: Int) {
 @Composable
 private fun EventCard(event: CalendarEvent, nowMillis: Long, onClick: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val ongoing = event.isOngoing(nowMillis)
 
+    // Resolved here, at the last possible moment, and never put back on the event: see [displayTitle].
+    val title = event.displayTitle(s)
+
     val timeLabel = when {
-        event.allDay -> "終日"
-        else -> JapaneseDate.clock(event.startDateTime())
+        event.allDay -> s.calendar.allDay
+        else -> s.fmt.clockAt(event.startDateTime())
     }
-    val detail = remember(event) {
+    val detail = remember(event, s) {
         val span = if (event.allDay) {
             val lastDay = event.endDateTime().toLocalDate().minusDays(1)
             if (lastDay.isAfter(event.date())) {
-                "終日 ・ ${JapaneseDate.monthDay(lastDay.atStartOfDay())}まで"
+                s.calendar.allDayUntil(s.fmt.monthDay(lastDay.atStartOfDay()))
             } else {
-                "終日"
+                s.calendar.allDay
             }
         } else {
-            "${JapaneseDate.clock(event.startDateTime())} – ${JapaneseDate.clock(event.endDateTime())}"
+            s.fmt.clockAt(event.startDateTime()) + " – " + s.fmt.clockAt(event.endDateTime())
         }
-        listOfNotNull(span, event.location).joinToString(" ・ ")
+        listOfNotNull(span, event.location).joinToString(s.fmt.separator)
     }
     // Flagged up front, so a read-only composer is never a surprise when the user taps in.
-    val source = remember(event) {
+    val source = remember(event, s) {
         listOfNotNull(
             event.calendarName.takeIf { it.isNotBlank() },
-            "繰り返し".takeIf { event.recurring },
-        ).joinToString(" ・ ")
+            s.calendar.recurring.takeIf { event.recurring },
+        ).joinToString(s.fmt.separator)
     }
 
-    val description = remember(event, ongoing) {
-        listOfNotNull(event.title, detail, source, "いま".takeIf { ongoing }).joinToString("、")
+    val description = remember(event, ongoing, s) {
+        listOfNotNull(title, detail, source, s.calendar.ongoing.takeIf { ongoing })
+            .joinToString(s.fmt.listSeparator)
     }
 
     Column(
         Modifier
             .fillMaxWidth()
             .padding(vertical = 5.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(c.card)
-            .clickable(onClick = onClick)
+            // Whole card, one shape: the fill and the press wash take the same corner, so a pressed
+            // card darkens exactly within its own outline. The role stays in the semantics block
+            // because `clearAndSetSemantics` discards anything the click modifier declared.
+            .background(c.card, TempoShapes.Card)
+            .pressable(TempoShapes.Card, onClick = onClick)
             .clearAndSetSemantics {
                 contentDescription = description
                 role = Role.Button
@@ -256,7 +268,7 @@ private fun EventCard(event: CalendarEvent, nowMillis: Long, onClick: () -> Unit
                     verticalAlignment = Alignment.Top,
                 ) {
                     Text(
-                        text = event.title,
+                        text = title,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = true),
@@ -264,7 +276,7 @@ private fun EventCard(event: CalendarEvent, nowMillis: Long, onClick: () -> Unit
                     )
                     if (ongoing) {
                         Text(
-                            text = "いま",
+                            text = s.calendar.ongoing,
                             style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, color = c.accent),
                         )
                     } else {
@@ -293,7 +305,13 @@ private fun EventCard(event: CalendarEvent, nowMillis: Long, onClick: () -> Unit
     }
 }
 
-/** A quiet word in a page header — 加える, or the composer's 保存 / やめる. */
+/**
+ * A quiet word in a page header — `calendar.add`, or the composer's save / cancel.
+ *
+ * A lozenge, because there is nothing here but the word: no fill, no border, so the press wash is the
+ * control's only outline and it should read as ink gathering round the word rather than a tile behind
+ * it. Disabled, `pressable` emits no interactions at all, so 保存 greyed out also stays silent.
+ */
 @Composable
 fun HeaderAction(
     label: String,
@@ -305,9 +323,9 @@ fun HeaderAction(
     Box(
         modifier = Modifier
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .clickable(enabled = enabled, onClick = onClick)
-            .semantics { role = Role.Button; contentDescription = description }
-            .padding(horizontal = 6.dp),
+            .pressable(TempoShapes.Word, enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = description }
+            .padding(horizontal = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -327,19 +345,19 @@ fun HeaderAction(
 @Composable
 private fun AccessPrompt(permanentlyDenied: Boolean, onClick: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(
-                text = if (permanentlyDenied) "設定から許可してください" else "予定へのアクセス",
+                text = if (permanentlyDenied) s.calendar.accessDeniedTitle else s.calendar.accessTitle,
                 style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, lineHeight = 28.sp, letterSpacing = 4.sp, color = c.inkSoft),
             )
             Text(
-                text = if (permanentlyDenied) "設定を開く" else "タップして許可",
+                text = if (permanentlyDenied) s.calendar.accessOpenSettings else s.calendar.accessGrant,
                 modifier = Modifier
                     .sizeIn(minHeight = 48.dp)
-                    .clickable(onClick = onClick)
-                    .semantics { role = Role.Button }
-                    .padding(vertical = 12.dp),
+                    .pressable(TempoShapes.Word, role = Role.Button, onClick = onClick)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = 3.sp, color = c.accent),
             )
         }

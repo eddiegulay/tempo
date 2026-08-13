@@ -115,6 +115,15 @@ fun openAccountSettings(context: Context) {
     }
 }
 
-private fun Context.findActivity(): Activity? = generateSequence(this) {
+/**
+ * The hosting Activity, unwrapped from whatever `ContextWrapper` chain Compose handed us.
+ *
+ * `internal` and authoritative — `DECISIONS.md` §Q7's rule, applied to a platform idiom rather than a
+ * formatter. It was `private` here and restated verbatim in two other files; the copies are gone. It
+ * lives in the calendar package because that is where it was first needed, not because it is about
+ * calendars: `shouldShowRequestPermissionRationale` needs an Activity and `LocalContext` is not one,
+ * which is true of every runtime permission this app will ever ask for.
+ */
+internal fun Context.findActivity(): Activity? = generateSequence(this) {
     (it as? ContextWrapper)?.baseContext
 }.filterIsInstance<Activity>().firstOrNull()

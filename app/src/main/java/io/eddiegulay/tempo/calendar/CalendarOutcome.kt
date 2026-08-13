@@ -1,5 +1,7 @@
 package io.eddiegulay.tempo.calendar
 
+import io.eddiegulay.tempo.data.TempoFault
+
 /**
  * Everything that can go wrong between Tempo and the calendar provider.
  *
@@ -7,8 +9,13 @@ package io.eddiegulay.tempo.calendar
  * platform threw: a SecurityException and a revoked toggle in Settings are the same fault, because
  * they have the same remedy. Anything genuinely unforeseen lands in [Unknown] and is still shown —
  * an unexplained failure the user can retry beats a silent one they can't.
+ *
+ * It is a [TempoFault] so that the calendar's failures and the gym's travel through the same
+ * [Loadable] and out through the same strip. Widening the *carrier* rather than merging the two case
+ * lists was deliberate: 予定 faults are named for calendar remedies and would be nonsense on a gym
+ * page, and a single flat fault enum would have to be exhaustively matched by both features forever.
  */
-sealed interface CalendarFault {
+sealed interface CalendarFault : TempoFault {
 
     /** Access was refused or revoked. Remedy: ask again, or open Settings if permanently denied. */
     data object PermissionLost : CalendarFault
@@ -35,6 +42,11 @@ sealed interface CalendarFault {
  * failed to load and an agenda with nothing in it are the same picture — an empty page — and telling
  * the user "予定はありません" when the truth is "we couldn't read your calendar" is the single most
  * damaging thing this feature could do, because they would trust it and miss a meeting.
+ *
+ * [Failed] carries a [TempoFault] rather than a [CalendarFault] because the promise above is not
+ * about calendars — an unreadable training history rendering as 記録はありません is the same lie. The
+ * type stayed here, in the calendar package, rather than moving to `data/`: it is used from every
+ * calendar file and a move would have churned a dozen imports to say nothing new.
  */
 sealed interface Loadable<out T> {
 
@@ -42,7 +54,7 @@ sealed interface Loadable<out T> {
 
     data class Ready<out T>(val value: T) : Loadable<T>
 
-    data class Failed(val fault: CalendarFault) : Loadable<Nothing>
+    data class Failed(val fault: TempoFault) : Loadable<Nothing>
 
     /** The value if it arrived, otherwise null — for callers that can honestly degrade, like Home. */
     fun valueOrNull(): T? = (this as? Ready)?.value

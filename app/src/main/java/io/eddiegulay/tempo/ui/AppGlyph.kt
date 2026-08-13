@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.sp
 import io.eddiegulay.tempo.data.AppInfo
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import java.text.BreakIterator
 
 /**
  * Tempo's internal, hand-drawn icon set — monochrome stroked line glyphs (24×24, round caps) in the
@@ -120,10 +121,27 @@ fun AppGlyph(
     }
 }
 
+/**
+ * The unclassifiable app's tile: the first *grapheme cluster* of its name on washi.
+ *
+ * **A cluster, not a `Char`.** `firstOrNull()` returns one UTF-16 code unit, so an app named with an
+ * emoji handed back half a surrogate pair — a lone unpaired surrogate, which is not a character at
+ * all and draws as tofu. A `BreakIterator` boundary is the smallest unit that is always something a
+ * reader would call one mark: it keeps a surrogate pair whole, and also keeps a flag's two regional
+ * indicators and a ZWJ sequence together.
+ *
+ * **Two sizes.** The tile is 26.dp square and the 0.5 ratio was tuned for a CJK glyph, which advances
+ * almost exactly one em and fills half the tile. Latin averages about half that, so an `S` at the same
+ * size is a small letter floating in a large box rather than a monogram. Latin is therefore drawn at
+ * 0.62 of the tile, which lands it at roughly the same optical weight. This is a judgement, not a
+ * measurement — the honest version measures the glyph, and that is a `TextMeasurer` change this file
+ * does not otherwise need.
+ */
 @Composable
 private fun Monogram(label: String, color: Color, modifier: Modifier, size: Dp) {
     val c = LocalTempoColors.current
-    val ch = remember(label) { label.trim().firstOrNull()?.toString() ?: "・" }
+    val ch = remember(label) { firstMark(label) }
+    val ratio = if (ch.isEmpty() || isFullWidth(ch[0])) 0.5f else 0.62f
     val shape = RoundedCornerShape(7.dp)
     Box(
         modifier = modifier
@@ -134,10 +152,28 @@ private fun Monogram(label: String, color: Color, modifier: Modifier, size: Dp) 
     ) {
         Text(
             text = ch,
-            style = TextStyle(fontFamily = Mincho, fontSize = (size.value * 0.5f).sp, color = color),
+            style = TextStyle(fontFamily = Mincho, fontSize = (size.value * ratio).sp, color = color),
         )
     }
 }
+
+/** The first grapheme cluster of [label], or the middle-dot placeholder when there is nothing to draw. */
+internal fun firstMark(label: String): String {
+    val trimmed = label.trim()
+    if (trimmed.isEmpty()) return "・"
+    val boundaries = BreakIterator.getCharacterInstance()
+    boundaries.setText(trimmed)
+    val end = boundaries.next()
+    return if (end == BreakIterator.DONE || end <= 0) trimmed.substring(0, 1) else trimmed.substring(0, end)
+}
+
+/**
+ * True for a glyph that advances roughly a full em: CJK ideographs, kana and CJK punctuation.
+ *
+ * The same U+2E80 threshold `Tategaki.kt` uses to decide what stacks upright, for the same underlying
+ * reason — below it, glyphs are proportional and much narrower than a square.
+ */
+private fun isFullWidth(ch: Char): Boolean = ch.code >= 0x2E80
 
 /**
  * Popular apps keyed by exact package id — the precise tier, for brands whose id carries no telling
@@ -271,6 +307,12 @@ private val PACKAGE_KEYWORDS: List<Pair<String, List<String>>> = listOf(
  * Telling word → glyph, scanned over the lowercased display name; catches apps whose function lives
  * in the name rather than the package id. Mixes English and Japanese; specific before generic, and
  * deliberately uses longer words to avoid false positives (e.g. "card" must not match "Car").
+ *
+ * **Both halves stay, whatever language Tempo is set to** (`.planning/i18n/DECISIONS.md` §L10). These
+ * are match keys, not copy: they are tested against *other apps'* display names, which come from the
+ * device and do not follow our toggle. A Japanese phone shows 電話 and 設定 under an English UI, so
+ * dropping the Japanese keys would break icon resolution for exactly the users who need it. The table
+ * is already bilingual and is finished as it stands.
  */
 private val LABEL_KEYWORDS: List<Pair<String, List<String>>> = listOf(
     // Japanese

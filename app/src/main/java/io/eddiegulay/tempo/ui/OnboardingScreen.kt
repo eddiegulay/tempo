@@ -2,7 +2,6 @@ package io.eddiegulay.tempo.ui
 
 import android.content.Intent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,7 +30,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
@@ -39,10 +37,14 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import io.eddiegulay.tempo.i18n.Lang
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.notification.TempoNotificationListener
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 
 /**
  * First-launch gate. Before Tempo reaches Home it names every access it relies on and why, then lets
@@ -63,9 +65,12 @@ fun OnboardingScreen(
     isDefaultLauncher: Boolean,
     onRequestDefault: () -> Unit,
     onComplete: () -> Unit,
+    lang: Lang,
+    onChooseLanguage: (Lang) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val context = LocalContext.current
 
     // Notification access can be toggled in Settings while we're away; re-read it on each resume.
@@ -96,14 +101,22 @@ fun OnboardingScreen(
             .padding(horizontal = 32.dp),
     ) {
         Spacer(Modifier.height(56.dp))
+
+        // The language row sits ABOVE the greeting, which is the only position that works. Everything
+        // below it — the greeting, the promise that nothing leaves the device, both permission
+        // rationales — is prose the user has to be able to read *before* granting anything. A control
+        // placed after them would be an apology; placed here it is a prerequisite.
+        LanguageChoice(current = lang, onChoose = onChooseLanguage)
+
+        Spacer(Modifier.height(28.dp))
+
         Text(
-            text = "ようこそ",
+            text = s.onboarding.welcome,
             style = TextStyle(fontFamily = Mincho, fontSize = 30.sp, letterSpacing = 6.sp, color = c.ink),
         )
         Spacer(Modifier.height(14.dp))
         Text(
-            text = "はじめる前に、Tempo が使う権限をお知らせします。" +
-                "いずれも端末の中だけで使われ、外部へ送信されることはありません。",
+            text = s.onboarding.preamble,
             style = TextStyle(
                 fontFamily = Gothic,
                 fontSize = 13.sp,
@@ -116,9 +129,8 @@ fun OnboardingScreen(
         Spacer(Modifier.height(40.dp))
 
         AccessItem(
-            title = "既定のホーム",
-            rationale = "ホームボタンを押したときに Tempo が開くようにします。" +
-                "ランチャーとしての基本的な動作に必要です。",
+            title = s.onboarding.defaultHomeTitle,
+            rationale = s.onboarding.defaultHomeRationale,
             granted = isDefaultLauncher,
             deferred = launcherDeferred,
             onGrant = onRequestDefault,
@@ -128,9 +140,8 @@ fun OnboardingScreen(
         Spacer(Modifier.height(28.dp))
 
         AccessItem(
-            title = "通知へのアクセス",
-            rationale = "受信した通知を読み取り、通知画面（通知）に静かに表示します。" +
-                "内容が端末の外に出ることはありません。",
+            title = s.onboarding.notificationAccessTitle,
+            rationale = s.onboarding.notificationAccessRationale,
             granted = notifEnabled,
             deferred = notifDeferred,
             onGrant = {
@@ -164,6 +175,7 @@ private fun AccessItem(
     onDefer: () -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
 
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
@@ -186,13 +198,13 @@ private fun AccessItem(
         )
         Spacer(Modifier.height(14.dp))
         when {
-            granted -> StateLine(text = "許可済み", color = c.accent)
+            granted -> StateLine(text = s.onboarding.granted, color = c.accent)
             else -> Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-                TextAction(label = "許可", color = c.accent, onClick = onGrant)
+                TextAction(label = s.onboarding.grant, color = c.accent, onClick = onGrant)
                 if (!deferred) {
-                    TextAction(label = "後で", color = c.inkFaint, onClick = onDefer)
+                    TextAction(label = s.onboarding.later, color = c.inkFaint, onClick = onDefer)
                 } else {
-                    StateLine(text = "後で設定", color = c.inkFaint)
+                    StateLine(text = s.onboarding.laterSet, color = c.inkFaint)
                 }
             }
         }
@@ -212,13 +224,18 @@ private fun StatusDot(active: Boolean) {
     )
 }
 
+/**
+ * 許可 / あとで. A lozenge for the same reason the header actions are: a bare word with no fill of its
+ * own, where a rectangle would be the only hard edge on a page made of prose and hairlines. `minWidth`
+ * grows the target rightward into the 28dp gap so あとで is 48dp wide without moving a pixel of type.
+ */
 @Composable
 private fun TextAction(label: String, color: Color, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .sizeIn(minHeight = 48.dp)
-            .clickable(onClick = onClick)
-            .semantics { role = Role.Button; contentDescription = label },
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .pressable(TempoShapes.Word, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label },
         contentAlignment = Alignment.CenterStart,
     ) {
         Text(
@@ -241,20 +258,71 @@ private fun StateLine(text: String, color: Color) {
 @Composable
 private fun BeginButton(enabled: Boolean, onClick: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val color = if (enabled) c.accent else c.inkFaint
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 56.dp)
-            .clip(CircleShape)
-            .background(color.copy(alpha = 0.07f))
-            .clickable(enabled = enabled, onClick = onClick)
-            .semantics { role = Role.Button; contentDescription = "始める" },
+            // The one filled control in the app, and already a capsule — so the press takes
+            // `CircleShape` too and the wash lands exactly on the fill rather than in a box around it.
+            .background(color.copy(alpha = 0.07f), CircleShape)
+            .pressable(CircleShape, enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = s.onboarding.begin },
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = "始める",
+            text = s.onboarding.begin,
             style = TextStyle(fontFamily = Mincho, fontSize = 16.sp, letterSpacing = 6.sp, color = color),
+        )
+    }
+}
+
+/**
+ * The language choice, offered before anything is explained.
+ *
+ * **This is a consent control, not a convenience.** The two paragraphs below it say that Tempo will
+ * read every notification and become the home app, and that nothing leaves the device. A user who
+ * cannot read those paragraphs and taps 許可 has not consented to anything; they have pressed a
+ * button. Offering the choice here is what makes the rest of the screen mean what it says.
+ *
+ * Two words rather than [LanguageDialog], because a modal that opens over the first screen a user
+ * ever sees — before any greeting — reads as an error. Inline, both options are visible and the
+ * screen redraws under the tap.
+ *
+ * Neither word is translated, for the reason [LanguageDialog] gives at length: an endonym is
+ * addressed to the person who wants that language.
+ */
+@Composable
+private fun LanguageChoice(current: Lang, onChoose: (Lang) -> Unit) {
+    val c = LocalTempoColors.current
+
+    Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
+        LanguageWord(word = "日本語", selected = current == Lang.Ja, onClick = { onChoose(Lang.Ja) })
+        Box(Modifier.size(width = 1.dp, height = 12.dp).background(c.hair))
+        LanguageWord(word = "English", selected = current == Lang.En, onClick = { onChoose(Lang.En) })
+    }
+}
+
+/** One endonym. Selected carries the accent; the other stays faint and is still a 48.dp target. */
+@Composable
+private fun LanguageWord(word: String, selected: Boolean, onClick: () -> Unit) {
+    val c = LocalTempoColors.current
+    Box(
+        modifier = Modifier
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .pressable(TempoShapes.Word, role = Role.RadioButton, onClick = onClick)
+            .semantics { contentDescription = word },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            text = word,
+            style = TextStyle(
+                fontFamily = Mincho,
+                fontSize = 14.sp,
+                letterSpacing = 2.sp,
+                color = if (selected) c.accent else c.inkFaint,
+            ),
         )
     }
 }

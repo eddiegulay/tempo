@@ -3,7 +3,9 @@ package io.eddiegulay.tempo.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
@@ -17,13 +19,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.eddiegulay.tempo.data.BlockadeRepository
+import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.ui.theme.InkPressIndication
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
 
 /**
  * The commitment gate for hiding an app. Blocking is irreversible for [BlockadeRepository.BLOCK_DAYS]
@@ -37,6 +43,7 @@ fun BlockConfirmDialog(
     onDismiss: () -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     var accepted by remember { mutableStateOf(false) }
     val days = BlockadeRepository.BLOCK_DAYS
 
@@ -45,25 +52,35 @@ fun BlockConfirmDialog(
         containerColor = c.bgSolid,
         title = {
             Text(
-                text = "${days}日間ふうじる",
+                text = s.block.confirmHeading(days),
                 style = TextStyle(fontFamily = Mincho, fontSize = 22.sp, color = c.ink),
             )
         },
         text = {
             androidx.compose.foundation.layout.Column {
                 Text(
-                    text = "「$appLabel」を非表示にすると、${days}日間は元に戻せません。" +
-                        "アプリを削除して入れ直しても、期間が終わるまで解除されません。",
+                    text = s.block.confirmBody(appLabel, days),
                     style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, color = c.inkSoft, letterSpacing = 0.5.sp),
                 )
 
                 Spacer(Modifier.height(20.dp))
                 Row(
-                    modifier = Modifier.toggleable(
-                        value = accepted,
-                        role = Role.Checkbox,
-                        onValueChange = { accepted = it },
-                    ),
+                    // `toggleable` is not wrapped by `pressable` — a checkbox row is a two-state
+                    // control and must keep announcing itself as one — so the indication is attached
+                    // by hand with the shape the clip uses. Same row corner as everything else that
+                    // spans a dialog's width; the acknowledgement is the hinge this whole gate turns
+                    // on, and it should feel as considered under a finger as it reads.
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(TempoShapes.Row)
+                        .toggleable(
+                            value = accepted,
+                            interactionSource = null,
+                            indication = InkPressIndication(TempoShapes.Row),
+                            role = Role.Checkbox,
+                            onValueChange = { accepted = it },
+                        )
+                        .padding(end = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -73,7 +90,7 @@ fun BlockConfirmDialog(
                         colors = CheckboxDefaults.colors(checkedColor = c.accent, uncheckedColor = c.inkFaint),
                     )
                     Text(
-                        text = "理解しました",
+                        text = s.block.confirmAcknowledge,
                         style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, color = c.ink),
                     )
                 }
@@ -82,14 +99,14 @@ fun BlockConfirmDialog(
         confirmButton = {
             TextButton(onClick = onConfirm, enabled = accepted) {
                 Text(
-                    text = "${days}日間ふうじる",
+                    text = s.block.confirmHeading(days),
                     style = TextStyle(fontFamily = Mincho, color = if (accepted) c.accent else c.inkFaint),
                 )
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("やめる", style = TextStyle(fontFamily = Mincho, color = c.inkFaint))
+                Text(s.block.confirmCancel, style = TextStyle(fontFamily = Mincho, color = c.inkFaint))
             }
         },
     )
