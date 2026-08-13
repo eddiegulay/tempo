@@ -218,6 +218,7 @@ fun TempoApp(
                             onHome = viewModel::goHome,
                             onSearch = viewModel::goSearch,
                             onNotifications = viewModel::goNotifications,
+                            onGym = viewModel::goGym,
                             onRequestDefault = onRequestDefault,
                             modifier = Modifier.align(Alignment.BottomCenter),
                             // Over a sub-screen the dock becomes frosted "wet paper"; over Home it stays

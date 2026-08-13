@@ -142,6 +142,23 @@ class LauncherViewModel(
         _searchQuery.value = "" // drop the search query whenever we leave Search
     }
 
+    /**
+     * Open 鍛錬 from the dock.
+     *
+     * This exists because the gym earned a dock button. [confirmMode] still reaches [Screen.Gym] from
+     * the clock's mode dialog and both routes are wanted: the dialog is how you *choose* between
+     * 集中 and 鍛錬, the dock is how you *return* to a log you keep. 集中 keeps no such button — it
+     * hides everything by design, so there is nothing to come back to.
+     *
+     * The gym's own back stack is untouched here. Re-entering always lands on 鍛錬 because
+     * `GymViewModel.onLeaveShell` rebased the stack on the way out, and a live session survives both
+     * — leaving the gym is not leaving the workout.
+     */
+    fun goGym() {
+        _screen.value = Screen.Gym
+        _searchQuery.value = ""
+    }
+
     /** Open the hidden-apps filter page (launched from the Search header). */
     fun goFilter() {
         _screen.value = Screen.Filter
@@ -167,8 +184,10 @@ class LauncherViewModel(
      *
      * A mode is not a screen the dock can wander back from: each takes the window, and the gym keeps
      * running state of its own. So the chooser closes first and the screen changes second, and there
-     * is deliberately no `goGym()`/`goFocus()` pair for anything else to call — [Screen.Focus] and
-     * [Screen.Gym] are reachable only through a mode the user picked out loud.
+     * There is deliberately no `goFocus()`: [Screen.Focus] is reachable only through a mode the user
+     * picked out loud, because 集中 hides the launcher and should never be one stray tap away.
+     * [Screen.Gym] used to share that rule and no longer does — it has a dock button and [goGym],
+     * since a training log is somewhere you return to rather than somewhere you commit to.
      */
     fun confirmMode(mode: LauncherMode) {
         _pendingMode.value = false

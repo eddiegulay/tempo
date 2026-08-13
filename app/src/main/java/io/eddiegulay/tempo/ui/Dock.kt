@@ -28,9 +28,18 @@ import androidx.compose.ui.unit.dp
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 
 /**
- * The bottom dock: an iOS-style floating pill holding Home / Search / Notifications, the active tab
- * in vermillion accent. The capsule reads as floating over content via a faint card fill and a
- * hairline border. A slim indicator sits below — long-pressing it requests the default-home role.
+ * The bottom dock: an iOS-style floating pill holding Home / Search / Notifications / 鍛錬, the
+ * active tab in vermillion accent. The capsule reads as floating over content via a faint card fill
+ * and a hairline border. A slim indicator sits below — long-pressing it requests the default-home role.
+ *
+ * **鍛錬 is a fourth button rather than a long-press on ホーム.** Two reasons, and the second is the
+ * deciding one. A long-press is undiscoverable for a whole mode of the app — the clock's long-press
+ * was reasonable for 集中 because 集中 hides everything anyway, but a workout log you are meant to
+ * return to daily needs a place you can point at. And the pill *already* long-presses: the Row above
+ * claims that gesture for the default-home role, so a long-press on a child button would sit inside
+ * a parent that wants the same gesture, and which of the two won would depend on hit-test order.
+ *
+ * Four is still under the bar this dock sets for itself. A fifth would not be.
  *
  * The theme toggle no longer lives here; it moved to the Search screen's top-right.
  */
@@ -41,6 +50,7 @@ fun Dock(
     onHome: () -> Unit,
     onSearch: () -> Unit,
     onNotifications: () -> Unit,
+    onGym: () -> Unit,
     onRequestDefault: () -> Unit,
     modifier: Modifier = Modifier,
     frosted: Boolean = false,
@@ -81,6 +91,7 @@ fun Dock(
             DockButton(TempoIcons.Home, active = current == Screen.Home, contentDescription = "ホーム", onClick = onHome)
             DockButton(TempoIcons.Search, active = current == Screen.Search, contentDescription = "検索", onClick = onSearch)
             DockButton(TempoIcons.Bell, active = current == Screen.Notifications, contentDescription = "通知", onClick = onNotifications)
+            DockButton(TempoIcons.Dumbbell, active = current == Screen.Gym, contentDescription = "鍛錬", onClick = onGym)
         }
     }
 }

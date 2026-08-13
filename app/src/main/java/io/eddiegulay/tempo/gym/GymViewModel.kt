@@ -196,14 +196,6 @@ class GymViewModel(
         }
     }
 
-    init {
-        viewModelScope.launch { preferences.preferences.collect { _prefs.value = it } }
-        // Cold start over GYM.HOME (`03-player.md` §A). Constructing this ViewModel *is* entering the
-        // gym, and the repository singleton behind it has already opened the database, so this costs
-        // the lazy-open guarantee nothing — while a `resumable` left at Loading forever would make
-        // every reader of it wrong for a user who walks straight into 型.
-        refreshResumable()
-    }
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────
     // GYM.HOME — the feed and つづき
@@ -983,6 +975,30 @@ class GymViewModel(
         detailFlows.clear()
         tierFlows.clear()
         countFlows.clear()
+    }
+
+    /**
+     * **Last in the class body on purpose, and it must stay last.**
+     *
+     * Kotlin runs property initialisers and `init` blocks in *declaration* order, so an `init` placed
+     * above a `private val _x = MutableStateFlow(...)` sees `_x` as null. This block launches
+     * coroutines that touch [_prefs] and [_resumable]; when it sat near the top of the class the
+     * launch returned immediately, the continuation resumed a moment later, and
+     * `_resumable.value = …` threw `NullPointerException` on a null `MutableStateFlow` — a crash on
+     * entering 鍛錬 at all, and one no unit test could see, because constructing this ViewModel needs
+     * a main dispatcher.
+     *
+     * The coroutine hid the bug rather than causing it: a direct assignment would have failed at
+     * construction and been obvious. Anything added here can only be safe if every property it
+     * touches is declared above it.
+     */
+    init {
+        viewModelScope.launch { preferences.preferences.collect { _prefs.value = it } }
+        // Cold start over GYM.HOME (`03-player.md` §A). Constructing this ViewModel *is* entering the
+        // gym, and the repository singleton behind it has already opened the database, so this costs
+        // the lazy-open guarantee nothing — while a `resumable` left at Loading forever would make
+        // every reader of it wrong for a user who walks straight into 型.
+        refreshResumable()
     }
 }
 
