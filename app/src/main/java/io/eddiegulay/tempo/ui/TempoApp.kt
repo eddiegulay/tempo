@@ -28,8 +28,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import io.eddiegulay.tempo.LauncherViewModel
 import io.eddiegulay.tempo.data.TempoTheme
+import io.eddiegulay.tempo.gym.GymViewModel
+import io.eddiegulay.tempo.gym.GymViewModelFactory
+import io.eddiegulay.tempo.ui.gym.GymShell
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.PaperColors
 import io.eddiegulay.tempo.ui.theme.SumiColors
@@ -44,6 +48,15 @@ import io.eddiegulay.tempo.ui.theme.SumiColors
  * pomodoro". It buys the gym a whole shell for one enum entry.
  */
 enum class Screen { Home, Search, Notifications, Filter, Focus, Calendar, EventCompose, Gym }
+
+/**
+ * Which world owns the window, as distinct from which page is on screen.
+ *
+ * [Focus] and [Gym] each take the whole window and neither belongs under the floating dock, so the
+ * layer is chosen before the dock layer is composed at all. Deriving it from [Screen] rather than
+ * storing it keeps one source of truth: there is no way for the layer and the screen to disagree.
+ */
+private enum class Layer { Onboarding, Launcher, Focus, Gym }
 
 /**
  * Root of the Tempo launcher. State (screen, theme, search, default-home status) lives in
@@ -110,27 +123,51 @@ fun TempoApp(
     BackHandler(enabled = screen == Screen.Filter) { viewModel.goSearch() }
     BackHandler(enabled = screen == Screen.EventCompose) { viewModel.cancelCompose() }
     BackHandler(
-        enabled = screen != Screen.Home && screen != Screen.Filter && screen != Screen.EventCompose,
+        enabled = screen != Screen.Home &&
+            screen != Screen.Filter &&
+            screen != Screen.EventCompose &&
+            // The gym handles its own Back at every depth, and must: this generic handler would pop
+            // the whole shell on the first press from anywhere inside it.
+            screen != Screen.Gym,
     ) { viewModel.goHome() }
     BackHandler(enabled = screen == Screen.Home) { /* stay on home */ }
 
+    // Which world owns the window. Seeded synchronously from DataStore, so this is already correct on
+    // the first frame — returning users land straight on Home with no flash of the onboarding gate.
+    val layer = when {
+        !onboardingComplete -> Layer.Onboarding
+        screen == Screen.Focus -> Layer.Focus
+        screen == Screen.Gym -> Layer.Gym
+        else -> Layer.Launcher
+    }
+
     CompositionLocalProvider(LocalTempoColors provides colors) {
         Box(Modifier.fillMaxSize().tempoBackground(colors)) {
-            // Seeded synchronously from DataStore, so this is already correct on the first frame —
-            // returning users land straight on Home with no flash of the onboarding gate.
-            if (!onboardingComplete) {
-                OnboardingScreen(
+            when (layer) {
+                Layer.Onboarding -> OnboardingScreen(
                     isDefaultLauncher = isDefaultLauncher,
                     onRequestDefault = onRequestDefault,
                     onComplete = viewModel::completeOnboarding,
                     modifier = Modifier.systemBarsPadding(),
                 )
-            } else if (screen == Screen.Focus) {
+
                 // Focus is its own immersive world: full-bleed, no dock, no system-bar insets — the
                 // screen itself locks orientation and hides the bars.
-                FocusScreen(Modifier.fillMaxSize())
-            } else {
-                Box(Modifier.fillMaxSize().systemBarsPadding()) {
+                Layer.Focus -> FocusScreen(Modifier.fillMaxSize())
+
+                // 鍛錬 is the other one, and it is resolved *inside* this branch on purpose: a user who
+                // never trains never touches GymViewModelFactory, so no gym database is ever opened.
+                // LocalViewModelStoreOwner here is MainActivity, so this is the same instance the
+                // Activity's own `by viewModels` delegate returns, and it survives the shell
+                // unmounting — which is what lets a live workout outlive a HOME press.
+                Layer.Gym -> GymShell(
+                    gym = viewModel<GymViewModel>(factory = GymViewModelFactory(LocalContext.current)),
+                    // The shell has already run onLeaveShell(Back) by the time this fires.
+                    onExit = viewModel::goHome,
+                    modifier = Modifier.fillMaxSize(),
+                )
+
+                Layer.Launcher -> Box(Modifier.fillMaxSize().systemBarsPadding()) {
                     // Content fills the layer; the floating dock overlays it, so reserve room at the
                     // bottom for the pill plus its indicator. Screens cross-fade with a gentle
                     // scale-settle so a page eases in rather than snapping into place.
@@ -165,8 +202,9 @@ fun TempoApp(
                                 Screen.EventCompose -> EventComposeScreen(viewModel = viewModel)
                                 // Focus renders full-screen in the outer branch; never inside the dock layer.
                                 Screen.Focus -> Unit
-                                // TODO(gym shell): render the 鍛錬 shell here — its own back stack,
-                                // tab bar and GymViewModel. Nothing navigates to Screen.Gym yet.
+                                // The gym renders full-screen in the outer branch, for the same reason
+                                // Focus does: it owns the whole window and the dock has no business
+                                // over it.
                                 Screen.Gym -> Unit
                             }
                         }

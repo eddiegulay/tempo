@@ -1297,9 +1297,22 @@ uses.
 | `high_knees` | もも上げ | High knees | LOCOMOTION | 10.0 | 0.7 | **1** | 腿は腰の高さまで |
 | `run` | 走る | Run | LOCOMOTION | 10.0 | 1.0 | **1** | — |
 
-Progression-ladder members needed by `GYM.LIBRARY.EXERCISE_DETAIL`: `wall_pushup` 壁腕立て 0.2,
-`incline_pushup` 斜め腕立て 0.4, `feet_elevated_pushup` 足上げ腕立て 1.3, `archer_pushup`
-アーチャー腕立て 1.6, `one_arm_pushup` 片手腕立て 2.5 — all `H_PUSH`, sharing `ladder_id = 'push'`.
+Progression-ladder members needed by `GYM.LIBRARY.EXERCISE_DETAIL` — all `H_PUSH`, sharing
+`ladder_id = 'push'`. `name_en` is `NOT NULL` (TalkBack reads it) and `sec/rep` is needed by
+`RoutineEstimate`, so both columns are given here rather than left to the seeder:
+
+| id | ja | en | sec/rep | difficulty |
+|---|---|---|---:|---:|
+| `wall_pushup` | 壁腕立て | Wall push-up | 2.0 **[fam]** | 0.2 |
+| `incline_pushup` | 斜め腕立て | Incline push-up | 2.0 **[fam]** | 0.4 |
+| `feet_elevated_pushup` | 足上げ腕立て | Feet-elevated push-up | 2.0 **[fam]** | 1.3 |
+| `archer_pushup` | アーチャー腕立て | Archer push-up | 2.0 **[fam]** | 1.6 |
+| `one_arm_pushup` | 片手腕立て | One-arm push-up | 2.0 **[fam]** | 2.5 |
+
+**[fam]** = 腕立て伏せ's own measured 2.0, reused across the movement family. Ratified in
+`DECISIONS.md` §Q12: one measured value applied to a family is a derivation, and it is strictly
+better than five separately invented estimates. The English names are direct translations of the
+Japanese, which invents no fact. Difficulty coefficients are §F.1's own and unchanged.
 
 **On isometric `seconds_per_rep = 10.0`:** for a hold this column is repurposed as "seconds that count
 as one volume unit" (§D.5). Ten seconds is defensible — a 30s plank scores 3 — and it is the only place
@@ -1426,7 +1439,10 @@ trailing rest; ours does not, which is the honest number. `origin = 'Tabata et a
 Exerc, 1996'`. The exercise choice is ours — the 1996 protocol was a cycle ergometer — so the routine
 note says 種目は自由に.
 
-**リーコン・ロン** — `r_recon_ron`, `FIXED_SETS`, 上級, `primary_metric = HIGHEST_STEP`,
+**リーコン・ロン** — `r_recon_ron`, `FIXED_SETS`, 上級, `primary_metric = MOST_VOLUME`
+(**corrected** — this said `HIGHEST_STEP`, which `04` :281 and :885 contradict and `04` §6 :1131 has
+no tile for; see `DECISIONS.md` §Q9. The step reached is still shown, by `stepFor` in the progression
+block, which is where a ladder belongs),
 `progression_program_id = 'p_recon_ron'`, one station `pullup` MAX_EFFORT (reps come from the step
 table), `rest_between_stations = 90`, `rounds = 5`.
 

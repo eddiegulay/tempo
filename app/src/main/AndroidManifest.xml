@@ -8,7 +8,24 @@
       the internal ledger (blockade.json) is included in cloud backup (see @xml/backup_rules and
       @xml/data_extraction_rules) and restored on reinstall, keyed to the user's Google account. This
       requires no runtime permission.
+
+      The 鍛錬 training history (exercise.db) is included in the same two rule files, main database
+      file only. A year of training is worth restoring, and there is nothing sensitive in it.
+      鍛錬 adds no component and no service: the session player keeps the screen on with
+      FLAG_KEEP_SCREEN_ON, derives its timeline from a monotonic clock, and is therefore correct on
+      return from the background without a foreground service (03-player.md §E.5). It adds exactly one
+      permission, VIBRATE, declared below.
     -->
+
+    <!--
+      The session player's haptic channel: a pulse at each phase change, so a countdown can be felt
+      through a pocket rather than watched. VIBRATE is a normal install-time permission — it is granted
+      at install, there is no runtime prompt and no user-visible ceremony, which is why it does not
+      engage 03-player.md §E.5's Phase-1 refusal of runtime and foreground-service entries. Vibrator
+      calls are unconditional in GymHaptics, so without this the whole channel is silently inert and
+      lint fails with MissingPermission.
+    -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!--
       The 予定 page reads the device's calendar through CalendarContract — the same provider the

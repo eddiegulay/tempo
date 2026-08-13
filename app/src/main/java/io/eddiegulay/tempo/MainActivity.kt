@@ -6,12 +6,16 @@ import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.provider.Settings
 import io.eddiegulay.tempo.data.TempoTheme
+import io.eddiegulay.tempo.gym.GymViewModel
+import io.eddiegulay.tempo.gym.GymViewModelFactory
+import io.eddiegulay.tempo.gym.LeaveReason
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.core.view.WindowCompat
+import io.eddiegulay.tempo.ui.Screen
 import io.eddiegulay.tempo.ui.TempoApp
 
 /**
@@ -25,6 +29,17 @@ import io.eddiegulay.tempo.ui.TempoApp
 class MainActivity : ComponentActivity() {
 
     private val viewModel: LauncherViewModel by viewModels { LauncherViewModelFactory(applicationContext) }
+
+    /**
+     * 鍛錬's state, and the delegate constructs **nothing** until first touched.
+     *
+     * That laziness is the guarantee the whole feature is built on: the gym's store is a
+     * `SQLiteOpenHelper`, which runs `onCreate`/`onUpgrade` on its first read, and this is a HOME app
+     * whose `onCreate` runs on every HOME press from a cold process. A user who never trains must
+     * never pay for a database they do not have. Compose resolves the same instance from inside the
+     * `Screen.Gym` branch — same `ViewModelStore`, same default key — so there is exactly one.
+     */
+    private val gymViewModel: GymViewModel by viewModels { GymViewModelFactory(applicationContext) }
 
     private lateinit var roleRequestLauncher: ActivityResultLauncher<Intent>
 
@@ -51,10 +66,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** HOME pressed while Tempo is already foreground: return to a clean Home screen. */
+    /**
+     * HOME pressed while Tempo is already foreground: return to a clean Home screen.
+     *
+     * The gym's half of that reset runs first, so a HOME press is one atomic reset across both
+     * owners rather than two frames of half-reset state. It is guarded on the screen because merely
+     * *reading* [gymViewModel] constructs it — a HOME press from Search must not be what finally
+     * opens the gym's database.
+     *
+     * `onLeaveShell` clears the gym's back stack and its transient sheets and prompts, and leaves the
+     * live workout alone. A HOME press is not a quit: the clock is monotonic and keeps running, the
+     * open-session row in SQLite stays as the process-death safety net, and 続ける on return resumes
+     * exactly where the user was.
+     */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (viewModel.screen.value == Screen.Gym) gymViewModel.onLeaveShell(LeaveReason.HomePress)
         viewModel.resetToHome()
     }
 
