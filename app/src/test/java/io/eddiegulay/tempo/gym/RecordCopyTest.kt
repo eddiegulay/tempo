@@ -263,7 +263,167 @@ class RecordCopyTest {
     fun `the subtitle's totals truncate rather than round up`() {
         assertEquals("一回 ・ 六分", historySubtitle(1, 374_000L))
     }
+
+    // ─── the streak block ───────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `a live streak counts days`() {
+        val copy = streakCopy(Streak(days = 4, forgivenThisMonth = 0, endedOn = null))
+        assertEquals("四日 連続", copy.line)
+        assertNull(copy.forgiveness)
+        assertNull(copy.monotony)
+        assertTrue(!copy.broken)
+        assertEquals("四日 連続", copy.semantics)
+    }
+
+    @Test
+    fun `a broken streak says so and never says zero`() {
+        // §4's StreakZero state. 〇日 連続 is a scolding dressed as a statistic; とぎれています is a
+        // fact with no verdict in it, and it can be read on a rest day without flinching.
+        val copy = streakCopy(Streak(days = 0, forgivenThisMonth = 0, endedOn = LocalDate.of(2026, 6, 15)))
+        assertEquals("連続は とぎれています", copy.line)
+        assertTrue(copy.broken)
+    }
+
+    @Test
+    fun `the forgiveness line says what was spent and never what is left`() {
+        // §6's table says it beside the string itself, and Streak carries no remainder to print. A
+        // number you can watch going down is a number you will spend, and the whole point of the
+        // allowance is that the user should not be managing it.
+        val copy = streakCopy(Streak(days = 9, forgivenThisMonth = 1, endedOn = null))
+        assertEquals("ゆるし 一回 使いました", copy.forgiveness)
+        assertTrue("残" !in copy.semantics)
+        assertNull(streakCopy(Streak(days = 9, forgivenThisMonth = 0, endedOn = null)).forgiveness)
+    }
+
+    @Test
+    fun `the monotony nudge needs both a threshold and a fortnight`() {
+        // §4: monotony7d > 2.0 && historyDays >= 14. Design §7.4's stance on premature metrics —
+        // 同じ調子が続いています said to somebody in their first week is the app inventing a problem.
+        assertEquals("同じ調子が続いています", streakCopy(streak4(), monotony7d = 2.4, historyDays = 14).monotony)
+        assertNull(streakCopy(streak4(), monotony7d = 2.4, historyDays = 13).monotony)
+        assertNull(streakCopy(streak4(), monotony7d = 2.0, historyDays = 30).monotony)
+        // Null is the ordinary case and means *no answer* — an unrated day in the window, or a zero
+        // standard deviation — rather than a low number.
+        assertNull(streakCopy(streak4(), monotony7d = null, historyDays = 30).monotony)
+    }
+
+    @Test
+    fun `the three lines are read as one node`() {
+        // §4's accessibility note: three announcements for one thought is worse than one.
+        val copy = streakCopy(Streak(days = 4, forgivenThisMonth = 1, endedOn = null), 2.4, 30)
+        assertEquals("四日 連続、ゆるし 一回 使いました、同じ調子が続いています", copy.semantics)
+    }
+
+    // ─── the bests page ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `each engine is scored on the metric §4 assigns it`() {
+        assertEquals(BestMetric.BEST_TIME, bestMetricFor(Engine.FOR_TIME))
+        assertEquals(BestMetric.BEST_TIME, bestMetricFor(Engine.FOR_TIME_WITH_REST))
+        assertEquals(BestMetric.MOST_ROUNDS, bestMetricFor(Engine.AMRAP))
+        assertEquals(BestMetric.MOST_ROUNDS, bestMetricFor(Engine.EMOM_ASCENDING))
+        assertEquals(BestMetric.MOST_VOLUME, bestMetricFor(Engine.INTERVAL_CIRCUIT))
+        assertEquals(BestMetric.MOST_VOLUME, bestMetricFor(Engine.EMOM))
+        assertEquals(BestMetric.MOST_VOLUME, bestMetricFor(Engine.FIXED_SETS))
+    }
+
+    @Test
+    fun `bestMetricFor names the metric the detail page's first tile shows`() {
+        // Three functions read one engine table — this one, `bestTilesFor`'s tile set, and
+        // `metricsFor`'s eligibility list — because they answer three different questions (EMOM
+        // proves it: scored on volume, one tile, allowed to take a MOST_REPS record it never shows).
+        // They are held together by this test rather than by a merge, so a routine scored one way and
+        // labelled another fails the build.
+        val everyMetric = BestMetric.entries.map { best(metric = it) }
+        Engine.entries.forEach { engine ->
+            val tiles = bestTilesFor(engine, everyMetric, timesDone = 1)
+            assertEquals(engine.name, bestMetricLabel(bestMetricFor(engine)), tiles.first().label)
+        }
+    }
+
+    @Test
+    fun `a routine best renders as §4's four slots`() {
+        val copy = bestValueCopy(
+            best(
+                routineName = "シンディ",
+                engine = Engine.AMRAP,
+                metric = BestMetric.MOST_ROUNDS,
+                value = 17.0,
+                timesDone = 6,
+            ),
+        )!!
+        assertEquals("シンディ", copy.name)
+        assertEquals("十七巡", copy.value)
+        assertEquals("最高巡数 ・ 時間内", copy.meta)
+        assertEquals("六月十七日", copy.date)
+        assertEquals("六回", copy.count)
+        assertNull(copy.note)
+        assertEquals("シンディ、最高巡数 十七巡、時間内、六月十七日、六回", copy.semantics)
+    }
+
+    @Test
+    fun `a record whose routine was edited states the fact and declines the judgement`() {
+        // §4 edge case 4: deciding whether a twelve-station circuit's PR is invalidated by a
+        // thirteenth is a policy this app cannot get right, so it says the one honest thing.
+        val copy = bestValueCopy(best(structureChanged = true))!!
+        assertEquals("中身が変わっています", copy.note)
+        assertTrue(copy.semantics.endsWith("中身が変わっています"))
+    }
+
+    @Test
+    fun `a deleted routine's record stays, and says it is deleted`() {
+        val copy = bestValueCopy(best(routineArchived = true))!!
+        assertTrue(copy.archived)
+        assertTrue(copy.semantics.endsWith("削除済み"))
+    }
+
+    @Test
+    fun `a record with no documented label is omitted rather than invented`() {
+        // `DECISIONS.md` §Q9: §6's tile list has five entries and none of them is a step. Nothing
+        // seeds HIGHEST_STEP in v1, so this is a defence against a restored backup — and where the
+        // step you have reached belongs is stepFor, as 第九段 / 十八段のうち.
+        assertNull(bestValueCopy(best(metric = BestMetric.HIGHEST_STEP)))
+    }
+
+    @Test
+    fun `a for-time record reads as a duration and a volume record carries no unit`() {
+        // §4 edge case 7: 最高負荷 is deliberately unitless — it is never suffixed 回, because
+        // weighted volume is not a rep count and printing it as one invites adding two together.
+        assertEquals(
+            "六分十四秒",
+            bestValueCopy(best(engine = Engine.FOR_TIME, metric = BestMetric.BEST_TIME, value = 374_000.0))!!.value,
+        )
+        val volume = bestValueCopy(best(metric = BestMetric.MOST_VOLUME, value = 420.0))!!
+        assertEquals("四百二十", volume.value)
+        assertTrue(!volume.value.endsWith("回"))
+    }
 }
+
+private fun streak4() = Streak(days = 4, forgivenThisMonth = 0, endedOn = null)
+
+private fun best(
+    routineName: String = "シンディ",
+    engine: Engine = Engine.INTERVAL_CIRCUIT,
+    metric: BestMetric = BestMetric.MOST_VOLUME,
+    value: Double = 420.0,
+    timesDone: Int = 6,
+    structureChanged: Boolean = false,
+    routineArchived: Boolean = false,
+) = RoutineBest(
+    routineId = "cindy",
+    routineName = routineName,
+    engine = engine,
+    metric = metric,
+    value = value,
+    tiebreak = 0.0,
+    sessionId = 1L,
+    achievedAt = 0L,
+    localDate = LocalDate.of(2026, 6, 17),
+    timesDone = timesDone,
+    routineArchived = routineArchived,
+    structureChanged = structureChanged,
+)
 
 // ─── fixtures ───────────────────────────────────────────────────────────────────────────────────
 

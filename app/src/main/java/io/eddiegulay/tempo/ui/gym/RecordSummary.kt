@@ -426,8 +426,11 @@ fun breakdownSemantics(row: BreakdownRow): String = if (row.skipped) {
  * @param onRate re-tapping the selected rating passes null; un-rating is a real answer (§4 row 3, and
  *   `SessionActions.onRate`).
  * @param exerciseName see [breakdownRows].
- * @param footer 型を見る / 記録を削除 for the historical page. **予定に入れる is Phase 3 and no slot is
- *   reserved for it** — a greyed button for an action that does not exist teaches the user it is broken.
+ * @param footer 型を見る / 記録を削除 for the historical page, and 予定に入れる for the live one — which is
+ *   the whole reason this is a slot and not two booleans: what belongs under もう一度 is exactly what
+ *   differs between the two pages, and the caller is the only thing that knows which page it is. It is
+ *   still **never a greyed row**: a page that has no footer passes none, rather than drawing a disabled
+ *   button for an action that does not apply to it.
  */
 @Composable
 fun RecordSummary(

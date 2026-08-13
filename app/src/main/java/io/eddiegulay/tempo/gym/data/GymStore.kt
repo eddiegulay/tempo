@@ -20,6 +20,7 @@ import io.eddiegulay.tempo.gym.GymRepository
 import io.eddiegulay.tempo.gym.GymWrite
 import io.eddiegulay.tempo.gym.HistoryCursor
 import io.eddiegulay.tempo.gym.LastResult
+import io.eddiegulay.tempo.gym.LifetimeSummary
 import io.eddiegulay.tempo.gym.LoadScale
 import io.eddiegulay.tempo.gym.Measure
 import io.eddiegulay.tempo.gym.MovementBest
@@ -197,6 +198,19 @@ internal class GymStore private constructor(
     private suspend fun <T> read(query: (SQLiteDatabase) -> T): Loadable<T> = withContext(Dispatchers.IO) {
         runCatching { query(db) }.fold({ Loadable.Ready(it) }, { Loadable.Failed(it.toGymFault()) })
     }
+
+    /**
+     * As [read], but a quarantined database reports its loss rather than answering honestly-and-wrongly
+     * — the one-shot counterpart of [observeHistory], and it exists for the same reason.
+     *
+     * A quarantined store still opens: [HistoryLoss] means the *old* file was moved aside, so every
+     * history query runs and returns nothing. For a list that is survivable, because a page can tell an
+     * empty list is suspicious. For a **total** it is not: `Ready(LifetimeSummary(0, 0))` renders 〇回
+     * over a destroyed decade and reads exactly like a user who has never trained (§E.6, and
+     * `DECISIONS.md` §Q22's final paragraph).
+     */
+    private suspend fun <T> readHistory(query: (SQLiteDatabase) -> T): Loadable<T> =
+        if (historyLost) Loadable.Failed(GymFault.StoreCorrupt) else read(query)
 
     /**
      * The one write path. Mutex, transaction, classify, and announce **after** the commit.
@@ -598,6 +612,29 @@ internal class GymStore private constructor(
             ).firstRow { it.getInt(0) } ?: 0
         }
 
+    /**
+     * One scan of `session`, two aggregates, no new table and no schema change (`DECISIONS.md` §Q22).
+     *
+     * `COALESCE(SUM(active_ms), 0)` because `SUM` over zero rows is **NULL**, not zero — a first-run
+     * user would otherwise take the `getLong` on a null column, and the distinction that matters here
+     * ("no sessions" versus "the store is unreadable") is [readHistory]'s to make, not a null's.
+     *
+     * `WHERE finished_at IS NOT NULL` matches every other history read in this file: an open row is a
+     * session in progress, and counting it would make これまで tick upward mid-workout.
+     *
+     * *Rejected* — a maintained counter row in `meta`. It is the only way to answer this without a
+     * scan, and it buys nothing real: the table is one row per session, the query is covered by the
+     * ordinary session index, and a denormalised total is a second source of truth that goes wrong
+     * silently on every delete path (`discardSession`, `purgeRoutine`, the corruption quarantine).
+     */
+    override suspend fun summary(): Loadable<LifetimeSummary> = readHistory { database ->
+        database.rawQuery(
+            "SELECT COUNT(*), COALESCE(SUM(active_ms), 0) FROM $TABLE_SESSION WHERE finished_at IS NOT NULL",
+            null,
+        ).firstRow { LifetimeSummary(sessions = it.getInt(0), totalActiveMs = it.getLong(1)) }
+            ?: LifetimeSummary(sessions = 0, totalActiveMs = 0L)
+    }
+
     override suspend fun populatedMonths(): Loadable<List<YearMonth>> = read { database ->
         // substr on an ISO date is a string operation, not a date function — no UTC involved (§0).
         database.rawQuery(
@@ -660,6 +697,9 @@ internal class GymStore private constructor(
 
     override fun movementBests(): Flow<Loadable<List<MovementBest>>> =
         observeHistory(TABLE_SESSION_RESULT, TABLE_SESSION) { readMovementBests(it) }
+
+    override fun exerciseBests(): Flow<Loadable<List<MovementBest>>> =
+        observeHistory(TABLE_SESSION_RESULT, TABLE_SESSION) { readExerciseBests(it) }
 
     override fun weeklySeries(weeks: Int): Flow<Loadable<List<WeekPoint>>> =
         observeHistory(TABLE_SESSION) { database ->
@@ -1365,18 +1405,23 @@ internal class GymStore private constructor(
     }.filterNotNull()
 
     /**
-     * 動きごと, rolled up by ladder.
+     * One row per **exercise_id** — what a single movement, and only that movement, is worth.
      *
      * Two flat queries rather than one, because SQLite's bare-column guarantee holds only when a query
      * has **exactly one** `min`/`max` aggregate: the first takes the best single set and the session it
-     * happened in, the second the lifetime total and the most recent outing. Rolling up afterwards in
-     * Kotlin is what keeps seven near-identical push-up rows from being unreadable (§4 edge case 6).
+     * happened in, the second the lifetime total and the most recent outing.
      *
      * `actual_reps IS NOT NULL` is the whole eligibility rule. A prescribed-but-unverified twenty is a
      * plan, not a record, which is also why 動きごと can be legitimately empty for someone who only
      * trains duration stations.
+     *
+     * **These rows carry no [MovementBest.hardestReachedExerciseId], deliberately.** いちばん上 is a
+     * question about a *ladder* and one rung has no answer to it; [readMovementBests] rolls these up
+     * and is where that field is filled. Splitting the read this way is also what stopped
+     * `GYM.LIBRARY.EXERCISE_DETAIL` from labelling a family total 一度に / のべ回数 under one rung's
+     * name — the per-exercise numbers were always computed here and thrown away by the `groupBy`.
      */
-    private fun readMovementBests(database: SQLiteDatabase): List<MovementBest> {
+    private fun readExerciseBests(database: SQLiteDatabase): List<MovementBest> {
         data class BestSet(val reps: Int, val sessionId: Long)
 
         val bestSets = database.rawQuery(
@@ -1407,23 +1452,60 @@ internal class GymStore private constructor(
 
         return bestSets.keys
             .mapNotNull { ExerciseCatalogSource.byId(it) }
+            .map { exercise ->
+                val best = bestSets[exercise.id]
+                val lifetime = lifetimes[exercise.id]
+                MovementBest(
+                    ladderId = exercise.ladderId,
+                    exerciseId = exercise.id,
+                    exerciseName = exercise.nameJa,
+                    singleSetReps = best?.reps ?: 0,
+                    lifetimeReps = lifetime?.reps ?: 0,
+                    sessionId = best?.sessionId,
+                    lastPerformedAt = lifetime?.lastAt,
+                    lastLocalDate = lifetime?.lastDate,
+                    hardestReachedExerciseId = null,
+                    hardestReachedExerciseName = null,
+                )
+            }
+            .sortedByDescending { it.lastPerformedAt ?: 0L }
+    }
+
+    /**
+     * 動きごと, rolled up by ladder — the same rows as [readExerciseBests], grouped.
+     *
+     * Rolling up in Kotlin is what keeps seven near-identical push-up rows from being unreadable
+     * (§4 edge case 6), and the roll-up is **the whole content of this function**: the numbers come
+     * from the per-exercise read so the two can never disagree about what a rep was worth.
+     *
+     * A caller that wants one movement's own record wants [readExerciseBests] instead. Every field
+     * below is a *family* fact — `singleSetReps` is the family's best set on any rung, `lifetimeReps`
+     * the family's sum — and attributing one of them to the rung the row happens to be named for is
+     * the bug this split exists to close.
+     */
+    private fun readMovementBests(database: SQLiteDatabase): List<MovementBest> {
+        val rows = readExerciseBests(database).associateBy { it.exerciseId }
+
+        return rows.keys
+            .mapNotNull { ExerciseCatalogSource.byId(it) }
             // A movement with no ladder is its own group, keyed by its own id.
             .groupBy { it.ladderId ?: it.id }
             .mapNotNull { (_, family) ->
                 // The row is named for the rung the user actually trains, and reports the hardest one
                 // they have reached as いちばん上.
-                val representative = family.maxByOrNull { lifetimes[it.id]?.reps ?: 0 } ?: return@mapNotNull null
+                val representative = family.maxByOrNull { rows[it.id]?.lifetimeReps ?: 0 }
+                    ?: return@mapNotNull null
                 val hardest = family.maxByOrNull { it.difficulty }
-                val best = family.mapNotNull { bestSets[it.id] }.maxByOrNull { it.reps }
+                val best = family.mapNotNull { rows[it.id] }.maxByOrNull { it.singleSetReps }
                 MovementBest(
                     ladderId = representative.ladderId,
                     exerciseId = representative.id,
                     exerciseName = representative.nameJa,
-                    singleSetReps = best?.reps ?: 0,
-                    lifetimeReps = family.sumOf { lifetimes[it.id]?.reps ?: 0 },
+                    singleSetReps = best?.singleSetReps ?: 0,
+                    lifetimeReps = family.sumOf { rows[it.id]?.lifetimeReps ?: 0 },
                     sessionId = best?.sessionId,
-                    lastPerformedAt = family.mapNotNull { lifetimes[it.id]?.lastAt }.maxOrNull(),
-                    lastLocalDate = family.mapNotNull { lifetimes[it.id]?.lastDate }.maxOrNull(),
+                    lastPerformedAt = family.mapNotNull { rows[it.id]?.lastPerformedAt }.maxOrNull(),
+                    lastLocalDate = family.mapNotNull { rows[it.id]?.lastLocalDate }.maxOrNull(),
                     hardestReachedExerciseId = hardest?.takeIf { it.id != representative.id }?.id,
                     hardestReachedExerciseName = hardest?.takeIf { it.id != representative.id }?.nameJa,
                 )
@@ -1964,9 +2046,9 @@ internal class GymStore private constructor(
         c.getLong(0) to if (uniform) c.getInt(1) else null
     }.toMap()
 
-    private class RoutineMissing(id: String) : RuntimeException("routine gone: $id")
-
-    private class SessionMissing(id: Long) : RuntimeException("session gone: $id")
+    // `RoutineMissing` and `SessionMissing` used to be declared here, private. They now live in
+    // `DbSupport.kt` beside `toGymFault`, which is the only thing that ever looks at them — see
+    // `DECISIONS.md` §Q23 for why the distance was the bug rather than an accident of layout.
 
     companion object {
         /**

@@ -132,8 +132,21 @@ private fun gymFaultCopy(fault: GymFault): FaultCopy = when (fault) {
  * Vermillion on washi: the same accent the app uses for anything that wants a decision. It sits above
  * the fields it concerns, and the composer stays exactly as the user left it behind it.
  */
+/**
+ * @param action overrides the action **word** only — never the message, and never whether there is an
+ *   action at all. It exists for the one case where the same fault has two destinations: a calendar
+ *   permission that can still be asked for says 許可する, and one the system will no longer prompt for
+ *   can only be reached through Settings, which `CalendarScreen.AccessPrompt` already answers with
+ *   設定を開く. A tap that throws the user out of the app has to say so first. Both words are the
+ *   string table's; nothing here may be assembled.
+ */
 @Composable
-fun FaultStrip(fault: TempoFault, onRecover: () -> Unit, modifier: Modifier = Modifier) {
+fun FaultStrip(
+    fault: TempoFault,
+    onRecover: () -> Unit,
+    modifier: Modifier = Modifier,
+    action: String? = null,
+) {
     val c = LocalTempoColors.current
     val copy = faultCopy(fault)
 
@@ -152,7 +165,7 @@ fun FaultStrip(fault: TempoFault, onRecover: () -> Unit, modifier: Modifier = Mo
             modifier = Modifier.weight(1f, fill = true).padding(end = 12.dp),
             style = TextStyle(fontFamily = Gothic, fontSize = 13.sp, lineHeight = 19.sp, color = c.inkSoft),
         )
-        copy.action?.let { label ->
+        (action ?: copy.action)?.let { label ->
             Text(
                 text = label,
                 modifier = Modifier

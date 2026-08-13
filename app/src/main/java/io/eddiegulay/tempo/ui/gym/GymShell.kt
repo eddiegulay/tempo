@@ -16,11 +16,9 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,9 +30,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -52,23 +48,19 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.gym.GymRoute
 import io.eddiegulay.tempo.gym.GymViewModel
 import io.eddiegulay.tempo.gym.LeaveReason
+import io.eddiegulay.tempo.gym.TrainingCommands
+import io.eddiegulay.tempo.gym.TrainingControl
 import io.eddiegulay.tempo.gym.currentTab
 import io.eddiegulay.tempo.gym.tabBarVisible
 import io.eddiegulay.tempo.ui.FaultPanel
-import io.eddiegulay.tempo.ui.FaultStrip
-import io.eddiegulay.tempo.ui.faultCopy
 import io.eddiegulay.tempo.ui.gym.session.CompletePage
 import io.eddiegulay.tempo.ui.gym.session.LivePlayer
-import io.eddiegulay.tempo.ui.gym.session.PlayerSheetRow
 import io.eddiegulay.tempo.ui.gym.session.SessionActions
 import io.eddiegulay.tempo.ui.gym.session.SessionHost
 import io.eddiegulay.tempo.ui.gym.session.SessionScreen
-import io.eddiegulay.tempo.ui.gym.session.SessionUnrecoverableState
-import io.eddiegulay.tempo.ui.gym.session.quitOptions
-import io.eddiegulay.tempo.ui.theme.Gothic
+import io.eddiegulay.tempo.ui.gym.session.SessionUnrecoverablePage
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
-import kotlinx.coroutines.delay
 
 /**
  * One route plus how deep it sits, which is the pair the route animation needs.
@@ -288,28 +280,41 @@ private fun Modifier.gymEntrance(): Modifier {
  * would be claims about the user's data the shell is in no position to make, and the third would be
  * prose no spec table contains. A heading with nothing beneath it claims nothing.
  *
- * The titles are each page spec's own, so replacing a branch with the real page keeps the word the
- * user already saw: 種目をえらぶ `04` §3, これまで / 最高 / 移り変わり `04` §4,
- * 設定 / 安全のために `01` §B, and 記録 from `GymTab`.
+ * **Phase 3 emptied the list.** Every route in [GymRoute] now reaches a real page: the five record
+ * routes — 記録, 記録の中身, これまで, 最高, 移り変わり — were the last five stand-ins, and they moved out
+ * in the same edit that added their arms to [GymPage], which is the discipline this function exists to
+ * enforce. `GymShellTest` fails either half on its own.
+ *
+ * **It is kept, returning `null` everywhere, rather than deleted.** An empty classifier looks like dead
+ * code and is the opposite: it is the thing that makes Phase 4's first new route a *compile error*
+ * instead of a page nobody can reach. Five pages in this feature have shipped fully written and
+ * unreachable, every one of them because a route fell into a branch that answered before [GymPage]
+ * ever looked at it. The cost of the empty `when` is one line per route; the cost of removing it is
+ * paid the next time somebody adds one.
  *
  * Exhaustive over [GymRoute] with no `else`, deliberately: a route added in a later phase must be
- * classified here or the build stops, rather than defaulting into whichever branch was cheapest.
+ * classified here or the build stops, rather than defaulting into whichever branch was cheapest. A
+ * new route that belongs in this list gets its own arm back, with the title its own spec gives it —
+ * never an empty state, never 読み込み中, never hand-written prose. A heading with nothing beneath it
+ * claims nothing.
  */
 internal fun gymPagePlaceholderTitle(route: GymRoute): String? = when (route) {
-    // Written, and reachable.
-    GymRoute.Home, GymRoute.Library, is GymRoute.RoutineDetail, is GymRoute.Session -> null
-
-    GymRoute.Records -> "記録"
-    is GymRoute.Builder -> if (route.editingId == null) "型を作る" else "型を編集"
-    is GymRoute.StationPicker -> "種目をえらぶ"
-    GymRoute.ExerciseIndex -> "種目"
-    is GymRoute.ExerciseDetail -> "種目の中身"
-    is GymRoute.Record -> "記録の中身"
-    is GymRoute.History -> "これまで"
-    GymRoute.Bests -> "最高"
-    GymRoute.Charts -> "移り変わり"
-    GymRoute.Settings -> "設定"
-    GymRoute.Safety -> "安全のために"
+    GymRoute.Home,
+    GymRoute.Library,
+    is GymRoute.RoutineDetail,
+    is GymRoute.Session,
+    is GymRoute.Builder,
+    is GymRoute.StationPicker,
+    GymRoute.ExerciseIndex,
+    is GymRoute.ExerciseDetail,
+    GymRoute.Settings,
+    GymRoute.Safety,
+    GymRoute.Records,
+    is GymRoute.Record,
+    is GymRoute.History,
+    GymRoute.Bests,
+    GymRoute.Charts,
+    -> null
 }
 
 /**
@@ -326,10 +331,18 @@ internal fun gymPagePlaceholderTitle(route: GymRoute): String? = when (route) {
  *
  * Every `SessionScreen` gets an arm, and none of them is a `->` into nothing: an unhandled case is a
  * blank screen in the middle of a workout, which is the one failure this player must not have.
+ * `SessionUnrecoverablePage` was written *in this file* for exactly that reason — it was the one player
+ * screen nobody had — and it now lives in `ui/gym/session/` beside the quit sheet whose rows, window
+ * and words it shares. Nothing about it changed in the move.
  *
  * [gym] is passed down rather than resolved per page with `viewModel()`: the shell already holds the
  * one instance keyed to `MainActivity`'s store, and a page reaching for its own would be a second
  * lookup with a second chance to disagree about which gym it is talking to.
+ *
+ * **Two of the things composed here are not pages.** `TrainingServiceMount` and `TrainingConsentMount`
+ * draw nothing at all; they are lifetimes. Their placement inside the player's `when` rather than at
+ * the shell root is load-bearing and is argued at each arm — a mount is a claim about *how long*
+ * something lives, so where it is mounted is the whole of what it says.
  */
 @Composable
 private fun GymPage(route: GymRoute, gym: GymViewModel) {
@@ -342,6 +355,30 @@ private fun GymPage(route: GymRoute, gym: GymViewModel) {
         GymRoute.Home -> GymHomeScreen(gym)
         GymRoute.Library -> LibraryIndexScreen(gym)
         is GymRoute.RoutineDetail -> LibraryDetailScreen(gym, route.routineId)
+
+        // Phase 2's six. Each argument is the route's own — the builder needs to know whether it is
+        // 作る or 編集 (`editingId`), and the picker whether it is editing station three or adding one
+        // (`index`, null for 加える) — so the route is destructured here rather than handed down whole:
+        // a page that read the stack would be a page that had to agree with the shell about which frame
+        // it was drawing.
+        is GymRoute.Builder -> BuilderScreen(gym, route.editingId)
+        is GymRoute.StationPicker -> StationPickerScreen(gym, route.index)
+        GymRoute.ExerciseIndex -> ExerciseIndexScreen(gym)
+        is GymRoute.ExerciseDetail -> ExerciseDetailScreen(gym, route.exerciseId)
+        GymRoute.Settings -> GymSettingsScreen(gym)
+        GymRoute.Safety -> GymSafetyScreen(gym)
+
+        // Phase 3's five. `Record` and `History` are destructured for the same reason Phase 2's were:
+        // 記録の中身 is *which* session, and これまで is optionally one routine's attempts anchored at one
+        // month, and a page that read the stack for those would have to agree with the shell about
+        // which frame it was drawing. `Records`, `Bests` and `Charts` carry nothing — they are the tab
+        // and its two depth-2 pages.
+        GymRoute.Records -> RecordsIndexScreen(gym)
+        is GymRoute.Record -> SessionDetailScreen(gym, route.sessionKey)
+        is GymRoute.History -> RecordsHistoryScreen(gym, route.routineId, route.anchorMonth)
+        GymRoute.Bests -> RecordsPrScreen(gym)
+        GymRoute.Charts -> RecordsChartsScreen(gym)
+
         is GymRoute.Session -> SessionHost(gym, route) { screen, actions ->
             when (screen) {
                 // §A's prompt rule, applied to the player itself: **no flash and no spinner**. The
@@ -350,8 +387,33 @@ private fun GymPage(route: GymRoute, gym: GymViewModel) {
                 // be the first thing 始める showed them. Nothing is drawn but the paper `SessionHost`
                 // already laid down.
                 SessionScreen.Loading -> Unit
-                is SessionScreen.Live -> LivePlayer(screen.state, actions)
-                is SessionScreen.Complete -> CompletePage(screen.state, actions)
+
+                // The health service is mounted **here, on the `Live` arm**, and the placement is the
+                // whole design (`03-player.md` §E.5). `TrainingServiceMount` starts the service when it
+                // enters the composition and stops it when it leaves, so scoping it to this arm makes
+                // the three endings the service owes — finish, quit and discard — one fact rather than
+                // three call sites: every one of them takes the screen off `Live`.
+                //
+                // *Rejected* — mounting it at the shell root, or in `SessionHost`'s scaffold. Both
+                // outlive the session: the root would hold a workout notification over 記録 and over the
+                // whole of 型 afterwards, and the scaffold survives the transition to `Complete`. A
+                // foreground notification that is still up after the user finished is worse than none.
+                is SessionScreen.Live -> {
+                    TrainingServiceMount(trainingNotice(screen.state))
+                    TrainingCommandRelay(actions)
+                    LivePlayer(screen.state, actions)
+                }
+
+                // 記録 is the one moment `TrainingConsent` names as decent to ask on — see
+                // `TRAINING_CONSENT_DELAY_MS`. It is mounted beside the page rather than inside it
+                // because it draws nothing and belongs to the *service*, not to the record: the
+                // historical `GYM.RECORDS.SESSION_DETAIL` renders the same `RecordSummary` and must
+                // never ask, and it gets that for free by simply not being this arm.
+                is SessionScreen.Complete -> {
+                    TrainingConsentMount()
+                    CompletePage(screen.state, actions)
+                }
+
                 is SessionScreen.Unrecoverable -> SessionUnrecoverablePage(screen.state, actions)
                 // The read failed, so this is the `Loadable` doctrine's third case and it renders
                 // through the one place a fault becomes words (`DECISIONS.md` §Q6). もう一度 re-reads
@@ -359,129 +421,33 @@ private fun GymPage(route: GymRoute, gym: GymViewModel) {
                 is SessionScreen.Failed -> FaultPanel(screen.fault, onRecover = actions::onRetryLoad)
             }
         }
-
-        // Unreachable: every other route returned a placeholder above, and that `when` is exhaustive.
-        else -> Unit
     }
 }
 
-/** How long the destructive row stays armed after the first tap — §A QUIT_SHEET's second ask. */
-private const val DISCARD_ARM_MS = 3_000L
-
 /**
- * A session that exists on disk and cannot be replayed — [SessionScreen.Unrecoverable] drawn.
+ * The notification's ┃┃ and 続ける, turned back into [SessionActions] calls.
  *
- * **Why it is here and not in `ui/gym/session/`.** It is the one player screen nobody had written when
- * the player was wired up, and an unhandled arm in [GymPage] is a blank screen in the middle of a
- * workout — strictly the worst of the three outcomes. It is drawn from parts that already exist:
- * [quitOptions] decides the rows, [PlayerSheetRow] is the quit sheet's own row, and [faultCopy] is the
- * one fault table. **Not one string here is new** — 鍛錬を終えますか, ここまでを記録する,
- * 記録せずに終える / 終える, 本当に消しますか and まだ 記録するものがありません are all `QuitSheet.kt`'s,
- * sourced there to `03-player.md` §A GYM.SESSION.QUIT_SHEET. It should move next to the sheet, and the
- * arming window and its two sentences should be hoisted out of both; that is reported, not done, because
- * `ui/gym/session/` belongs to another unit.
+ * Without this the two buttons on the foreground notification are drawn, tappable, and inert:
+ * `TrainingService` publishes into [TrainingCommands] from a fresh `onStartCommand` and has no way to
+ * reach the player, because the two ends genuinely never meet — one is a framework callback, the other
+ * a composable in an Activity that may not even be resumed.
  *
- * **つづける is removed, and that is the whole difference from the sheet.** There is nothing to continue
- * — the stored results cannot be landed on the recompiled timeline — so offering the escape would be
- * offering a door onto the same room. [SessionUnrecoverableState] carries `resultsWritten` for exactly
- * the reason the sheet does: at zero there is nothing to record, so ここまでを記録する is **omitted**
- * rather than disabled and the destructive row softens to 終える and asks once.
+ * Collected on the **`Live`** arm only, and keyed on [actions], so the subscription exists exactly as
+ * long as there is a session to command. [TrainingCommands] has no replay for the matching reason: a
+ * 続ける tapped on a lock screen at 07:00 must not fire into a session started at 19:00, and an emit
+ * with no subscriber is dropped rather than queued.
  *
- * *Rejected* — rendering this as a `PlayerSheet` so it matched the quit sheet pixel for pixel. A sheet
- * is a thing over something, and its scrim would dim an empty screen; worse, with つづける gone the
- * scrim tap and Back would have to be dead, which is a modal the user cannot dismiss. It is a page.
- *
- * *Rejected* — a subtitle when there is work to save. The sheet's is `quitSummaryLine(activeMs, …)` and
- * an unreplayable session has no timeline to measure those against. Saying nothing is honest; a summary
- * computed from the rows we have just declared unreadable would not be.
+ * Every call is safe at any moment — `SessionActions`' contract is that the machine returns null for
+ * an event the current phase does not accept and that null is a no-op, never an error — so this needs
+ * no view of the state to decide whether the button it is relaying was applicable.
  */
 @Composable
-private fun SessionUnrecoverablePage(state: SessionUnrecoverableState, actions: SessionActions) {
-    val c = LocalTempoColors.current
-    val options = quitOptions(state.resultsWritten)
-
-    var armed by remember { mutableStateOf(false) }
-    // Which write failed, so もう一度 retries the one the user asked for. A failed **discard** has no
-    // retry the host exposes, and answering it with a finish would be a wrong write dressed as a no-op
-    // — `QuitSheet.kt` makes the same distinction for the same reason.
-    var retryable by remember { mutableStateOf(false) }
-
-    LaunchedEffect(armed) {
-        if (!armed) return@LaunchedEffect
-        delay(DISCARD_ARM_MS)
-        armed = false
-    }
-
-    Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(
-            text = state.routineName,
-            modifier = Modifier.semantics { heading() },
-            style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
-        )
-        Spacer(Modifier.height(10.dp))
-        Text(
-            text = "鍛錬を終えますか",
-            style = TextStyle(fontFamily = Mincho, fontSize = 16.sp, letterSpacing = 2.sp, color = c.inkSoft),
-        )
-        if (options.subtitleIsWarning) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "まだ 記録するものがありません",
-                style = TextStyle(fontFamily = Gothic, fontSize = 13.sp, color = c.inkFaint),
-            )
-        }
-        Spacer(Modifier.height(12.dp))
-        Box(Modifier.fillMaxWidth().height(1.dp).background(c.hair))
-
-        if (options.canRecord) {
-            PlayerSheetRow(
-                label = "ここまでを記録する",
-                description = "ここまでを記録する",
-                color = c.accent,
-                enabled = !state.saving,
-                onClick = {
-                    retryable = true
-                    actions.onQuitSaveRecording()
-                },
-            )
-            Box(Modifier.fillMaxWidth().height(1.dp).background(c.hair))
-        }
-
-        PlayerSheetRow(
-            label = if (armed) "本当に消しますか" else options.discardLabel,
-            description = if (armed) {
-                "本当に消しますか、もう一度 押すと消えます"
-            } else {
-                "記録せずに終える、これまでの記録は消えます"
-            },
-            color = c.inkFaint,
-            enabled = !state.saving,
-            assertive = armed,
-            onClick = {
-                when {
-                    !options.confirmsDiscard || armed -> {
-                        armed = false
-                        retryable = false
-                        actions.onQuitDiscard()
-                    }
-
-                    else -> armed = true
-                }
-            },
-        )
-
-        state.fault?.let { fault ->
-            Spacer(Modifier.height(12.dp))
-            if (retryable) {
-                FaultStrip(fault, onRecover = actions::onRetryFinish)
-            } else {
-                Text(
-                    text = faultCopy(fault).message,
-                    style = TextStyle(fontFamily = Gothic, fontSize = 13.sp, color = c.accent),
-                )
+private fun TrainingCommandRelay(actions: SessionActions) {
+    LaunchedEffect(actions) {
+        TrainingCommands.events.collect { control ->
+            when (control) {
+                TrainingControl.PAUSE -> actions.onPause()
+                TrainingControl.RESUME -> actions.onResume()
             }
         }
     }

@@ -62,6 +62,29 @@ internal class RoutineHasHistory(val routineId: String) :
     RuntimeException("routine $routineId still has finished sessions")
 
 /**
+ * A read that named a routine the store no longer holds — archived out from under a page, or purged
+ * from another shell state (§C.4).
+ *
+ * It lives **here, beside [toGymFault], and is `internal`** rather than nested privately inside
+ * `GymStore`, for the reason `DECISIONS.md` §Q23 records: while it was private there was no arm for it
+ * below and it fell to [GymFault.Unknown], so the page that already knew how to handle
+ * [GymFault.RoutineGone] never saw one. A thrown type whose classification lives in another file is a
+ * type that gets classified by accident; putting the two within a screen of each other is what makes
+ * the omission visible.
+ */
+internal class RoutineMissing(val routineId: String) : RuntimeException("routine gone: $routineId")
+
+/**
+ * The same, for a session row: a record opened from a list that has since been deleted.
+ *
+ * `04-library-records.md` §4 edge case 9 is the whole customer — `SessionDetailScreen.popsOnFault`
+ * pops on [GymFault.SessionGone] and nothing else, and `DECISIONS.md` §Q6 gives that fault the words
+ * この記録は削除されています with **no** action. Unmapped it arrived as [GymFault.Unknown], which renders
+ * 記録を読めません with a もう一度 that re-reads a row that is gone and fails again forever.
+ */
+internal class SessionMissing(val sessionId: Long) : RuntimeException("session gone: $sessionId")
+
+/**
  * Turns whatever SQLite threw into something the user can act on.
  *
  * The classification is by **remedy**, not by exception class, which is the whole reason
@@ -77,6 +100,14 @@ internal fun Throwable.toGymFault(): GymFault = when (this) {
     is SchemaDowngrade -> GymFault.StoreReset
     // 保存できませんでした with no もう一度: the delete was refused, and retrying refuses it again.
     is RoutineHasHistory -> GymFault.Rejected
+    // The two "it is gone" faults, and they must precede the SQLite cases for the ordering reason
+    // below — both are plain `RuntimeException`s, so nothing else here would have caught them either
+    // way, but the group reads as one rule: a row that is absent is not a store that is broken.
+    // `DECISIONS.md` §Q6 gives both of these copy with **no action word**, and §Q23 is the ruling that
+    // put them here: without these two arms both fell to [GymFault.Unknown], which offers a もう一度
+    // that can only fail again on a row nothing will bring back.
+    is RoutineMissing -> GymFault.RoutineGone
+    is SessionMissing -> GymFault.SessionGone
     is SQLiteFullException -> GymFault.StoreFull
     is SQLiteDatabaseCorruptException -> GymFault.StoreCorrupt
     is SQLiteConstraintException -> GymFault.Rejected

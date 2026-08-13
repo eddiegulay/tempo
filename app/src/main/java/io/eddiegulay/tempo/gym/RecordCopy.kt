@@ -284,3 +284,209 @@ fun historySubtitle(sessions: Int, totalActiveMs: Long, routineName: String? = n
     val minutes = (if (totalActiveMs <= 0L) 0L else totalActiveMs / 60_000L).toInt()
     return JapaneseDate.kanjiExtended(sessions) + "回 ・ " + JapaneseDate.kanjiExtended(minutes) + "分"
 }
+
+// ─── The streak block (`GYM.RECORDS.INDEX`) ─────────────────────────────────────────────────────
+
+/**
+ * The three lines under the month grid, and the **one node** that reads them.
+ *
+ * §4's accessibility note is why they are one type rather than three functions: *the streak +
+ * forgiveness + monotony lines are one node — three announcements for one thought is worse than
+ * one.* Splitting them would leave the join to a call site, and a call site that joins three
+ * optional strings gets the separators wrong on the day one of them is absent.
+ */
+data class StreakCopy(
+    /** 四日 連続, or 連続は とぎれています. Never 〇日 連続 — zero is not a small streak. */
+    val line: String,
+    /** The line is the broken one, so it draws `c.inkFaint` rather than `c.inkSoft`. */
+    val broken: Boolean,
+    /** ゆるし 一回 使いました, or null. Present only when the allowance was actually spent. */
+    val forgiveness: String?,
+    /** 同じ調子が続いています, or null. Gated on both a threshold and a history length. */
+    val monotony: String?,
+    /** All of the above, joined — the single spoken string. */
+    val semantics: String,
+)
+
+/**
+ * Foster monotony above which a week reads as monotonous. §4: `monotony7d > 2.0`.
+ *
+ * Strictly greater, matching the spec's own operator: 2.0 exactly is the boundary of the range, and a
+ * nudge that fires *at* the threshold fires for a user the threshold was drawn to exclude.
+ */
+const val MONOTONY_NUDGE_ABOVE: Double = 2.0
+
+/**
+ * Days of history below which the monotony nudge stays silent. §4: `historyDays >= 14`.
+ *
+ * Design §7.4's stance on premature metrics, applied: a monotony figure over four days is arithmetic
+ * about a sample, not a fact about training, and 同じ調子が続いています said to somebody in their first
+ * week is the app inventing a problem to have an opinion about.
+ */
+const val MONOTONY_MIN_HISTORY_DAYS: Int = 14
+
+/**
+ * 四日 連続 ・ ゆるし 一回 使いました ・ 同じ調子が続いています — as much of that as is true.
+ *
+ * **The forgiveness line never states how many days remain**, and `04-library-records.md` §6's table
+ * says so beside the string itself. It is the difference between an allowance and a budget: a number
+ * you can see going down is a number you will spend, and the whole point of the forgiveness rule is
+ * that the user should not be managing it at all. [Streak] carries `forgivenThisMonth` and
+ * deliberately carries no remainder, so this function could not print one if it wanted to — the type
+ * is where the rule is enforced and this is where it is honoured.
+ *
+ * **Zero days is 連続は とぎれています, never 〇日 連続** (§4's `StreakZero` state, and [Streak]'s own
+ * KDoc). 〇日 連続 is a scolding dressed as a statistic; とぎれています is a fact with no verdict in it,
+ * and it is a sentence you can read on a rest day without flinching.
+ *
+ * @param monotony7d from `TrainingLoad`. Null is the ordinary case — it is null whenever any day in
+ *   the window holds an unrated session, or when the SD is zero, and both mean *no answer* rather
+ *   than *a low number*. Only a value above [MONOTONY_NUDGE_ABOVE] with at least
+ *   [MONOTONY_MIN_HISTORY_DAYS] of history says anything.
+ */
+fun streakCopy(streak: Streak, monotony7d: Double? = null, historyDays: Int = 0): StreakCopy {
+    val broken = streak.days <= 0
+    val line = if (broken) {
+        "連続は とぎれています"
+    } else {
+        JapaneseDate.kanjiExtended(streak.days) + "日 連続"
+    }
+    val forgiveness = if (streak.forgivenThisMonth > 0) {
+        "ゆるし " + JapaneseDate.kanjiExtended(streak.forgivenThisMonth) + "回 使いました"
+    } else {
+        null
+    }
+    val monotony = if (
+        monotony7d != null &&
+        monotony7d > MONOTONY_NUDGE_ABOVE &&
+        historyDays >= MONOTONY_MIN_HISTORY_DAYS
+    ) {
+        "同じ調子が続いています"
+    } else {
+        null
+    }
+    return StreakCopy(
+        line = line,
+        broken = broken,
+        forgiveness = forgiveness,
+        monotony = monotony,
+        semantics = listOfNotNull(line, forgiveness, monotony).joinToString("、"),
+    )
+}
+
+// ─── `GYM.RECORDS.PR` rows ──────────────────────────────────────────────────────────────────────
+
+/**
+ * The metric a routine is scored on, decided by its engine.
+ *
+ * `04-library-records.md` §4 edge case 2's table, exactly: FOR_TIME* is scored on the clock, AMRAP on
+ * rounds (with reps as the finer answer), EMOM_ASCENDING on rounds survived, and the fixed-shape
+ * engines on weighted volume.
+ *
+ * **This is the primary metric only** — the single number a routine's record *is*. It is not the set
+ * of tiles a detail page shows, which is `bestTilesFor`'s question and is two for an AMRAP (最高巡数
+ * beside 最高反復) and one for everything else. Nor is it `metricsFor`, which answers a third
+ * question: which records a finished session is allowed to *take*, where `MOST_REPS` rides along on
+ * the round-counting engines so an AMRAP's second tile has a row behind it.
+ *
+ * Three functions over one engine table is one more than anybody wants, and the risk is that they
+ * drift into disagreeing — a routine scored one way, its tile labelled another. They are not merged
+ * because they genuinely answer different questions, and `EMOM` proves it: it scores on volume, shows
+ * one tile, and is allowed to take a `MOST_REPS` record it never displays. What holds them together
+ * instead is a test — `RecordCopyTest` asserts for **every** engine that [bestMetricFor] names the
+ * metric `bestTilesFor` puts first, so a divergence fails the build rather than shipping.
+ *
+ * *Rejected* — reading `routine_version.primary_metric` instead. That column is the stored answer and
+ * is the right one for a routine that exists; this function is what the PR page uses to *label* a
+ * best whose row it is holding, and `DECISIONS.md` §Q9 is the standing proof that a seed can carry a
+ * metric the engine does not score (リーコン・ロン shipped as `HIGHEST_STEP` and rendered an empty tile
+ * block forever). The engine is the authority on what "best" means; the column is what was written.
+ */
+fun bestMetricFor(engine: Engine): BestMetric = when (engine) {
+    Engine.FOR_TIME, Engine.FOR_TIME_WITH_REST -> BestMetric.BEST_TIME
+    Engine.AMRAP, Engine.EMOM_ASCENDING -> BestMetric.MOST_ROUNDS
+    Engine.INTERVAL_CIRCUIT, Engine.EMOM, Engine.FIXED_SETS -> BestMetric.MOST_VOLUME
+}
+
+/**
+ * One 型ごと row of `GYM.RECORDS.PR`, in the four slots §4's mock draws.
+ *
+ * ```
+ * シンディ                              十七巡      ← name / value
+ * 最高巡数 ・ 時間内                                 ← meta
+ * 六月十七日                            六回        ← date / count, both tappable
+ * ```
+ */
+data class BestRowCopy(
+    val name: String,
+    /** 十七巡 / 六分十四秒 / 四百二十 — in the unit its metric is measured in. */
+    val value: String,
+    /** 最高巡数 ・ 時間内 — what was measured, and the engine that decided so. */
+    val meta: String,
+    /** 六月十七日 — the full month-day, because a PR list spans months. */
+    val date: String,
+    /** 六回 — how many times the routine has been done. */
+    val count: String,
+    /** 中身が変わっています, or null. `c.inkFaint`. */
+    val note: String?,
+    /** The routine was deleted: the row shows a 削除済み chip and stays tappable. */
+    val archived: Boolean,
+    /** The whole row as one node, with the two tappable fragments exposed as `customActions`. */
+    val semantics: String,
+)
+
+/**
+ * A routine's record as a row, or **null for a record that cannot be labelled**.
+ *
+ * Null is the `HIGHEST_STEP` case and nothing else. `DECISIONS.md` §Q9 forbids inventing a Japanese
+ * label for it — §6's tile list has five entries and none is a step — so a stored row carrying it is
+ * *omitted* rather than printed with a blank heading or an invented one. Nothing seeds it in v1, so
+ * this is a defence against a restored backup rather than a live path, and where the step you have
+ * reached belongs is `stepFor`, as 第九段 / 十八段のうち.
+ *
+ * The label and the value both come from `EngineRows`' [bestMetricLabel] and [bestValueLabel] rather
+ * than being restated here — that file's own KDoc asks for exactly that, and the four words 最速 /
+ * 最高巡数 / 最高反復 / 最高負荷 appearing in two tables is how a tile and a row start disagreeing about
+ * the same record.
+ *
+ * **The metric comes off the record, not off the engine.** [bestMetricFor] says what an engine scores
+ * on; this row is printing a `personal_record` that already knows which metric it is, and a routine
+ * whose engine was changed after the record was set still holds the record it set. That is the same
+ * restraint as [structureChanged][RoutineBest.structureChanged]: state the fact, decline the
+ * judgement.
+ *
+ * **A scaled tier needs no decoration.** §4 edge case 3 says scaled tiers are separate rows "labelled
+ * シンディ ・ やさしい", and they already are — they are separate stored routines and the seed names
+ * one 「シンディ（やさしい）」. Appending a tier here would render 「シンディ（やさしい） ・ やさしい」.
+ *
+ * The date is 六月十七日 and not the history row's bare 十七日: this list is not grouped by month, so
+ * the month is not repeated noise here — it is the only thing saying *when*.
+ */
+fun bestValueCopy(best: RoutineBest): BestRowCopy? {
+    val metricLabel = bestMetricLabel(best.metric) ?: return null
+    val value = bestValueLabel(best.metric, best.value)
+    val meta = metricLabel + " ・ " + best.engine.label
+    val date = JapaneseDate.monthDay(best.localDate.atStartOfDay())
+    val count = JapaneseDate.kanjiExtended(best.timesDone) + "回"
+    val note = if (best.structureChanged) "中身が変わっています" else null
+    return BestRowCopy(
+        name = best.routineName,
+        value = value,
+        meta = meta,
+        date = date,
+        count = count,
+        note = note,
+        archived = best.routineArchived,
+        semantics = listOfNotNull(
+            best.routineName,
+            metricLabel + " " + value,
+            best.engine.label,
+            date,
+            count,
+            note,
+            // Announced last, and announced at all: a row that is still tappable while its routine is
+            // gone has to say so, or the 型を見る it offers lands somewhere the user cannot explain.
+            if (best.routineArchived) "削除済み" else null,
+        ).joinToString("、"),
+    )
+}

@@ -63,22 +63,41 @@ class GymShellTest {
         // asserted the placeholder title. 始める landed on a heading and a hairline.
         assertNull(gymPagePlaceholderTitle(GymRoute.Session("r_cindy")))
         assertNull(gymPagePlaceholderTitle(GymRoute.Session("r_cindy", resume = true)))
+        // Phase 2's six, all wired in the edit that wrote them.
+        assertNull(gymPagePlaceholderTitle(GymRoute.Builder()))
+        assertNull(gymPagePlaceholderTitle(GymRoute.Builder("r_cindy")))
+        assertNull(gymPagePlaceholderTitle(GymRoute.StationPicker(null)))
+        assertNull(gymPagePlaceholderTitle(GymRoute.StationPicker(2)))
+        assertNull(gymPagePlaceholderTitle(GymRoute.ExerciseIndex))
+        assertNull(gymPagePlaceholderTitle(GymRoute.ExerciseDetail("e_pullup")))
+        // 設定 and 安全のために are pinned here rather than only by the structural test below because
+        // `GYM.HOME`'s first-run line navigates straight to `Safety` and acknowledges the note on the
+        // way: while that route was a placeholder, the only way to clear a permanent footnote was to
+        // walk into an empty page.
+        assertNull(gymPagePlaceholderTitle(GymRoute.Settings))
+        assertNull(gymPagePlaceholderTitle(GymRoute.Safety))
+        // Phase 3's five, and the fifth, sixth, seventh and eighth repetition of the same regression:
+        // `RecordsIndexScreen`, `RecordsHistoryScreen`, `SessionDetailScreen`, `RecordsPrScreen` and
+        // `RecordsChartsScreen` were all written, all compiling, and had zero call sites, while 記録,
+        // 最高, 移り変わり, これまで and 記録の中身 each drew a heading and a hairline.
+        assertNull(gymPagePlaceholderTitle(GymRoute.Records))
+        assertNull(gymPagePlaceholderTitle(GymRoute.Record("s_1")))
+        assertNull(gymPagePlaceholderTitle(GymRoute.History()))
+        assertNull(gymPagePlaceholderTitle(GymRoute.History("r_cindy", YearMonth.of(2026, 8))))
+        assertNull(gymPagePlaceholderTitle(GymRoute.Bests))
+        assertNull(gymPagePlaceholderTitle(GymRoute.Charts))
     }
 
     @Test
-    fun `every unwritten route still stands under its own spec's title`() {
-        assertEquals("記録", gymPagePlaceholderTitle(GymRoute.Records))
-        assertEquals("型を作る", gymPagePlaceholderTitle(GymRoute.Builder()))
-        assertEquals("型を編集", gymPagePlaceholderTitle(GymRoute.Builder("r_cindy")))
-        assertEquals("種目をえらぶ", gymPagePlaceholderTitle(GymRoute.StationPicker(null)))
-        assertEquals("種目", gymPagePlaceholderTitle(GymRoute.ExerciseIndex))
-        assertEquals("種目の中身", gymPagePlaceholderTitle(GymRoute.ExerciseDetail("e_pullup")))
-        assertEquals("記録の中身", gymPagePlaceholderTitle(GymRoute.Record("s_1")))
-        assertEquals("これまで", gymPagePlaceholderTitle(GymRoute.History(anchorMonth = YearMonth.of(2026, 8))))
-        assertEquals("最高", gymPagePlaceholderTitle(GymRoute.Bests))
-        assertEquals("移り変わり", gymPagePlaceholderTitle(GymRoute.Charts))
-        assertEquals("設定", gymPagePlaceholderTitle(GymRoute.Settings))
-        assertEquals("安全のために", gymPagePlaceholderTitle(GymRoute.Safety))
+    fun `no route is a placeholder any more`() {
+        // Phase 3 emptied the list, and this is the statement of that rather than a gap left by
+        // deleting the old assertions. Every route in 鍛錬 now reaches a page it can draw.
+        //
+        // [gymPagePlaceholderTitle] is deliberately **kept** in that state: an exhaustive `when` with
+        // no `else` is what makes Phase 4's first new route a compile error rather than a page nobody
+        // can reach. When one is added and its page is not written yet, it earns a title from its own
+        // spec here, and this test is where the count changes.
+        assertEquals(emptyList<String>(), routes.values.mapNotNull(::gymPagePlaceholderTitle))
     }
 
     @Test
@@ -113,6 +132,47 @@ class GymShellTest {
                 assertTrue("$name has no page, so it owes a placeholder title", placeholder != null)
             }
         }
+    }
+
+    @Test
+    fun `the health service is mounted on the live session and nowhere higher`() {
+        // `TrainingServiceMount` is not a page: it draws nothing, and what it *is* is a lifetime. It
+        // starts the foreground service on entering the composition and stops it on leaving, so the
+        // arm it sits on is the whole specification of when the notification exists. On the `Live` arm
+        // the three endings the service owes — finish, quit and discard — are one fact, because every
+        // one of them takes the screen off `Live`.
+        //
+        // Mounted at the shell root instead, it would satisfy the orphan check below and still be
+        // wrong in the way that matters: a workout notification standing over 記録, over the library,
+        // and over every screen until the user left 鍛錬 altogether.
+        val page = declarationBody(shell, "private fun GymPage(")
+        val root = declarationBody(shell, "fun GymShell(")
+
+        assertTrue("GymShell must not hold the service above the player", !root.contains("TrainingServiceMount"))
+        val live = page.indexOf("is SessionScreen.Live ->")
+        val complete = page.indexOf("is SessionScreen.Complete ->")
+        val mount = page.indexOf("TrainingServiceMount(")
+        assertTrue("the player must mount the service: $page", mount > 0)
+        assertTrue("...on the Live arm, after it and before Complete", mount in (live + 1) until complete)
+
+        // The consent is the other half and belongs one arm later. `TRAINING_CONSENT_DELAY_MS` carries
+        // the argument: the two moments this must not be asked at — launch, and in front of a workout —
+        // leave exactly one, and it is 記録. The historical `GYM.RECORDS.SESSION_DETAIL` draws the same
+        // `RecordSummary` and must never ask; it gets that by simply not being this arm.
+        val consent = page.indexOf("TrainingConsentMount(")
+        assertTrue("the record screen must ask for the service's permissions: $page", consent > complete)
+    }
+
+    @Test
+    fun `予定に入れる is on the record screen, and only the live one`() {
+        // `03-player.md` §A COMPLETE places it there. `04-library-records.md` :809 keeps it off the
+        // historical page for a reason no code can infer: booking "the next one" is something you do
+        // having just finished, not while reading a record from March.
+        val complete = sources.getValue("CompletePage.kt")
+        val detail = sources.getValue("SessionDetailScreen.kt")
+
+        assertTrue("CompletePage must draw ScheduleNextAction: it is 予定に入れる", complete.contains("ScheduleNextAction("))
+        assertTrue("SESSION_DETAIL must not", !detail.contains("ScheduleNextAction("))
     }
 
     @Test

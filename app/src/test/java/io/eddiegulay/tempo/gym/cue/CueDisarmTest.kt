@@ -98,6 +98,49 @@ class CueDisarmTest {
     }
 
     @Test
+    fun `a session the health service is holding disarms nothing at all on backgrounding`() {
+        // `03-player.md` §E.5, stated as a promise about this exact table: *"When the health service
+        // lands in Phase 3, the only thing that changes in this spec is the disarm matrix (§D.7)."*
+        // This row is that change and it is the whole deliverable of the service — the session was
+        // always correct across backgrounding, so the only thing a foreground process buys is that
+        // the 3-2-1 and the 「休息」 still fire from a pocket.
+        val plan = disarmPlan(CueEvent.ON_STOP, allOn, live.copy(serviceHolding = true))
+        assertFalse("the vibrator is mid-count-down", plan.cancelHaptics)
+        assertFalse("the schedule posted for this segment is the right one", plan.cancelPending)
+        assertEquals("a released ToneGenerator cannot play a cue", ToneDisarm.KEEP, plan.tones)
+        assertFalse("「休息」 is still being said", plan.stopSpeech)
+        assertTrue("the channel is still live afterwards", plan.rearm)
+    }
+
+    @Test
+    fun `with no service, backgrounding is still Phase 1's teardown, cell for cell`() {
+        // The fallback is not a degraded path, it is the correct one: a device that refused the
+        // service (API 34's health prerequisite, API 31's background-start rules, a manifest mismatch)
+        // is about to have this process frozen, and a ToneGenerator kept open there is §D.4's battery
+        // bug. So the two rows are pinned against each other rather than one being assumed.
+        assertEquals(
+            disarmPlan(CueEvent.ON_STOP, allOn, live.copy(serviceHolding = false)),
+            disarmPlan(CueEvent.ON_STOP, allOn, live),
+        )
+    }
+
+    @Test
+    fun `the service changes this one row and no other`() {
+        // §E.5 says "the only thing that changes", and this is that word tested. A future edit that
+        // reached for `serviceHolding` in the pause row — plausible, since a paused session is also
+        // service-backed — would be changing the spec, not implementing it.
+        for (event in CueEvent.entries - CueEvent.ON_STOP) {
+            for (state in listOf(live, CueState(Phase.COMPLETE), CueState(Phase.COMPLETE, sessionComplete = false))) {
+                assertEquals(
+                    "$event / $state",
+                    disarmPlan(event, allOn, state),
+                    disarmPlan(event, allOn, state.copy(serviceHolding = true)),
+                )
+            }
+        }
+    }
+
+    @Test
     fun `backgrounding ignores the preferences entirely`() {
         // The one row that does not consult them, and deliberately: it is teardown, not a channel
         // decision. An engine armed a moment before the user switched a channel off still holds a
@@ -158,6 +201,10 @@ class CueDisarmTest {
     fun `every event cancels its pending posts, and only a skip re-arms`() {
         // The one column with no exception, and the one with exactly one. Stated together because a
         // future row that forgot either would leave cues firing for a segment nobody is in.
+        //
+        // Both claims are about a session with no service holding it. That is not a weakening: with
+        // the service up, `ON_STOP` is not a disarm at all — nothing is cancelled because nothing is
+        // ending — which is exactly the pair of exceptions the row above pins.
         for (event in CueEvent.entries) {
             assertTrue(event.name, disarmPlan(event, allOn, live).cancelPending)
             assertEquals(event.name, event == CueEvent.SKIP, disarmPlan(event, allOn, live).rearm)

@@ -302,13 +302,23 @@ fun EventComposeScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifi
 
 private enum class Picker { None, Start, End }
 
-/** New events land on the next clean half-hour — nobody schedules anything at 14:07. */
-private fun defaultStart(): LocalDateTime =
-    LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES).let { now ->
-        val minute = now.minute
+/**
+ * New events land on the next clean half-hour — nobody schedules anything at 14:07.
+ *
+ * `internal`, and **the app's only answer to "when does a new event open?"** — `DECISIONS.md` §Q7's
+ * ruling, that one implementation is authoritative and the other delegates. `鍛錬`'s 予定に入れる
+ * (`ui/gym/ScheduleNextAction.kt`) opened on a verbatim second copy of these six lines; two copies that
+ * agree today are the divergence bug §Q7 was raised over, so the copy is gone and this is what it calls.
+ *
+ * @param now injected so the rule can be pinned by a JVM test at a fixed minute, which a copy that read
+ *   the wall clock internally could not be. Production passes nothing.
+ */
+internal fun defaultStart(now: LocalDateTime = LocalDateTime.now()): LocalDateTime =
+    now.truncatedTo(ChronoUnit.MINUTES).let { at ->
+        val minute = at.minute
         when {
-            minute < 30 -> now.withMinute(30)
-            else -> now.plusHours(1).withMinute(0)
+            minute < 30 -> at.withMinute(30)
+            else -> at.plusHours(1).withMinute(0)
         }
     }
 

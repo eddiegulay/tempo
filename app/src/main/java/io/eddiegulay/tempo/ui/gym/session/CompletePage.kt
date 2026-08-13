@@ -17,6 +17,7 @@ import io.eddiegulay.tempo.ui.HeaderAction
 import io.eddiegulay.tempo.ui.gym.RecordMode
 import io.eddiegulay.tempo.ui.gym.RecordSummary
 import io.eddiegulay.tempo.ui.gym.RecordSummaryData
+import io.eddiegulay.tempo.ui.gym.ScheduleNextAction
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 
 /*
@@ -32,8 +33,14 @@ import io.eddiegulay.tempo.ui.theme.LocalTempoColors
  *
  * 1. **No `BackHandler`.** `SessionHost` owns exactly one for the entire player and routes 記録 → close
  *    (§C.1 row 33). A second one here would win by nesting and would pop one entry instead of the stack.
- * 2. **No 予定に入れる.** It is Phase 3 (`00-plan.md` §6). A disabled button for an action that does not
- *    exist teaches the user the app is broken, so no slot is reserved and no ghost is drawn.
+ * 2. **予定に入れる, and only here.** `03-player.md` §A COMPLETE puts it on this screen; Phase 3 built
+ *    it as `ui/gym/ScheduleNextAction.kt` and it is passed into [RecordSummary]'s `footer` slot, which
+ *    is the one place under もう一度 the caller owns. `GYM.RECORDS.SESSION_DETAIL` renders the same
+ *    component and deliberately passes it nothing: booking "the next one" is a live-session act
+ *    (`04-library-records.md` :809), and it would be a strange offer on a record from March.
+ *    §A COMPLETE's mock draws もう一度 and 予定に入れる **side by side**; the footer slot opens below
+ *    instead, which is a layout difference reported rather than fixed, because the fix is a change to
+ *    the shared component and this page is not its owner.
  * 3. **No screen-on release, no `finishSession`, no query.** All three already happened: the session was
  *    closed by whatever transitioned here, `SessionOutcome` was filled *inside* that transaction (§E.5),
  *    and `SessionController` dropped the wake flag on the finish (§A COMPLETE edge case 8).
@@ -86,6 +93,9 @@ fun CompletePage(
             ratingFault = state.ratingFault,
             onRate = actions::onRate,
             onRepeat = actions::onRepeat,
+            // The measurement, not an estimate: the next one is booked for as long as this one
+            // actually took. See `gym/ScheduleNext.kt`.
+            footer = { ScheduleNextAction(data.summary.routineName, data.summary.activeMs) },
         )
     }
 }

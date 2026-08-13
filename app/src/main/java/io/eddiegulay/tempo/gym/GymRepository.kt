@@ -167,6 +167,27 @@ interface GymRepository {
      */
     fun countForRoutine(routineId: String): Flow<Loadable<Int>>
 
+    /**
+     * How many sessions, and how many milliseconds, **ever** — `04` §4's これまで tile and the
+     * unfiltered `GYM.RECORDS.HISTORY` subtitle, which `02-data.md` §C never declared a read for.
+     *
+     * Added by `DECISIONS.md` §Q22 after both pages shipped incomplete rather than fake it: the INDEX
+     * agent left the third tile out and the HISTORY agent left the subtitle off, each having rejected
+     * every derivation available from this interface (see [LifetimeSummary] for why all three are
+     * wrong). This is not a new number; it is the one the spec already draws.
+     *
+     * **A [Loadable], never a bare [LifetimeSummary].** A lifetime total that reads a confident zero
+     * over a quarantined store is `00-plan.md` §4.1 rule 1's failure exactly — 〇回 is a claim about
+     * the user's life, and this feature has now caught the same empty-versus-failed collapse five
+     * times. `Failed` must reach the page so the tile is *omitted*, not drawn at zero.
+     *
+     * `suspend`, not a `Flow`, and unlike [countForRoutine] that is right here: nothing branches on
+     * this number, no destructive action reads it, and neither consumer is on screen while a session
+     * is running. Re-read on subscription — `GymViewModel.lifetimeSummary` — and on demand after a
+     * delete, via `GymViewModel.refreshLifetimeSummary()`.
+     */
+    suspend fun summary(): Loadable<LifetimeSummary>
+
     suspend fun populatedMonths(): Loadable<List<YearMonth>>
 
     /** Flow, not suspend — the rating is editable on this very screen. */
@@ -181,7 +202,36 @@ interface GymRepository {
 
     fun routineBests(): Flow<Loadable<List<RoutineBest>>>
 
+    /** 動きごと, **one row per ladder family** — see [MovementBest]. For one rung, [exerciseBests]. */
     fun movementBests(): Flow<Loadable<List<MovementBest>>>
+
+    /**
+     * One row per **exercise**, un-rolled-up: what this movement, and only this movement, is worth.
+     *
+     * [movementBests] answers a *family* question — its row is named for the rung with the most
+     * lifetime volume and both counts are sums across the whole ladder — and a page headed by one rung
+     * cannot label that 一度に / のべ回数 without saying something false. With the shipped push-up ladder
+     * it said two false things at once: 腕立て伏せ read まだ やっていません for a user who trains it (the
+     * family's row was named 膝つき腕立て) while 膝つき腕立て read a total no single rung earned. Both are
+     * `00-plan.md` §4.1 rule 1's target — an emptiness claim, and a number, assembled from a
+     * *successful* read.
+     *
+     * The rows were always computed: `GymStore.readExerciseBests` is the query pair that
+     * [movementBests] then groups. This exposes them instead of discarding them.
+     *
+     * *Rejected* — `movementBest(exerciseId)`, one flow per movement. `GYM.LIBRARY.EXERCISE_INDEX`
+     * needs the whole set at once to hang 最高 on twenty-three cards, and that shape would make it
+     * twenty-three subscriptions over one query.
+     *
+     * *Rejected* — relabelling the roll-up on the detail page, or widening [MovementBest] with a second
+     * pair of per-exercise columns. The first invents a claim; the second gives one row two meanings
+     * and guarantees a caller reads the wrong pair.
+     *
+     * [MovementBest.hardestReachedExerciseId] is always null here: いちばん上 belongs to a ladder, and
+     * the 段階 block derives it from *which rungs have a row at all*, which is the same definition
+     * `GymStore` applies and does not need the field to state.
+     */
+    fun exerciseBests(): Flow<Loadable<List<MovementBest>>>
 
     /** Both charts in one read — they share a GROUP BY and splitting them would double the scan. */
     fun weeklySeries(weeks: Int = 12): Flow<Loadable<List<WeekPoint>>>

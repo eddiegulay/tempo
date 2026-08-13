@@ -644,6 +644,29 @@ data class SessionOutcome(
 // ─── History and records ────────────────────────────────────────────────────────────────────────
 
 /**
+ * Everything that has ever been finished, as two numbers — `GymRepository.summary()`'s answer.
+ *
+ * It exists because two shipped UI elements are unfeedable without it and both were left incomplete
+ * rather than faked: `GYM.RECORDS.INDEX`'s third tile これまで, and `GYM.RECORDS.HISTORY`'s unfiltered
+ * subtitle 八十六回 ・ 二千四百分 (`04-library-records.md` §4's mock and §6's tile table; `DECISIONS.md`
+ * §Q22 is the ruling that added the read).
+ *
+ * **Lifetime, not a window, and that is the whole point.** *Rejected* — deriving it from anything
+ * already on the interface, which is what §Q22 examined and refused three times over: `routines`'
+ * `timesDone` misses archived routines, `routineBests` misses routines only ever done partially, and
+ * `weeklySeries(52)` is a year. A number that is *nearly* the lifetime total is worse than no tile,
+ * because nobody looking at it can tell that it is wrong.
+ *
+ * [totalActiveMs] is summed over `active_ms`, so it excludes pauses exactly as [SessionSummary] does —
+ * the subtitle's 分 and every hero time on the page are then the same measurement, and 活動時間 means
+ * one thing in this feature.
+ *
+ * Counts **finished** sessions only. An open row is not yet a record of anything, and a live session
+ * must not make the tile tick.
+ */
+data class LifetimeSummary(val sessions: Int, val totalActiveMs: Long)
+
+/**
  * One finished session as a list row.
  *
  * [routineName] and [stationsPlanned] are the frozen copies from the session row. The name survives

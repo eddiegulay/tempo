@@ -290,6 +290,88 @@ list to lay, not to tell the user when to stop.
 Rejected, correctly: Stew Smith's ten-minute Death by Push-ups. That is a real sourced number
 belonging to a **different workout**, and borrowing it would be the RECONDO error in miniature.
 
+## Q19 — The time cap is not authorable in Phase 2 (builder review)
+
+`04` §3 edge case 11 gives wheel ranges for station rest, round rest, 巡数, 回数 and 秒数 — and **none
+for a 制限時間**. The builder agent therefore built no cap wheel and left every authored AMRAP on
+`migrateDraft`'s documented 二十分, read-only. Correct, and the same shape as §Q16.
+
+**Ratified.** A range invented here would silently become the ceiling on every AMRAP anyone ever
+writes. The row renders the stored value and does not open. A documented range in `04` §3 unlocks it.
+
+## Q20 — Two ratifications from the builder unit
+
+**The estimate renders `目安 四十秒`, not the mock's `目安 〇:四十`.** §Q10 already governs: a duration the
+app **computed** goes through `durationKanji`. The mock's glyph form is produced by no formatter in
+this app and appears in no string table, so transcribing it would have meant writing a third numeral
+format for one line. The agent disclosed rather than transcribed — right call.
+
+**The engine row offers seven chips where the mock draws six.** `FOR_TIME_WITH_REST`
+(`完走 ・ 休息あり`, `04` §6 :1117) is included because Phase 2 seeds バーバラ with it, and omitting it
+makes a shipped built-in unbuildable — a user could open バーバラ in 写して作る and be unable to save
+what they were looking at. The mock predates the seed table; the seed table wins.
+
+## Q21 — A wheel must be able to show the value it is editing (builder review)
+
+Three wheels could not represent values that **shipped built-ins already hold**: 巡数 offers 1..20 but
+チェルシー is 30 rounds; 巡の間の休息 steps by 15 but タバタ rests 10; 回数 offers 1..100 but マーフ has
+stations at 200 and 300. `TempoValueWheel` resolves an absent value with
+`values.indexOf(selected).coerceAtLeast(0)` — it silently seeds **row 0**.
+
+So opening 編集 or 写して作る on any of those three and merely unfolding the row rewrites the value,
+with no warning and no undo. That is data loss triggered by looking at something.
+
+**The rule, and it generalises past this bug:** a wheel opened on an existing value must contain that
+value. Merge the current value into the option list when it is absent, rather than widening every
+range to cover every seedable number — the ranges are a sensible authoring vocabulary and the
+built-ins are deliberately outside it. `TempoValueWheel`'s `indexOf(...).coerceAtLeast(0)` is the
+underlying hazard; anywhere a caller can pass a value outside its own list, this bug is latent.
+
+## Q22 — `GymRepository.summary()` — **add it; two pages are incomplete without it**
+
+`04` §4's mock and §6's tile table both specify **three** tiles on `GYM.RECORDS.INDEX`
+(今月 / 活動時間 / これまで), and §4's HISTORY mock has the subtitle 八十六回 ・ 二千四百分. Both need
+lifetime totals. `02` §C never declared a read for them, so nothing implements one — the INDEX agent
+shipped two tiles and the HISTORY agent shipped no subtitle, each refusing to fake it.
+
+Both refusals were right. The INDEX agent named three derivations it rejected and every one is wrong:
+`routines`' `timesDone` misses archived routines, `routineBests` misses routines only ever done
+partially, and `weeklySeries(52)` is a year rather than a lifetime. A number that is nearly the
+lifetime total is worse than no tile, because nobody can tell it is wrong.
+
+**Add the read.** `suspend fun summary(): Loadable<LifetimeSummary>` on `GymRepository`, backed by a
+`COUNT(*)` and a `SUM(active_ms)` over `session` — one scan, no new table, no schema change. This is
+not inventing a number; it is implementing a documented UI element the data layer was simply never
+asked for. It must be a `Loadable` like every other read: a lifetime total that silently reads zero
+over a quarantined store is the empty-versus-failed confusion this feature has now caught five times.
+
+## Q23 — `SessionMissing` must map to `GymFault.SessionGone`
+
+`04` §4 edge case 9 is currently dead code. `GymStore` throws a private `SessionMissing`, and
+`toGymFault` has no arm for it, so it falls through to `GymFault.Unknown` — meaning a session deleted
+in another shell state renders 記録を読めません with a もう一度 that can only fail again. That is exactly
+the outcome edge case 9 exists to prevent, and §Q6 already ratified
+`この記録は削除されています` with **no action word** for this case.
+
+Add the arm. The fault type, the copy and the page's `popsOnFault` check were all already written and
+correct — only the mapping between them was missing, which is why nothing caught it.
+
+## Q24 — The 28-day chart gate must not accuse someone of not training
+
+`volumeGate` reads `trainingLoad()`, whose store implementation returns `Ready(null)` whenever the
+**last 28 days** are empty, never computing `historyDays`. So a user with years of history who comes
+back after a month away is told 二十八日ぶん たまると 出ます — "it will appear once 28 days have
+accumulated". That is false for them, and it hides data they actually have: `volumeSeries` queries
+back 83 days by default.
+
+**The gate is about whether enough history EXISTS, not about whether the recent window is busy.** A
+returning user must see their chart, and the sentence must only appear for someone who genuinely has
+not accumulated 28 days of history. Fix it where the fact lives — `historyDays` must be computed from
+the user's actual span, not left at zero because a recent window happened to be empty.
+
+This is the same failure as §Q9 and the corruption bug: an absence of recent rows being reported as an
+absence of history.
+
 ## Q4 — Numerals — **as specced, no change**
 
 Counts render kanji, countdowns render arabic, wheels render arabic mid-spin. This matches the flip

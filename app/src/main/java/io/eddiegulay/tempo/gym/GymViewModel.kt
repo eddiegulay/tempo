@@ -9,12 +9,14 @@ import io.eddiegulay.tempo.calendar.Loadable
 import io.eddiegulay.tempo.data.GymFault
 import io.eddiegulay.tempo.gym.session.ScalingTier
 import io.eddiegulay.tempo.gym.session.compile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -155,6 +157,44 @@ class GymViewModel(
      */
     private val _prefs = MutableStateFlow(preferences.loadInitial())
     val prefs: StateFlow<GymPreferences> = _prefs.asStateFlow()
+
+    /**
+     * One preference write, on a scope that outlives the page that asked for it.
+     *
+     * **This exists because `rememberCoroutineScope` is the wrong scope for a write.** `GYM.SETTINGS`
+     * writes on the tap that made it and has no 保存 button, so the tap and the page's disposal are
+     * separated by however long the user takes to press Back — which can be nothing. A composition
+     * scope is cancelled at disposal, so Back, 安全のために or a HOME press (`onLeaveShell` rebases the
+     * stack and disposes the page) landing on top of an in-flight `DataStore.edit` kills the write:
+     * the row showed 入, nothing was persisted, and the page that owed the user 保存できませんでした is
+     * already gone. `01-shell.md` :768's rule — a row is never left showing a value that was not
+     * persisted — cannot be kept on a scope that dies with the row. `BuilderScreen`'s save and every
+     * session write here already made this choice; the settings page was the one path that had not.
+     *
+     * **A cancellation is not a failure.** `viewModelScope` is cancelled only when the Activity — and
+     * with it the whole shell — is gone, so there is no row left to revert and nobody to read
+     * 保存できませんでした; reporting it through [onFailure] would be a write fault raised at a moment
+     * when the page's own state has already been discarded. Every other throwable *is* the failure the
+     * page must show, whatever the store threw: `DataStore.edit` surfaces its faults as the underlying
+     * IO error and they all mean the same thing — the value on screen is not the value on disk.
+     *
+     * [onFailure] runs on `viewModelScope`'s Main dispatcher, so a caller may touch Compose state in it.
+     *
+     * Rejected: a `SettingsWriteHolder : ViewModel()` mirroring `BuilderDraftHolder`. That one exists to
+     * *hold a draft* across configuration change; this holds nothing — the overlay and the failed
+     * section belong to the page, and only the suspend body has to outlive it.
+     */
+    fun writePreference(body: suspend () -> Unit, onFailure: () -> Unit) {
+        viewModelScope.launch {
+            try {
+                body()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                onFailure()
+            }
+        }
+    }
 
     init {
         viewModelScope.launch { preferences.preferences.collect { _prefs.value = it } }
@@ -783,13 +823,55 @@ class GymViewModel(
         _startInFlight.value = null
     }
 
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+    // GYM.RECORDS — the lifetime totals two pages draw
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+
+    /** Bumped to re-ask [GymRepository.summary], which is a one-shot read and not a flow. */
+    private val _summaryToken = MutableStateFlow(0)
+
+    /**
+     * これまで on `GYM.RECORDS.INDEX` and 八十六回 ・ 二千四百分 under `GYM.RECORDS.HISTORY`, from one read
+     * shared by both (`DECISIONS.md` §Q22, `04-library-records.md` §4).
+     *
+     * **Subscribing performs the read**, which is the reason this is a `StateFlow` rather than the
+     * bare `suspend` call the two pages could each make for themselves. A page that has to remember to
+     * kick a `LaunchedEffect` is a page that can forget, and the failure mode of forgetting is a tile
+     * stuck on 読み込み中 forever — `00-plan.md` §4.1 rule 1's collapse wearing loading's clothes rather
+     * than empty's. Here the value is [Loadable.Loading] until the query answers because it genuinely
+     * is unknown, and it can be nothing else by accident.
+     *
+     * `WhileSubscribed(5_000)` for [homeFeed]'s reason: a rotation and a tab bounce both fall inside
+     * the grace window and neither re-queries, while walking away from 記録 and coming back later does.
+     *
+     * *Rejected* — an `observeHistory` flow in the store, the way [countForRoutine] is. That count has
+     * to be live because a destructive dialog branches on it mid-frame; this one is read by two pages
+     * that nothing writes to while they are open, and a lifetime `COUNT(*) + SUM(...)` re-run on every
+     * `session` notification would rescan the table on each of the twelve segment writes a workout
+     * makes. The one write either page *can* cause is a delete, and that calls
+     * [refreshLifetimeSummary] directly.
+     */
+    val lifetimeSummary: StateFlow<Loadable<LifetimeSummary>> =
+        _summaryToken.map { repository.summary() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Loadable.Loading)
+
+    /**
+     * Re-reads the totals. Call it after a session is **deleted** — the two pages that draw this are
+     * also the two that can discard a record, and a subtitle that still says 八十六回 over eighty-five
+     * rows is the kind of quiet wrongness this feature's `Loadable` doctrine is otherwise about.
+     */
+    fun refreshLifetimeSummary() {
+        _summaryToken.update { it + 1 }
+    }
+
     /**
      * もう一度 behind a `FaultPanel`: re-runs every failed read, exactly as the calendar's does, and
-     * re-asks the one read that is not a flow.
+     * re-asks the two reads that are not flows.
      */
     fun retry() {
         repository.retry()
         refreshResumable()
+        refreshLifetimeSummary()
     }
 
     /**

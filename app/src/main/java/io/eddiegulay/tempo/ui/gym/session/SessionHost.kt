@@ -1,8 +1,6 @@
 package io.eddiegulay.tempo.ui.gym.session
 
-import android.app.Activity
 import android.content.Context
-import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.os.SystemClock
 import android.view.ViewTreeObserver
@@ -14,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,8 +30,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.repeatOnLifecycle
 import io.eddiegulay.tempo.calendar.Loadable
+import io.eddiegulay.tempo.calendar.findActivity
 import io.eddiegulay.tempo.data.GymFault
 import io.eddiegulay.tempo.gym.EffectiveGymPreferences
 import io.eddiegulay.tempo.gym.Exercise
@@ -44,6 +43,7 @@ import io.eddiegulay.tempo.gym.GymWrite
 import io.eddiegulay.tempo.gym.Phase
 import io.eddiegulay.tempo.gym.Rating
 import io.eddiegulay.tempo.gym.RoutineSnapshot
+import io.eddiegulay.tempo.gym.TrainingHold
 import io.eddiegulay.tempo.gym.cue.Cue
 import io.eddiegulay.tempo.gym.cue.CueEngine
 import io.eddiegulay.tempo.gym.cue.CueEvent
@@ -69,6 +69,7 @@ import io.eddiegulay.tempo.ui.tempoBackground
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -83,6 +84,33 @@ import kotlinx.coroutines.sync.withLock
  * late renders late and loses no time at all.
  */
 private const val TICK_MS: Long = 50L
+
+/**
+ * Whether the 50ms read loop runs — `03-player.md` §B.5's gate, and the load-bearing half of §E.5's
+ * Phase 3 change.
+ *
+ * A free function rather than a `when` inside the composable for the same reason `disarmPlan` is one:
+ * this is the difference between a workout that cues from a pocket and one that does not, it cannot be
+ * seen in a screenshot, it cannot fail a build, and it needs no device to decide. `SessionHostTest`
+ * walks all eight rows.
+ *
+ * @param ticking the machine's answer: false while paused, while the quit sheet is open, and once the
+ *   session is finished. Nothing below can turn this on — a paused session does not tick because a
+ *   notification is up.
+ * @param visible whether the window is on screen, from the host's `ON_START` / `ON_STOP` observer.
+ * @param serviceHeld whether a foreground service is actually holding the process (`TrainingHold`).
+ *   **This term is why the service exists.** [SessionController.onTick] is what advances a segment and
+ *   what arms the next cue, so a loop stopped at `ON_STOP` means a pocketed session neither cues nor
+ *   advances — and, because the notification is a projection of the published frame, it also freezes
+ *   the notification on the phase the phone was pocketed in. Without this term the service posts a
+ *   permanently wrong notification and buys nothing else.
+ *
+ * With no service the two terms collapse to `ticking && visible`, which is exactly what
+ * `repeatOnLifecycle(STARTED)` used to impose from the outside — a backgrounded process with nothing
+ * keeping it alive is about to be frozen, and twenty wake-ups a second inside it is pure cost.
+ */
+internal fun sessionShouldTick(ticking: Boolean, visible: Boolean, serviceHeld: Boolean): Boolean =
+    ticking && (visible || serviceHeld)
 
 /**
  * The session host: the object that makes the player run.
@@ -128,14 +156,50 @@ class SessionController(
         private set
 
     /**
-     * Whether the 50ms loop should be running.
+     * Whether the session **wants** the clock read: false while paused, while the quit sheet is open,
+     * and once the session is finished.
      *
-     * False while paused, while the quit sheet is open, once the session is finished, and — through
-     * the host's `repeatOnLifecycle` — while the app is backgrounded. A loop that spins doing nothing
-     * twenty times a second is still twenty wake-ups a second.
+     * This is the machine's half of the question. Whether the loop actually runs is [shouldTick], which
+     * adds the process's half.
      */
     var ticking: Boolean by mutableStateOf(false)
         private set
+
+    /**
+     * Whether the window is on screen. `ON_START` / `ON_STOP`, kept here rather than in the host so
+     * that the one predicate below can be read in one place.
+     */
+    private var visible: Boolean by mutableStateOf(true)
+
+    /**
+     * Whether the health foreground service is holding this session — `gym/TrainingHold`, pushed in by
+     * the host through [onServiceHold] rather than read directly, so this class keeps no Android
+     * dependency it did not already have and a test can drive it.
+     */
+    private var serviceHeld: Boolean by mutableStateOf(false)
+
+    /**
+     * Whether the 50ms loop should actually be running, and **the whole reason the service exists**.
+     *
+     * Before Phase 3 this was `ticking` gated by `repeatOnLifecycle(STARTED)` in the host, which is
+     * correct while there is no foreground service and catastrophic once there is one: cue arming and
+     * segment advance are both driven by [onTick], so a stopped loop means nothing re-arms, nothing
+     * advances, and — because the notification is a projection of the published frame — the
+     * notification freezes on whichever phase the phone was pocketed in. A twenty-minute session would
+     * have shown 運動 ・ 腕立て伏せ with a permanent 休止 button for its whole length.
+     *
+     * So the gate is: the machine wants a tick, **and** either someone can see it or something is
+     * keeping the process alive on purpose. With no service the second term is false and this is
+     * exactly the old behaviour — a loop that spins doing nothing twenty times a second is still twenty
+     * wake-ups a second, and a backgrounded process without a foreground service is about to be frozen
+     * anyway.
+     */
+    val shouldTick: Boolean get() = sessionShouldTick(ticking, visible, serviceHeld)
+
+    /** The host's report from `TrainingHold`. Idempotent; called on every change and on none besides. */
+    fun onServiceHold(held: Boolean) {
+        serviceHeld = held
+    }
 
     private var loaded = false
     private var lastPrefs: EffectiveGymPreferences? = null
@@ -308,22 +372,37 @@ class SessionController(
 
     /** `ON_START`: reconcile what the clock walked past, then let [publish] re-arm the cues. */
     fun onForegrounded() {
+        visible = true
         if (timeline == null) return
-        armedKey = null
+        // Dropping the key forces [publish] to recompute the segment's schedule, which is right when
+        // the channel was torn down while we were away. When the service held the session nothing was
+        // torn down, and recomputing would cancel a 3-2-1 that is already posted at the correct wall
+        // time and re-post it a few milliseconds late — a cue degraded by tidying that buys nothing.
+        if (!serviceHeld) armedKey = null
         dispatch(SessionEvent.Foregrounded)
         publish()
     }
 
     /**
-     * `ON_STOP`. §E.5: Phase 1 has **no foreground service**, so backgrounding means the cues stop.
+     * `ON_STOP` — and, since Phase 3, the one place `03-player.md` §E.5's promise is kept.
      *
-     * The session does not. The clock is monotonic and the timeline is derived from it, so a
-     * backgrounded session is correct on return and only the sound went away — which is the whole of
-     * what "no foreground service" costs, stated where it happens.
+     * §E.5: *"When the health service lands in Phase 3, the only thing that changes in this spec is the
+     * disarm matrix (§D.7)."* This is that call site. With no service the row is Phase 1's, unchanged:
+     * the cues go quiet, the session does not, because the clock is monotonic and the timeline is
+     * derived from it. With the service up the row disarms nothing, so the 3-2-1 and the 「休息」 fire
+     * from a pocket, which is the only thing the notification, the permission and the Play Console
+     * health declaration were ever bought for.
+     *
+     * The armed key survives with the channel for [disarmPlan]'s reason: the schedule that is posted is
+     * the right one, and a session that keeps cueing must not re-arm the segment it never left.
      */
     fun onBackgrounded() {
-        cues.handle(CueEvent.ON_STOP, CueState(phaseNow(), sessionComplete = true))
-        armedKey = null
+        visible = false
+        cues.handle(
+            CueEvent.ON_STOP,
+            CueState(phaseNow(), sessionComplete = true, serviceHolding = serviceHeld),
+        )
+        if (!serviceHeld) armedKey = null
     }
 
     fun release() = cues.release()
@@ -908,10 +987,20 @@ fun SessionHost(
     // 目安で自動的に進む takes effect on the next segment, which is what `effectiveGate` is for.
     LaunchedEffect(controller, effectivePrefs) { controller.onPreferences(effectivePrefs) }
 
+    // Whether the health foreground service actually got started for this session — `TrainingHold`
+    // reports the platform's answer, not the mount's intention, and it is the only input that makes
+    // §E.5's disarm change and the loop gate below correct on a device that refused the service.
+    //
+    // `collectAsState`, deliberately not `collectAsStateWithLifecycle`: the lifecycle-aware collector
+    // stops at `ON_STOP`, which is the exact moment both readers need this value.
+    val serviceHeld by TrainingHold.held.collectAsState()
+    LaunchedEffect(controller, serviceHeld) { controller.onServiceHold(serviceHeld) }
+
     DisposableEffect(controller, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                // §E.5's two rows, and the only two. No notification, no service, no manifest entry.
+                // §E.5's two rows, and still the only two — what the service changed is what
+                // `onBackgrounded` does with the second one, not that there is a third.
                 Lifecycle.Event.ON_START -> controller.onForegrounded()
                 Lifecycle.Event.ON_STOP -> controller.onBackgrounded()
                 else -> Unit
@@ -922,7 +1011,7 @@ fun SessionHost(
     }
 
     /*
-     * The render loop — §B.5's `while (isActive) { read; delay(50) }`, gated twice.
+     * The render loop — §B.5's `while (isActive) { read; delay(50) }`, gated by one predicate.
      *
      * *Rejected* — `withFrameNanos`. It stops with the frame clock when the window is not visible,
      * which is half of what is wanted, but it also runs at the display's refresh rate: two to three
@@ -932,18 +1021,22 @@ fun SessionHost(
      *
      * `delay` schedules on a timebase that stops in deep sleep, and that is harmless precisely because
      * nothing accumulates: every pass re-reads `elapsedRealtime`, so a loop that was asleep for four
-     * minutes comes back and renders the truth on its first pass. `repeatOnLifecycle(STARTED)` stops
-     * it while backgrounded, and `collectLatest` over [SessionController.ticking] stops it while
-     * paused, while the quit sheet is open, and once the session is finished.
+     * minutes comes back and renders the truth on its first pass.
+     *
+     * *Rejected* — keeping `repeatOnLifecycle(STARTED)` around this, which is what Phase 1 had. It is a
+     * second, invisible gate saying the opposite of [SessionController.shouldTick]'s `serviceHeld`
+     * term: a service-backed session would still have had its loop stopped at `ON_STOP`, so nothing
+     * would advance a segment or arm a cue from a pocket and the whole service would deliver silence.
+     * Visibility is now one term of one predicate, fed by the same `ON_START`/`ON_STOP` observer above,
+     * and `collectLatest` over it stops the loop while paused, while the quit sheet is open, once the
+     * session is finished, and while a backgrounded session has nothing holding the process open.
      */
-    LaunchedEffect(controller, lifecycleOwner) {
-        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            snapshotFlow { controller.ticking }.collect { ticking ->
-                if (!ticking) return@collect
-                while (controller.ticking) {
-                    controller.onTick()
-                    delay(TICK_MS)
-                }
+    LaunchedEffect(controller) {
+        snapshotFlow { controller.shouldTick }.collectLatest { run ->
+            if (!run) return@collectLatest
+            while (controller.shouldTick) {
+                controller.onTick()
+                delay(TICK_MS)
             }
         }
     }
@@ -1003,8 +1096,3 @@ private fun ImmersivePortrait() {
         }
     }
 }
-
-private fun Context.findActivity(): Activity? =
-    generateSequence(this) { (it as? ContextWrapper)?.baseContext }
-        .filterIsInstance<Activity>()
-        .firstOrNull()

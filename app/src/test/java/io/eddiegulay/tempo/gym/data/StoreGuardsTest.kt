@@ -6,6 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 /**
  * The two guards that stand between a failed database and a lie on screen.
@@ -95,5 +96,52 @@ class StoreGuardsTest {
         // at COMMIT — deterministic rollback, and the same remedy-shaped fault either way: Rejected
         // carries 保存できませんでした with no もう一度, because retrying refuses it again (§Q6).
         assertEquals(GymFault.Rejected, RoutineHasHistory("r_seven_minute").toGymFault())
+    }
+
+    @Test
+    fun `a session deleted underneath an open record reads as SessionGone, not as an unknown failure`() {
+        // `04-library-records.md` §4 edge case 9, which was dead code until this arm existed: the fault
+        // type, `DECISIONS.md` §Q6's copy (この記録は削除されています, no action word) and
+        // `SessionDetailScreen.popsOnFault` were all written and all correct, and nothing joined them.
+        // `SessionMissing` fell to `Unknown`, so a record deleted from another shell state rendered
+        // 記録を読めません with a もう一度 that re-reads a row nothing will bring back — the exact outcome
+        // the edge case exists to prevent (§Q23).
+        assertEquals(GymFault.SessionGone, SessionMissing(4L).toGymFault())
+    }
+
+    @Test
+    fun `a routine that has left the library reads as RoutineGone`() {
+        // The identical gap, one table over. `LibraryDetailScreen` branches on `RoutineGone` to
+        // withhold a もう一度 it knows cannot succeed, and `SessionHost` maps an unreadable pinned
+        // version onto it — both were unreachable from the store for the same reason.
+        assertEquals(GymFault.RoutineGone, RoutineMissing("r_cindy").toGymFault())
+    }
+
+    @Test
+    fun `the two gone faults are classified where they are thrown from, not by accident`() {
+        // The structural half, and the one that would have caught the original bug: both were `private`
+        // inside `GymStore`, a file away from the only function that ever looks at them, so the missing
+        // arms were invisible. If either is moved back out of `DbSupport.kt` this fails before the
+        // classification silently regresses to `Unknown` again.
+        val support = readSource("gym/data/DbSupport.kt")
+        for (name in listOf("SessionMissing", "RoutineMissing")) {
+            assertTrue(
+                "$name must be declared beside toGymFault in DbSupport.kt",
+                support.contains("internal class $name"),
+            )
+        }
+    }
+
+    /** Resolves a main-source path without depending on the runner's working directory. */
+    private fun readSource(relative: String): String {
+        var dir: File? = File("").absoluteFile
+        while (dir != null) {
+            for (prefix in listOf("app/src/main/java/io/eddiegulay/tempo/", "src/main/java/io/eddiegulay/tempo/")) {
+                val candidate = File(dir, prefix + relative)
+                if (candidate.exists()) return candidate.readText()
+            }
+            dir = dir.parentFile
+        }
+        throw IllegalStateException("could not locate $relative from ${File("").absolutePath}")
     }
 }
