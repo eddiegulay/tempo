@@ -516,7 +516,11 @@ internal class GymStore private constructor(
                         sessionId,
                     ),
                 )
-                if (complete) advanceProgression(this, open, snapshot)
+                // Only a complete session advances anything — `00-plan.md` §4.1 rule 2, and the same
+                // line `prEligible` draws for records. The rows are handed down rather than re-read:
+                // `ALL_SETS_MADE` judges this session's own sets, and a second read inside the same
+                // transaction would be a second scan of the table this function has already scanned.
+                if (complete) advanceProgression(this, open, snapshot, results)
             }
 
             val summary = readSummary(this, sessionId) ?: throw SessionMissing(sessionId)
@@ -1730,32 +1734,48 @@ internal class GymStore private constructor(
     /**
      * Advances the programme, and only ever by one step.
      *
-     * The rules are `progression_program.advance_rule` and nothing else: `SESSIONS_COMPLETED` counts
-     * sessions at the current step, `WEEKS_ELAPSED` counts wall time since the step was entered — Recon
-     * Ron's two weeks per step — and `ALL_SETS_MADE` and `MANUAL` never advance from here, the first
-     * because Phase 4 owns it and the second because the user does.
+     * The rules are `progression_program.advance_rule` and nothing else — [ruleSatisfied] holds all
+     * four, lifted into `GymMath` so they are testable without a device. `SESSIONS_COMPLETED` counts
+     * sessions at the current step, `WEEKS_ELAPSED` counts wall time since the step was entered (Recon
+     * Ron's two weeks per rung), `ALL_SETS_MADE` asks [allSetsMade] of this session's own rows, and
+     * `MANUAL` never advances from here because the user does.
+     *
+     * **Only a complete session ever gets here** — [finishSession] calls this under `complete` — which
+     * is `00-plan.md` §4.1 rule 2 and the same judgement [prEligible] makes for records. A quit
+     * session's rows are a partial prescription, not a made one.
+     *
+     * The advance is then run past [rampPermits], design §7.4's ramp governor. A held advance is not
+     * cancelled: [progressionAfterSession] resets nothing when it does not advance, so the next
+     * completed session asks again with a `sessions_at_step` that has kept climbing and a
+     * `step_entered_at` that has kept ageing.
+     *
+     * Nothing seeded uses `ALL_SETS_MADE` (リーコン・ロン is `WEEKS_ELAPSED`, アームストロング is
+     * `SESSIONS_COMPLETED`, ファイター懸垂 is `MANUAL` with no steps), so this arm completes a contract
+     * the schema CHECK and [AdvanceRule] already carried rather than changing behaviour anyone can see.
      */
     private fun advanceProgression(
         database: SQLiteDatabase,
         session: OpenRow,
         snapshot: RoutineSnapshot?,
+        results: List<SegmentResult>,
     ) {
         val programId = snapshot?.progressionProgramId ?: return
         val state = readProgression(database, programId) ?: return
-        val sessionsAtStep = state.sessionsAtStep + 1
-        val advance = when (state.advanceRule) {
-            AdvanceRule.SESSIONS_COMPLETED -> sessionsAtStep >= (state.advanceParam ?: 1)
-            AdvanceRule.WEEKS_ELAPSED -> {
-                val weeks = (state.advanceParam ?: 1).toLong()
-                now() - state.stepEnteredAt >= weeks * 7L * 24 * 60 * 60 * 1000
-            }
-            AdvanceRule.ALL_SETS_MADE, AdvanceRule.MANUAL -> false
-        }
-        val nextIndex = if (advance) {
-            (state.currentStepIndex + 1).coerceAtMost(state.stepCount)
-        } else {
-            state.currentStepIndex
-        }
+        val nowMs = now()
+        val earned = ruleSatisfied(
+            rule = state.advanceRule,
+            // Including this session, which is what `advance_param = 1` means.
+            sessionsAtStep = state.sessionsAtStep + 1,
+            advanceParam = state.advanceParam,
+            stepEnteredAt = state.stepEnteredAt,
+            nowMs = nowMs,
+            results = results,
+        )
+        val next = progressionAfterSession(
+            state = state,
+            advance = earned && rampPermits(database, state),
+            nowMs = nowMs,
+        )
         database.execSQL(
             """
             UPDATE $TABLE_PROGRESSION_STATE
@@ -1764,20 +1784,67 @@ internal class GymStore private constructor(
              WHERE program_id = ?
             """.trimIndent(),
             arrayOf<Any?>(
-                nextIndex,
-                if (advance) 0 else sessionsAtStep,
-                if (advance) now() else state.stepEnteredAt,
+                next.stepIndex,
+                next.sessionsAtStep,
+                next.stepEnteredAt,
                 session.id,
                 // A day-based programme rotates rather than progresses; Armstrong's day 5 is stored
                 // here so the fifth day knows which day it is repeating (§F.3).
-                if (state.stepUnit == StepUnit.DAY) {
-                    (state.cycleDay % state.stepCount.coerceAtLeast(1)) + 1
-                } else {
-                    state.cycleDay
-                },
+                next.cycleDay,
                 programId,
             ),
         )
+    }
+
+    /**
+     * Design §7.4's ten-percent-per-week ramp governor, consulted on the advance path only.
+     *
+     * Three properties are load-bearing, and all three are about this running inside the single most
+     * correctness-critical write in the app (§E.5):
+     *
+     *  - **It cannot fail the finish.** Every path is wrapped, and a throw resolves to *permitted*.
+     *    Advancing a step too early costs one week that was easier than intended; letting a governor
+     *    abort this transaction costs the user the entire record of the session they just did.
+     *  - **It cannot lengthen the transaction materially.** The two lookups it needs happen only when
+     *    a rule has already fired — the common finish does none of them — and it asks the cheap,
+     *    purely local question first: an unknowable step increase (Armstrong's max-effort days, a
+     *    programme with no next rung) short-circuits before the spine is ever queried.
+     *  - **It never surfaces.** No fault, no field on [SessionOutcome], no string. §7.4 permits at most
+     *    a soft nudge and this phase ships none, so a held step is simply a step that has not happened
+     *    yet — which is exactly what it looks like on `GYM.LIBRARY.DETAIL` already.
+     */
+    private fun rampPermits(database: SQLiteDatabase, state: ProgressionState): Boolean =
+        runCatching {
+            val current = stepWorkUnits(state.currentStep) ?: return@runCatching true
+            val nextStep = readStep(database, state.programId, state.currentStepIndex + 1)
+            val increase = workIncrease(current, stepWorkUnits(nextStep)) ?: return@runCatching true
+            if (increase <= 0.0) return@runCatching true
+            rampAllowed(readGovernorSpine(database), increase)
+        }.getOrDefault(true)
+
+    /**
+     * The zero-filled load spine the governor reads, ending on the **last complete day**.
+     *
+     * Two boundaries, both forced rather than chosen:
+     *
+     *  - **It ends yesterday.** The session being finished has no rating yet — 記録 asks for one after
+     *    this write — so a window containing today always holds an unrated session, and [rampCap]
+     *    refuses to compute over one. A window ending today would therefore silence the governor
+     *    permanently rather than occasionally.
+     *  - **It starts at the user's own first session**, capped at [ACWR_CHRONIC_DAYS]. §Q24's rule:
+     *    the twenty-eight-day gate is about whether that much history *exists*, not about whether a
+     *    recent window is busy. A short spine is how [rampCap] learns it has no opinion, and someone
+     *    who has trained for years is never told they have not.
+     */
+    private fun readGovernorSpine(database: SQLiteDatabase): List<DailyLoad> {
+        val to = today().minusDays(1)
+        val first = database.rawQuery(
+            "SELECT MIN(local_date) FROM $TABLE_SESSION WHERE finished_at IS NOT NULL",
+            null,
+        ).firstRow { parseStoredDate(it.stringOrNull(0)) } ?: return emptyList()
+        if (first.isAfter(to)) return emptyList()
+        val from = maxOf(first, to.minusDays((ACWR_CHRONIC_DAYS - 1).toLong()))
+        return zeroFilledLoad(from, to, readDailyLoad(database, from, to))
     }
 
     /**

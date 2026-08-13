@@ -1,5 +1,6 @@
 package io.eddiegulay.tempo.gym.data
 
+import io.eddiegulay.tempo.gym.AdvanceRule
 import io.eddiegulay.tempo.gym.BestMetric
 import io.eddiegulay.tempo.gym.DailyLoad
 import io.eddiegulay.tempo.gym.Engine
@@ -7,7 +8,12 @@ import io.eddiegulay.tempo.gym.Exercise
 import io.eddiegulay.tempo.gym.LoadScale
 import io.eddiegulay.tempo.gym.Measure
 import io.eddiegulay.tempo.gym.PersistedClock
+import io.eddiegulay.tempo.gym.Phase
+import io.eddiegulay.tempo.gym.ProgressionState
+import io.eddiegulay.tempo.gym.ProgressionStep
 import io.eddiegulay.tempo.gym.Resumability
+import io.eddiegulay.tempo.gym.SegmentResult
+import io.eddiegulay.tempo.gym.StepUnit
 import io.eddiegulay.tempo.gym.Streak
 import io.eddiegulay.tempo.gym.WeekPoint
 import java.time.DayOfWeek
@@ -514,6 +520,259 @@ fun prEligible(metric: BestMetric, complete: Boolean, reachedTimeCap: Boolean): 
         BestMetric.HIGHEST_STEP,
         -> true
     }
+}
+
+// ─── Progression advancement (§A.5, `00-plan.md` §6 Phase 4) ────────────────────────────────────
+
+/**
+ * Whether the session that just closed made **every set its step prescribed** — `ALL_SETS_MADE`.
+ *
+ * The rule's name is its whole specification: no part file gives it a threshold, a tolerance or a
+ * grace count, and none is invented here. What the name does not settle is what "made" means for the
+ * three rows a real session produces, and each is decided from something already written down rather
+ * than from taste:
+ *
+ *  - **A skipped set did not make its target.** `session_result` stores `skipped = 1` with
+ *    `actual_reps` NULL — the schema's own `CHECK (skipped = 0 OR actual_reps IS NULL)` says とばした
+ *    means nothing was recorded — and `03-player.md` §A REPS edge case 4 folds a set wound down to
+ *    zero into the same state. A set the user declined is the plainest possible failure to make it.
+ *  - **A set closed by 済 with no counted number made its prescription.** The button's own
+ *    accessibility label is `repDoneDescription` → 「済、二十回として記録」 — *recorded as twenty*. The
+ *    common path writes `actual_reps` NULL because the user never opened the wheel, and reading that
+ *    silence as a shortfall would make this rule unsatisfiable on the path the app itself describes as
+ *    "recorded as the prescription". The strict alternative — mirroring `movementBests`, which refuses
+ *    to let an uncounted station set a record — was **rejected here**: a record is a claim about a
+ *    number and must be counted, whereas advancement is a claim about the prescription, and
+ *    `RecordCopy.breakdownRow`'s KDoc already draws exactly that seam ("a breakdown states what was
+ *    prescribed; a record states what was counted").
+ *  - **A set with no prescribed number cannot fall short of one.** A `MAX_EFFORT` or `GRIP_ROTATION`
+ *    step carries `progression_set.reps` NULL (§A.5, §F.3); there is no target to miss, so only a skip
+ *    can fail it.
+ *
+ * A session with no set rows at all returns **false**, deliberately. "Made every set" is vacuously
+ * true over an empty list, and a vacuous advance is precisely the bug shape §Q9 and §Q24 keep
+ * catching: an absence of rows reported as an accomplishment.
+ *
+ * Only [Phase.REPS] rows are consulted. `FIXED_SETS` is the only engine a progression may attach to
+ * (the `routine_version` CHECK, and `insertVersion`'s comment), and its compiler lays every set as an
+ * open, 済-gated `REPS` segment. A time-boxed `WORK` segment's reps are *advisory* by the compiler's
+ * own words — 七分間 asks for as many as you manage in thirty seconds — so judging one against its
+ * prescription would fail a set the protocol never asked you to complete.
+ *
+ * The second judgement the name does not settle is not decided here at all, because it is already
+ * decided: **a partial session advances nothing.** `finishSession` calls the advance only under
+ * `complete`, which is `00-plan.md` §4.1 rule 2 and the same line [prEligible] draws for records.
+ * Deciding it twice, in two places, is how the two notions of "counts" drift apart.
+ */
+fun allSetsMade(results: List<SegmentResult>): Boolean {
+    val sets = results.filter { it.phase == Phase.REPS }
+    if (sets.isEmpty()) return false
+    return sets.all { set ->
+        val prescribed = set.prescribedReps
+        val actual = set.actualReps
+        when {
+            set.skipped -> false
+            prescribed == null -> true
+            actual == null -> true
+            else -> actual >= prescribed
+        }
+    }
+}
+
+/**
+ * Whether `progression_program.advance_rule` is satisfied by the session that just closed.
+ *
+ * Lifted out of the store unchanged so that all four arms are JVM-testable: `SQLiteDatabase` is not on
+ * the unit-test classpath (see `StoreGuardsTest`'s note), so a rule left inline in the transaction can
+ * only ever be tested on a device, and `ALL_SETS_MADE` is the arm that most needs pinning because
+ * nothing seeded exercises it.
+ *
+ * [sessionsAtStep] is the count **including** this session — the caller increments before asking,
+ * which is what makes `advance_param = 1` mean "the next one you finish".
+ *
+ * `MANUAL` never advances because the user does, and no other rule is admitted: the schema CHECK and
+ * [AdvanceRule] both enumerate exactly four, so a fifth would have to be specified before it could be
+ * implemented.
+ */
+fun ruleSatisfied(
+    rule: AdvanceRule,
+    sessionsAtStep: Int,
+    advanceParam: Int?,
+    stepEnteredAt: Long,
+    nowMs: Long,
+    results: List<SegmentResult>,
+): Boolean = when (rule) {
+    AdvanceRule.SESSIONS_COMPLETED -> sessionsAtStep >= (advanceParam ?: 1)
+    AdvanceRule.WEEKS_ELAPSED -> nowMs - stepEnteredAt >= (advanceParam ?: 1).toLong() * WEEK_MS
+    AdvanceRule.ALL_SETS_MADE -> allSetsMade(results)
+    AdvanceRule.MANUAL -> false
+}
+
+private const val WEEK_MS = 7L * 24 * 60 * 60 * 1000
+
+/** The `progression_state` row a finished session leaves behind. */
+data class ProgressionAdvance(
+    val stepIndex: Int,
+    val sessionsAtStep: Int,
+    val stepEnteredAt: Long,
+    val cycleDay: Int,
+)
+
+/**
+ * The next `progression_state`, given whether this session earned an advance.
+ *
+ * **A held advance must be re-offered, never lost**, and that property is this function's shape rather
+ * than a flag: when [advance] is false nothing resets, so `sessions_at_step` keeps climbing and
+ * `step_entered_at` keeps ageing. A `SESSIONS_COMPLETED` rule that was satisfied stays satisfied, a
+ * `WEEKS_ELAPSED` one only becomes more so, and `ALL_SETS_MADE` re-asks the next time every set is
+ * made. The governor therefore delays a step; it can never cancel one.
+ *
+ * The step index is capped at `step_count`: past the last rung there is nowhere to advance to, and
+ * Recon Ron's step 19 does not exist. A day-unit programme rotates its `cycle_day` instead of
+ * progressing — Armstrong's day 5 is followed by day 1 (§F.3) — which is why the two counters are
+ * separate columns rather than one.
+ */
+fun progressionAfterSession(
+    state: ProgressionState,
+    advance: Boolean,
+    nowMs: Long,
+): ProgressionAdvance {
+    val sessionsAtStep = state.sessionsAtStep + 1
+    return ProgressionAdvance(
+        stepIndex = if (advance) {
+            (state.currentStepIndex + 1).coerceAtMost(state.stepCount)
+        } else {
+            state.currentStepIndex
+        },
+        sessionsAtStep = if (advance) 0 else sessionsAtStep,
+        stepEnteredAt = if (advance) nowMs else state.stepEnteredAt,
+        cycleDay = if (state.stepUnit == StepUnit.DAY) {
+            (state.cycleDay % state.stepCount.coerceAtLeast(1)) + 1
+        } else {
+            state.cycleDay
+        },
+    )
+}
+
+// ─── The ramp governor (design §7.4) ────────────────────────────────────────────────────────────
+
+/**
+ * The whole of what design §7.4 permits ACWR to do: **ten percent more per week, and not one word of
+ * risk.**
+ *
+ * §7.4 is unambiguous about why. The 0.8–1.3 "sweet spot" is widely cited, has substantially failed to
+ * replicate, is mathematically coupled to its own denominator and was built on arbitrary bucketing. So
+ * the ratio is never rendered, never charted, never given a colour and never converted into a
+ * percentage — a launcher making an injury-risk claim would be practising medicine. It is allowed to
+ * do exactly one thing: hold a prescription increase for a week when the user is already ramping.
+ */
+const val RAMP_CAP_PER_WEEK: Double = 0.10
+
+/**
+ * How much *more* the coming week may ask for, as a fraction of what this week already carries — or
+ * **null, meaning the governor has no opinion and the advance proceeds untouched**.
+ *
+ * The arithmetic is [acwr] and the cap, and nothing else. With `r = acute mean / chronic mean`, the
+ * coming week is capped at `1 + RAMP_CAP_PER_WEEK` times the user's own chronic weekly load, so the
+ * headroom left over is `(1 + cap) / r − 1`. A flat spine (`r = 1`) leaves exactly the ten percent. A
+ * spine that already spiked (`r = 2`) leaves a negative number, which holds any increase at all —
+ * correctly, because the ramp for that week has already been spent by the sessions themselves.
+ *
+ * Calling [acwr] rather than re-deriving the means is the point (§Q7): a second copy of this ratio is
+ * how the displayed and the governing number would come to disagree, and there is only supposed to be
+ * one number, which nobody sees.
+ *
+ * **Null in four cases, and each is a refusal rather than a default:**
+ *  - fewer than [ACWR_CHRONIC_DAYS] days of spine — §7.4's "suppress entirely until 28 days of history
+ *    exist". A ratio computed from a fortnight is noise wearing a number's clothes.
+ *  - any unrated session inside the window. Foster load is `CR10 × minutes` and an unrated session
+ *    contributes nothing to the `SUM`, so a window holding one understates itself; [monotony] already
+ *    refuses a number for exactly this reason and refusing in two different directions would be worse
+ *    than refusing in one. This is also why the caller's window must end on a **complete** day: the
+ *    session being finished has not been rated yet — 記録 asks after the write — so a window that
+ *    included today would be permanently unrated and the governor permanently silent.
+ *  - a chronic mean of zero, which [acwr] itself returns null for. Someone returning after a month off
+ *    has no ramp to govern, and holding them would be §Q24's mistake — an absence of recent rows read
+ *    as a verdict about the user.
+ *  - never for a *thin* history that is nonetheless present: the caller builds the spine from the
+ *    user's own first session, so twenty-eight days of history means twenty-eight days of history, not
+ *    twenty-eight days of recent activity.
+ *
+ * *Rejected* — a hard block. §7.4 permits "at most a soft nudge", and a governor that could refuse
+ * forever would eventually be a governor that has quietly ended someone's programme.
+ */
+fun rampCap(spine: List<DailyLoad>): Double? {
+    if (spine.size < ACWR_CHRONIC_DAYS) return null
+    if (spine.takeLast(ACWR_CHRONIC_DAYS).any { it.unrated > 0 }) return null
+    val ratio = acwr(spine) ?: return null
+    if (ratio < 1e-9) return null
+    return (1.0 + RAMP_CAP_PER_WEEK) / ratio - 1.0
+}
+
+/**
+ * Whether a prescription increase of [proposedIncrease] (as a fraction: `0.077` for Recon Ron's step 1
+ * → step 2) may go ahead.
+ *
+ * **No opinion means yes.** Every null path in [rampCap] returns true here, and that direction is
+ * deliberate: this runs inside the finish transaction, where the cost of advancing a step too early is
+ * one easy week and the cost of a governor that misfires is a user stuck on step three forever.
+ *
+ * An increase of zero or less is never governed. A spiky spine leaves *negative* headroom, and without
+ * this line a step that asks for no more than the last one — or asks for less — would be held by a
+ * ramp it does not contribute to.
+ */
+/**
+ * **The two fractions here are measured in different currencies, and that is deliberate.**
+ *
+ * [rampCap] returns headroom derived from Foster load — CR10 × active minutes — while
+ * [workIncrease] returns a fraction of *prescribed rep count*. Comparing them treats "ten percent
+ * more reps" as "ten percent more load", which holds only while a step's rating stays roughly
+ * constant: reps and duration both scale with the set, so the product does too.
+ *
+ * That assumption is sound in the direction that matters. If the next step is genuinely harder than
+ * its rep count suggests, the rating rises, the load rises faster than the reps did, and the
+ * governor tightens *on the following session* — it is a controller reading its own output, not a
+ * one-shot prediction. The failure it cannot catch is a step that is much harder at identical reps
+ * and identical rating, which is a step description that is lying, not an arithmetic problem.
+ *
+ * Converting the proposal into load units was rejected: it would need a predicted rating for a
+ * session that has not happened, which is a number nothing in this app is entitled to invent.
+ */
+fun rampAllowed(spine: List<DailyLoad>, proposedIncrease: Double): Boolean {
+    if (proposedIncrease <= 0.0) return true
+    val cap = rampCap(spine) ?: return true
+    return proposedIncrease <= cap + 1e-9
+}
+
+/**
+ * The work a step asks for, as the sum of its prescribed reps — or null when that is not knowable.
+ *
+ * Deliberately **not** `progression_step.total_reps`. That column exists only so the seed regression
+ * can be a plain SQL assertion (§A.5), and [ProgressionStep]'s own KDoc says it "is not used for
+ * anything at run time and must not become so". The sets are the prescription; the column is a test
+ * fixture that happens to agree with them, and the two are allowed to be separate facts.
+ *
+ * Null — no opinion — whenever any set resolves at run time (`MAX_EFFORT`, `PYRAMID`, `GRIP_ROTATION`
+ * all carry `reps` NULL) or the step has no sets at all. Four of Armstrong's five days are in that
+ * position, and the honest reading is that a programme built of "as many as you can" has no ramp rate
+ * to measure — not that it has a zero one.
+ */
+fun stepWorkUnits(step: ProgressionStep?): Int? {
+    val sets = step?.sets.orEmpty()
+    if (sets.isEmpty() || sets.any { it.reps == null }) return null
+    return sets.sumOf { it.reps ?: 0 }
+}
+
+/**
+ * The fractional increase from one step's prescribed work to the next's — null when either end is
+ * unknown, and never negative.
+ *
+ * A step that asks for *less* is a deload, and a deload is not a ramp: it is clamped to zero rather
+ * than allowed to become negative headroom, so the governor cannot hold a step that reduces load.
+ */
+fun workIncrease(current: Int?, next: Int?): Double? {
+    if (current == null || next == null || current <= 0) return null
+    return ((next - current).toDouble() / current).coerceAtLeast(0.0)
 }
 
 /**
