@@ -28,26 +28,26 @@ import android.database.sqlite.SQLiteDatabase
  */
 internal object Seeder {
 
-    /** Applies every seed generation newer than [fromCatalogVersion], in one transaction. */
+    /**
+     * Applies every seed generation newer than [fromCatalogVersion], in one transaction.
+     *
+     * The generation filter is [SeedCatalog.planFrom] rather than three `filter` calls here, so that the
+     * property Phase 2 rests on — a catalog bump **adds**, and cannot revisit, re-derive or resurrect
+     * what the database already holds — is assertable without an `SQLiteDatabase`. `SeedUpgradeTest`
+     * asserts it.
+     */
     fun applyTo(db: SQLiteDatabase, fromCatalogVersion: Int) {
         if (fromCatalogVersion >= SeedCatalog.VERSION) return
+        val plan = SeedCatalog.planFrom(fromCatalogVersion)
         db.transact {
             // routine and routine_version are mutually referential, and a first insert cannot satisfy
             // both statements in isolation. Deferring to commit is one line and is why §A.2 tolerates
             // the cycle at all.
             execSQL("PRAGMA defer_foreign_keys = ON")
 
-            SeedCatalog.exercises
-                .filter { it.catalogVersion > fromCatalogVersion }
-                .forEach { upsertExercise(this, it) }
-
-            SeedCatalog.programs
-                .filter { it.catalogVersion > fromCatalogVersion }
-                .forEach { upsertProgram(this, it) }
-
-            SeedCatalog.routines
-                .filter { it.catalogVersion > fromCatalogVersion }
-                .forEach { upsertBuiltInRoutine(this, it) }
+            plan.exercises.forEach { upsertExercise(this, it) }
+            plan.programs.forEach { upsertProgram(this, it) }
+            plan.routines.forEach { upsertBuiltInRoutine(this, it) }
 
             Meta.write(this, Meta.SEED_CATALOG_VERSION, SeedCatalog.VERSION.toString())
             // A seed upgrade can change a coefficient, and the personal-record cache is derived from
@@ -173,16 +173,7 @@ internal object Seeder {
             }
         }
 
-        // The user's position in a programme is theirs, so this only ever creates a missing row — a
-        // reseed must never send someone back to step one.
-        db.execSQL(
-            """
-            INSERT OR IGNORE INTO $TABLE_PROGRESSION_STATE
-                (program_id, current_step_index, sessions_at_step, step_entered_at, cycle_day)
-            VALUES (?, 1, 0, ?, 1)
-            """.trimIndent(),
-            arrayOf<Any?>(seed.id, System.currentTimeMillis()),
-        )
+        db.execSQL(SQL_ENSURE_PROGRESSION_STATE, arrayOf<Any?>(seed.id, System.currentTimeMillis()))
     }
 
     /** Content-addressed: identical stations + parameters produce no new version, so a no-op reseed is free. */
@@ -213,8 +204,11 @@ internal object Seeder {
                 put("progression_program_id", seed.progressionProgramId)
                 put("primary_metric", seed.primaryMetric.name)
                 put("station_count", seed.stations.size)
-                put("est_duration_sec", seed.estimatedDuration(db))
-                put("est_total_reps", estimatedTotalReps(seed.shapes(), seed.rounds))
+                // Read the pace from the **table** rather than from SeedCatalog, so a routine seeded in
+                // a later generation is estimated against the exercise rows this database actually
+                // holds — an upgrade never re-derives an older routine's frozen columns.
+                put("est_duration_sec", seed.estimatedSeconds { secondsPerRepOf(db, it) })
+                put("est_total_reps", seed.estimatedReps { secondsPerRepOf(db, it) })
                 put("structural_hash", hash)
                 put("created_at", now)
             },
@@ -242,15 +236,8 @@ internal object Seeder {
         ).use { it.moveToFirst() }
 
         if (existing) {
-            // Only the version pointer and the shipped metadata. `favourite` and `archived_at` are the
-            // user's, and a preset upgrade that un-hid a routine they deleted would be the app
-            // overruling them.
             db.execSQL(
-                """
-                UPDATE $TABLE_ROUTINE
-                   SET head_version_id = ?, tier = ?, origin = ?, catalog_version = ?, sort_order = ?
-                 WHERE id = ? AND built_in = 1
-                """.trimIndent(),
+                SQL_REPOINT_BUILT_IN,
                 arrayOf<Any?>(
                     versionId,
                     seed.tier?.storageValue,
@@ -303,21 +290,46 @@ internal object Seeder {
         stations = shapes(),
     )
 
-    private fun RoutineSeed.estimatedDuration(db: SQLiteDatabase): Int = estimatedDurationSeconds(
-        stations = shapes(),
-        // Read from the table rather than from SeedCatalog, so a routine seeded in a later generation
-        // is estimated against the exercise rows this database actually holds.
-        secondsPerRep = { id -> secondsPerRepOf(db, id) },
-        rounds = rounds,
-        timeCapSeconds = timeCapSeconds,
-        restBetweenStations = restBetweenStations,
-        restBetweenRounds = restBetweenRounds,
-        prepareSeconds = prepareSeconds,
-    )
-
     private fun secondsPerRepOf(db: SQLiteDatabase, exerciseId: String): Double? =
         db.rawQuery(
             "SELECT seconds_per_rep FROM $TABLE_EXERCISE WHERE id = ?",
             arrayOf(exerciseId),
         ).use { c -> if (c.moveToFirst()) c.getDouble(0) else null }
 }
+
+/**
+ * Repointing an existing built-in at its new head — **the statement a catalog bump lives or dies on**.
+ *
+ * It sets the version pointer and the four columns that are the app's to ship, and it names neither
+ * `favourite` nor `archived_at`, which are the user's. A seed upgrade that resurrected a built-in
+ * someone had archived would be the app overruling them, silently, on a launch they did not ask for —
+ * and it would look exactly like a bug in the library filter rather than like a seeder.
+ *
+ * `built_in = 1` is the other half of it. A copy-on-write edit of 七分間 is a *different row* with
+ * `built_in = 0`; the scope is what guarantees an upgrade to the shipped preset cannot reach the user's
+ * copy (§A.0.3, §B.3).
+ *
+ * It is a **named constant** because both of those properties have to be inspectable, and there is no
+ * `SQLiteDatabase` on the JVM classpath to run them against. `SeedUpgradeTest` asserts on this string —
+ * against the statement that actually executes, not against a copy of it in a test.
+ */
+internal val SQL_REPOINT_BUILT_IN: String =
+    """
+    UPDATE $TABLE_ROUTINE
+       SET head_version_id = ?, tier = ?, origin = ?, catalog_version = ?, sort_order = ?
+     WHERE id = ? AND built_in = 1
+    """.trimIndent()
+
+/**
+ * Creating a programme's state row, and only when there is not one already.
+ *
+ * `INSERT OR IGNORE` is the whole point: the user's position in リーコン・ロン is theirs, and a reseed
+ * that wrote `current_step_index = 1` would send someone on step nine back to the start on the launch
+ * that happened to ship a new preset. Constant, and asserted, for the same reason as above.
+ */
+internal val SQL_ENSURE_PROGRESSION_STATE: String =
+    """
+    INSERT OR IGNORE INTO $TABLE_PROGRESSION_STATE
+        (program_id, current_step_index, sessions_at_step, step_entered_at, cycle_day)
+    VALUES (?, 1, 0, ?, 1)
+    """.trimIndent()

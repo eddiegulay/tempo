@@ -9,6 +9,8 @@ import io.eddiegulay.tempo.gym.SetVariant
 import io.eddiegulay.tempo.gym.StepShape
 import io.eddiegulay.tempo.gym.StepUnit
 import io.eddiegulay.tempo.gym.Tier
+import kotlin.math.ceil
+import kotlin.math.floor
 
 /*
  * The shipped catalogue, as reviewable Kotlin.
@@ -87,6 +89,26 @@ internal data class StepSeed(
     val sets: List<SetSeed>,
 )
 
+/**
+ * What a database at a given catalog version is **missing** — a seed upgrade, as a value.
+ *
+ * The filtering used to be three inline `.filter { it.catalogVersion > from }` calls inside [Seeder],
+ * where the one property this feature's phasing rests on could not be asserted without an
+ * `SQLiteDatabase` — and there is none on the JVM classpath. Lifting it here makes it a plain unit test:
+ * `planFrom(1)` names the six routines Phase 2 adds and nothing else, and `planFrom(2)` is empty, which
+ * is what idempotence means one level above the content hash.
+ *
+ * *Rejected* — asserting the same thing by reading `Seeder.kt` as text. `GymManifestTest` reads XML that
+ * way and is right to, because a manifest has no Kotlin form; a filter does.
+ */
+internal data class SeedPlan(
+    val exercises: List<ExerciseSeed>,
+    val programs: List<ProgramSeed>,
+    val routines: List<RoutineSeed>,
+) {
+    val isEmpty: Boolean get() = exercises.isEmpty() && programs.isEmpty() && routines.isEmpty()
+}
+
 internal data class ProgramSeed(
     val id: String,
     val nameJa: String,
@@ -106,12 +128,34 @@ internal object SeedCatalog {
     /**
      * The **content** counter, and it is not the schema counter.
      *
-     * Phase 2 ships シンディ, チェルシー, バーバラ, マーフ and デス・バイ, and Pavel's ladder lands
-     * whenever a sourced transcription does. Neither needs a column, so neither needs a migration —
-     * they arrive as `VERSION = 2` and `onOpen` reseeds. That separation was designed for exactly this
-     * (`00-plan.md` §2 row 17, §B.2).
+     * v2 is Phase 2's six built-ins — シンディ, シンディ（やさしい）, チェルシー, バーバラ, マーフ,
+     * デス・バイ. **Not one of them needs a column**, so not one of them needs a migration:
+     * [SCHEMA_VERSION] is still 1, `MIGRATIONS` still holds the single `V1CreateSchema`, and this bump
+     * is `onOpen`'s business rather than `onUpgrade`'s (§B.2, `00-plan.md` §2 row 17). That is not a
+     * convenience — an app update whose schema is unchanged **never calls `onUpgrade` at all**, so a
+     * seed that lived there would silently fail to arrive for every existing install.
+     *
+     * The bump is an **append**: [planFrom] hands the seeder only the rows stamped newer than the
+     * database's own generation, so an upgrade cannot revisit 七分間, cannot re-derive its estimate, and
+     * cannot un-archive a built-in the user removed. `SeedUpgradeTest` pins all of it.
+     *
+     * Pavel's ladder (§F.4) is still unsourced and still lands whenever a transcription does — as v3,
+     * by the same property, which is what §F.4 was promised.
      */
-    const val VERSION: Int = 1
+    const val VERSION: Int = 2
+
+    /**
+     * The rows a database at [fromCatalogVersion] has not seen.
+     *
+     * Strictly `>`: a generation the database already installed is never re-emitted, which is what makes
+     * "upgrade" mean *add* rather than *reconcile*. A reconciling seeder would have to decide what to do
+     * about a built-in the user archived, and every answer to that question is the app overruling them.
+     */
+    fun planFrom(fromCatalogVersion: Int): SeedPlan = SeedPlan(
+        exercises = exercises.filter { it.catalogVersion > fromCatalogVersion },
+        programs = programs.filter { it.catalogVersion > fromCatalogVersion },
+        routines = routines.filter { it.catalogVersion > fromCatalogVersion },
+    )
 
     // ── §F.1 exercise ────────────────────────────────────────────────────────────────────────────
     //
@@ -295,6 +339,41 @@ internal object SeedCatalog {
 
     val programs: List<ProgramSeed> = listOf(reconRon, armstrong, fighter)
 
+    /** §F.5's interval for both minute-grid routines, named once so the grid and its bound agree. */
+    private const val MINUTE_SEC = 60
+
+    /**
+     * How many minutes of デス・バイ's ascending grid to lay down — and it is a **materialisation
+     * bound, not a prescription**.
+     *
+     * §F.5 gives デス・バイ neither `rounds` nor `time_cap_sec`, because the protocol has neither: `03`
+     * §C.3 states that `EMOM_ASCENDING`'s fail-out *is* the terminating condition. The schema disagrees
+     * — `CHECK (rounds IS NOT NULL OR time_cap_sec IS NOT NULL)`, on the premise that something must end
+     * a session — and so does the compiler, which lays `1..rounds` minutes and has no
+     * `extendOneRound` for this engine (only an AMRAP is `extensible`). One of the two columns has to
+     * carry a number. **This is the one figure in Phase 2 that no source supplies; it is disclosed
+     * rather than slipped in, exactly as §Q12's `sec/rep` were, and it is a §Q-shaped question for the
+     * orchestrator to ratify or overrule.**
+     *
+     * It is derived rather than chosen. Minute *m* prescribes *m* burpees inside a fixed window, so at
+     * the catalogue's own pace for `burpee` — §F.1's measured 4.0 s/rep, the same number
+     * `estimateMs` paces the segment with — the last minute whose prescription still fits its own window
+     * is `floor(60 / 4.0) = 15`. Past it the prescription cannot be completed by anyone at catalogue
+     * pace, so the grid is laid to precisely where the protocol's own terminating condition becomes
+     * arithmetic. Nothing is claimed about the athlete.
+     *
+     * *Rejected* — Stew Smith's ten-minute Death by Push-ups (design §9). It is a real, sourced number
+     * and it belongs to a **different workout**: ten push-ups EMOM inside a ten-minute plank, neither
+     * ascending nor burpees. Borrowing its ten would be inventing with a citation attached.
+     */
+    private fun ascendingMinuteBound(intervalSeconds: Int, secondsPerRep: Double): Int =
+        floor(intervalSeconds / secondsPerRep).toInt().coerceAtLeast(1)
+
+    private val deathByMinutes: Int = ascendingMinuteBound(
+        intervalSeconds = MINUTE_SEC,
+        secondsPerRep = exercises.first { it.id == "burpee" }.secondsPerRep,
+    )
+
     // ── §F.5 built-in routines ───────────────────────────────────────────────────────────────────
     val routines: List<RoutineSeed> = listOf(
 
@@ -388,8 +467,280 @@ internal object SeedCatalog {
                 StationSeed("pullup", Measure.MAX_EFFORT),
             ),
         ),
+
+        // ── Phase 2, catalog_version = 2 ─────────────────────────────────────────────────────────
+        //
+        // **Every row below is seeded exactly as §F.5 writes it.** `DECISIONS.md` §Q15 records that the
+        // whole table was checked against primary sources independently of the planning session — these
+        // are the numbers most often misremembered, which is why the check happened at all — so this is
+        // not a place to improve on the figures. Sources are §Q15's: CrossFit's own benchmark-workout
+        // article for the Girls, crossfit.com/murph, and BoxRox's list for チェルシー and バーバラ.
+        //
+        // These six need **no migration**. They are content, `catalogVersion = 2` is the content
+        // counter, and `SCHEMA_VERSION` does not move (§B.2). What makes that safe is that every one of
+        // them is expressible in schema v1: the engines were all in the `routine_version` CHECK from the
+        // start, `interval_sec` and `time_cap_sec` were already columns, and the one shape that did not
+        // fit — マーフ's runs — bends to the model rather than the model to it, below.
+
+        // シンディ. **5/10/15, not 10/15/15** — design §9's correction, and §Q15 confirms it: the
+        // 10/15/15 version has no source and is a garbled recollection of a workout first posted on
+        // CrossFit.com on 2004-12-29.
+        //
+        // `rounds = null` is the AMRAP's whole point. The rounds are the *score*, not the plan, so the
+        // column stays empty and the cap is what bounds the session — which is also how the CHECK
+        // `(rounds IS NOT NULL OR time_cap_sec IS NOT NULL)` is satisfied. The compiler materialises a
+        // few rounds and appends more as the frontier nears the cap, and reports what it laid.
+        RoutineSeed(
+            id = "r_cindy",
+            name = "シンディ",
+            engine = Engine.AMRAP,
+            tier = Tier.INTERMEDIATE,
+            origin = "CrossFit.com, 2004-12-29",
+            sortOrder = 3,
+            primaryMetric = BestMetric.MOST_ROUNDS,
+            rounds = null,
+            timeCapSeconds = 1200,
+            catalogVersion = 2,
+            stations = listOf(
+                StationSeed("pullup", Measure.REPS, reps = 5),
+                StationSeed("pushup", Measure.REPS, reps = 10),
+                StationSeed("squat", Measure.REPS, reps = 15),
+            ),
+        ),
+
+        // シンディ（やさしい） — 3 ring rows / 6 knee push-ups / 9 squats in twelve minutes.
+        //
+        // Design §9: *"Every preset needs a scaled tier. Cindy's official beginner scaling is a
+        // 12-minute AMRAP of 3 ring rows, 6 assisted push-ups, 9 air squats — ship that as 「やさしい」
+        // rather than letting a beginner bounce off the Rx version."* It is a separate routine row
+        // rather than a tier override on シンディ because `04` §3 says scaled tiers are separate rows,
+        // and because `scaled_from_routine_id` exists precisely to carry the relationship without
+        // making one routine's history the other's.
+        //
+        // **`tier = 入門` is a derivation, disclosed.** §F.5's Phase 2 table carries no tier column at
+        // all; §9's table gives the other five (see each below) and describes this one only as the
+        // *beginner* scaling. 入門 is the enum's word for beginner and the routine is nothing else, so
+        // the mapping states no new fact — but it is not a transcription either, and it is called out
+        // here so a reviewer sees it rather than finds it.
+        //
+        // The row must be seeded **after** シンディ: `scaled_from_routine_id` is a foreign key at it.
+        // `defer_foreign_keys` would tolerate the other order inside the transaction; relying on that
+        // for an ordering the list can simply have is how a seed becomes launch-order-sensitive.
+        RoutineSeed(
+            id = "r_cindy_scaled",
+            name = "シンディ（やさしい）",
+            engine = Engine.AMRAP,
+            tier = Tier.BEGINNER,
+            origin = "CrossFit official scaling",
+            sortOrder = 4,
+            primaryMetric = BestMetric.MOST_ROUNDS,
+            rounds = null,
+            timeCapSeconds = 720,
+            scaledFromRoutineId = "r_cindy",
+            catalogVersion = 2,
+            stations = listOf(
+                StationSeed("ring_row", Measure.REPS, reps = 3),
+                StationSeed("knee_pushup", Measure.REPS, reps = 6),
+                StationSeed("squat", Measure.REPS, reps = 9),
+            ),
+        ),
+
+        // チェルシー — シンディ's identical 5/10/15, on a thirty-minute anchored minute grid.
+        //
+        // Same three stations, and that is the workout: the difference between シンディ and チェルシー is
+        // entirely in the engine, which is `00-plan.md` §1's claim about the engine model being load
+        // bearing, demonstrated. An EMOM's rest is the remainder of the minute, so
+        // `rest_between_stations` and `rest_between_rounds` are both zero — a grid that also carried a
+        // rest column would drift off its own anchor.
+        RoutineSeed(
+            id = "r_chelsea",
+            name = "チェルシー",
+            engine = Engine.EMOM,
+            tier = Tier.ADVANCED,
+            origin = "CrossFit benchmark",
+            sortOrder = 5,
+            primaryMetric = BestMetric.MOST_ROUNDS,
+            rounds = 30,
+            intervalSeconds = MINUTE_SEC,
+            catalogVersion = 2,
+            stations = listOf(
+                StationSeed("pullup", Measure.REPS, reps = 5),
+                StationSeed("pushup", Measure.REPS, reps = 10),
+                StationSeed("squat", Measure.REPS, reps = 15),
+            ),
+        ),
+
+        // バーバラ — five rounds of 20/30/40/50, with **exactly three minutes** between them.
+        //
+        // The rest is the reason this engine exists. `03` §B.3: skipping it makes the resulting time
+        // incomparable to anyone else's バーバラ, so it compiles as `RestKind.MANDATED` and the player
+        // refuses ＋二十秒 and とばす on it, visibly. Seeding it as `rest_between_rounds` rather than as
+        // four rest stations is what puts it there: `FOR_TIME_WITH_REST` is the only engine that reads
+        // that column as mandated, and a rest expressed as a station would be skippable like any other.
+        RoutineSeed(
+            id = "r_barbara",
+            name = "バーバラ",
+            engine = Engine.FOR_TIME_WITH_REST,
+            tier = Tier.ADVANCED,
+            origin = "CrossFit benchmark",
+            sortOrder = 6,
+            primaryMetric = BestMetric.BEST_TIME,
+            rounds = 5,
+            restBetweenRounds = 180,
+            catalogVersion = 2,
+            stations = listOf(
+                StationSeed("pullup", Measure.REPS, reps = 20),
+                StationSeed("pushup", Measure.REPS, reps = 30),
+                StationSeed("situp", Measure.REPS, reps = 40),
+                StationSeed("squat", Measure.REPS, reps = 50),
+            ),
+        ),
+
+        // マーフ — a mile, then 100 / 200 / 300, then a mile.
+        //
+        // **The run legs are `MAX_EFFORT` carrying a note, and this is the decision to read before
+        // touching them** (§F.5, `DECISIONS.md` §Q15). The obvious encoding — `DURATION` with a NULL
+        // `prescribed_sec` — is refused by `routine_station`'s coherence CHECK, and rightly: a duration
+        // station with no duration is exactly the malformed row that CHECK exists to reject three
+        // screens before the timeline compiler meets it. `MAX_EFFORT` needs no schema change at all,
+        // because the player already treats a `MAX_EFFORT` `LOCOMOTION` station as an open segment
+        // closed by 済 — which is what a run is: you finish it and you say so.
+        //
+        // The distance therefore stays **a note** rather than becoming a column. A `distance_m` would
+        // have to be understood by the compiler, the estimate, the volume formula, the record screen and
+        // the builder's picker, all to serve two stations of one routine (§Q15).
+        //
+        // **The weight vest is not modelled.** The 20lb/14lb vest is optional in the source and there is
+        // no load column; inventing one to hold an optional would be the same mistake as the distance,
+        // without even the excuse of being prescribed.
+        //
+        // `rounds = 1` is the CHECK's price for a for-time routine with no cap — design §7.2 gives
+        // `FOR_TIME` "no cap", so the other column has to be the non-null one. It states nothing beyond
+        // the shape §F.5 already writes: run / 100 / 200 / 300 / run, performed once.
+        RoutineSeed(
+            id = "r_murph",
+            name = "マーフ",
+            engine = Engine.FOR_TIME,
+            tier = Tier.ADVANCED,
+            origin = "CrossFit, in memory of Lt. Michael Murphy",
+            sortOrder = 7,
+            primaryMetric = BestMetric.BEST_TIME,
+            rounds = 1,
+            catalogVersion = 2,
+            stations = listOf(
+                StationSeed("run", Measure.MAX_EFFORT, note = "一マイル"),
+                StationSeed("pullup", Measure.REPS, reps = 100),
+                StationSeed("pushup", Measure.REPS, reps = 200),
+                StationSeed("squat", Measure.REPS, reps = 300),
+                StationSeed("run", Measure.MAX_EFFORT, note = "一マイル"),
+            ),
+        ),
+
+        // デス・バイ — one more rep every minute, until you cannot.
+        //
+        // **It is a format, not a canonical workout** (`DECISIONS.md` §Q15). §F.5 picks `burpee` and
+        // that choice is ours in exactly the way タバタ's is — the 1996 protocol was a cycle ergometer,
+        // and the 種目は自由に on that routine's station says so. This one says it the same way, in the
+        // same words, on its own station: the model has no note column on a version, and the station is
+        // the only place a routine has to speak.
+        //
+        // No tier. Design §9's table gives every other preset one and writes "scales itself" here, which
+        // is a fact about the format rather than a band; `routine.tier` is nullable for precisely such a
+        // row, and picking 中級 to fill the column would be inventing the one thing §9 declined to say.
+        //
+        // The first minute is one rep and the compiler adds `m − 1` — so `prescribed_reps = 1` is the
+        // whole of "+1 rep per minute", and it also satisfies the CHECK that a REPS station prescribe a
+        // positive count. See [ascendingMinuteBound] for why `rounds` carries a number at all.
+        RoutineSeed(
+            id = "r_death_by",
+            name = "デス・バイ",
+            engine = Engine.EMOM_ASCENDING,
+            tier = null,
+            origin = "Stew Smith / CrossFit tradition",
+            sortOrder = 8,
+            primaryMetric = BestMetric.MOST_ROUNDS,
+            rounds = deathByMinutes,
+            intervalSeconds = MINUTE_SEC,
+            catalogVersion = 2,
+            stations = listOf(
+                StationSeed("burpee", Measure.REPS, reps = 1, note = "種目は自由に"),
+            ),
+        ),
     )
 }
+
+/**
+ * The seconds a seed will freeze into `routine_version.est_duration_sec`.
+ *
+ * [estimatedDurationSeconds] with **one substitution**, and the substitution is the house rule rather
+ * than a new one. `RoutineEstimate.kt` states it for the builder's live line: for `EMOM` /
+ * `EMOM_ASCENDING` *"a round is one interval window whether or not the work fills it, so the duration is
+ * `interval × rounds`"*. `GymMath`'s estimator has no interval parameter — it was written for the two
+ * engines Phase 1 shipped — so left alone it sums the *work* and チェルシー's thirty anchored minutes
+ * come out at 1865s (約三十一分) against the grid's own 1805 (約三十分). Feeding the grid in through the
+ * cap parameter is not a trick: that function already documents *"a time-capped engine is its cap plus
+ * the prepare, because the cap **is** the duration"*, and for an anchored grid the grid is the cap —
+ * literally, it is what `Builder.emom` assigns to `capMs`.
+ *
+ * **No v1 value moves.** 七分間, タバタ and リーコン・ロン carry neither an interval nor a cap, so the
+ * substitution is inert for them and their columns stay 475 / 235 / 5. That matters more than it looks:
+ * a fresh install seeds every generation while an upgrade seeds only the new one, so an estimator that
+ * treated v1 rows differently would produce two populations whose 型 cards disagree.
+ *
+ * *Rejected* — teaching [estimatedDurationSeconds] about intervals. It is shared with the builder's save
+ * path and with Phase 1's pinned totals, and this is a seed-time derivation of a denormalised column,
+ * not a change to what an estimate means.
+ */
+internal fun RoutineSeed.estimatedSeconds(secondsPerRep: (String) -> Double?): Int =
+    estimatedDurationSeconds(
+        stations = shapes(),
+        secondsPerRep = secondsPerRep,
+        rounds = rounds,
+        timeCapSeconds = timeCapSeconds ?: gridSeconds,
+        restBetweenStations = restBetweenStations,
+        restBetweenRounds = restBetweenRounds,
+        prepareSeconds = prepareSeconds,
+    )
+
+/**
+ * The reps a seed will freeze into `routine_version.est_total_reps`.
+ *
+ * [estimatedTotalReps] multiplies a round's prescribed reps by the round count, which is right for every
+ * engine that has one — and an AMRAP does not. Left alone, シンディ would store **thirty**: one round's
+ * worth, rendered as 三十回まで on a page whose まで means *upper bound over twenty minutes*.
+ * `04` §3's own mock says 「六百回まで」, and `RoutineEstimate.kt` gives the arithmetic that reaches it:
+ * the cap divided by a round's estimate, rounded **up** because the fragment is a ceiling.
+ *
+ * Reached by calling the same two functions rather than by restating their arithmetic — one round of the
+ * duration estimator gives the divisor — because a second copy of a formula is the divergence §Q7 was
+ * written about. Cindy: `⌈1200 / 62⌉ = 20` rounds × 30 reps = 600.
+ *
+ * Inert for every engine that carries `rounds`, so again no v1 column moves.
+ */
+internal fun RoutineSeed.estimatedReps(secondsPerRep: (String) -> Double?): Int =
+    estimatedTotalReps(shapes(), rounds ?: projectedRounds(secondsPerRep))
+
+/** How many rounds a cap has room for, at the catalogue's pace. Null when there is no cap to divide. */
+private fun RoutineSeed.projectedRounds(secondsPerRep: (String) -> Double?): Int? {
+    val cap = timeCapSeconds ?: return null
+    val roundSeconds = estimatedDurationSeconds(
+        stations = shapes(),
+        secondsPerRep = secondsPerRep,
+        rounds = 1,
+        timeCapSeconds = null,
+        restBetweenStations = restBetweenStations,
+        restBetweenRounds = 0,
+        prepareSeconds = 0,
+    )
+    return if (roundSeconds <= 0) null else ceil(cap.toDouble() / roundSeconds).toInt()
+}
+
+/**
+ * An anchored minute grid's length. Non-null only for the two EMOM engines, because they are the only
+ * two that carry an interval — nothing else in the catalogue has one to be confused by.
+ */
+private val RoutineSeed.gridSeconds: Int?
+    get() = intervalSeconds?.let { interval -> rounds?.let { interval * it } }
 
 /** The push-up family — the seven rows `04` §4 edge case 6 rolls into one 動きごと row. */
 internal const val LADDER_PUSH = "push"

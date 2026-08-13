@@ -95,6 +95,26 @@ interface GymRepository {
      */
     suspend fun recordSegment(sessionId: Long, r: SegmentResultDraft): GymWrite<Unit>
 
+    /**
+     * Un-records one segment: the row the ◁◁ double-tap stepped back over (`03-player.md` §C.1 row 25,
+     * §C.4).
+     *
+     * **Without it the record double-counts a redone station.** `recordSegment` is idempotent under
+     * `idx_result_session`, so stepping back and *redoing* the segment replaces its row — but stepping
+     * back and then quitting, or stepping back over a segment the user then skips, leaves an attempt in
+     * the record that the user deliberately withdrew. `SessionEffect.DeleteResult` had no method to call
+     * and was applied as a documented no-op; this is that method.
+     *
+     * Addressed by `(sessionId, ordinal)` and not by a row id, because the ordinal **is** the identity
+     * of a result — it is what `replay` lands stored rows on, and it is why `SessionTransition`
+     * refuses to insert a segment mid-timeline. Nothing above the data layer holds result row ids.
+     *
+     * Deleting a row that is not there is [GymWrite.Ok] with nothing written, which is what makes a
+     * retry after a crash safe: the effect is emitted once per step-back and the second application
+     * must not become an error the player has to explain.
+     */
+    suspend fun deleteResult(sessionId: Long, ordinal: Int): GymWrite<Unit>
+
     /** Clock columns only. Called on pause/resume so process death loses at most one phase. */
     suspend fun checkpoint(sessionId: Long, c: PersistedClock, roundsCompleted: Int): GymWrite<Unit>
 

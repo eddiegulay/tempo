@@ -211,6 +211,85 @@ prompt and **deliberately holds the start lock**, so a page that raises it witho
 
 Every page that can call `startSession` mounts it. That is the rule, and it is one sentence.
 
+## Q15 — Phase 2's five benchmark routines — **verified, seed `02` §F.5 as written**
+
+Checked independently of the planning session, because `00-plan` §2 forbids inventing numbers and
+these are the numbers most often misremembered. Every row of `02` §F.5's Phase 2 table is confirmed:
+
+| routine | prescription | confirmed |
+|---|---|---|
+| シンディ | AMRAP 20 min — 5 pull-ups / 10 push-ups / 15 air squats | ✓ and **5/10/15, not 10/15/15** |
+| チェルシー | EMOM 30 — the same 5/10/15 | ✓ |
+| バーバラ | 5 rounds for time — 20 / 30 / 40 / 50, **3 min rest between rounds** | ✓ |
+| マーフ | 1 mile run · 100 / 200 / 300 · 1 mile run | ✓ |
+| デス・バイ | +1 rep per minute until failure | ✓ as a *format*, not a fixed workout |
+
+Two notes for the seeding agent:
+
+**マーフ's run legs** are already solved in `02` §F.5 and the solution stands: `DURATION` with a NULL
+`prescribed_sec` violates the CHECK, so they are `MAX_EFFORT` with `note = '一マイル'`, and the player
+treats a `MAX_EFFORT` `LOCOMOTION` station as an open segment closed by 済. No schema change, and the
+distance stays a note rather than becoming a column the rest of the feature would have to understand.
+The 20lb/14lb vest is **not** modelled — it is optional in the source and there is no load column.
+
+**デス・バイ is a format, not a canonical workout.** `02` §F.5 picks `burpee` and that choice is ours,
+exactly as タバタ's exercise choice is ours (the 1996 protocol was a cycle ergometer). Say so in the
+catalog comment, the way the タバタ entry already says 種目は自由に.
+
+Sources: [The Girls / benchmark workouts](https://journal.crossfit.com/article/benchmark-workouts-2) ·
+[Murph](https://www.crossfit.com/murph-workout) ·
+[Chelsea and Barbara](https://www.boxrox.com/crossfit-benchmark-workouts-the-girls/)
+
+## Q16 — 毎分's window is sixty seconds, and is not authorable (Phase 2 groundwork)
+
+The builder-logic agent reported that **no spec table gives a label for an EMOM's interval**, and
+concluded that a non-60-second EMOM is therefore unauthorable. It refused to invent the string. Right
+on both counts, and the conclusion is not a gap — it is the answer.
+
+**毎分 means "every minute." The name is the interval.** `04` §6's own table glosses 毎分増 as
+"+1 rep each minute". An interval wheel would let a user build a 毎分 routine that runs every forty
+seconds, at which point the engine's name on its own card is false. Both seeded EMOM routines —
+チェルシー and デス・バイ — are sixty seconds, because that is what the format is.
+
+So: `interval_sec` stays a **column** (a stored routine carries it, the compiler reads it, and a
+future engine may vary it), but the builder **offers no wheel for it** and every routine authored in
+Phase 2 gets 60. No string is needed, because nothing is being labelled. `engineRows(EMOM)` renders
+毎分 and that is the complete prescription.
+
+If a variable window is ever wanted it needs a name of its own in `04` §6 first — it would be a
+different engine, not a parameter of this one.
+
+## Q17 — Migration notices: two, not three (Phase 2 groundwork)
+
+`04` §6 :1140 documents exactly two engine-change notices (the 段階 and 毎分 ones). The agent needed a
+third — for dropping a time cap or an interval — and wrote none, flagging it instead.
+
+**Ratified: there is no third notice.** The two documented losses are invisible (a rest silently
+becoming zero, sets moving to a progression table); dropping a cap or an interval removes a row that
+is on screen, under the finger that just changed the engine. A notice explaining a change the user
+watched happen is noise, and `00-plan` §4.1's restraint about rationed copy applies. The KDoc records
+the reasoning at the site.
+
+## Q18 — デス・バイ's `rounds` — **ratified as a derived materialisation bound**
+
+`02` §F.5 gives デス・バイ neither `rounds` nor `time_cap_sec`, correctly: the format has neither, and
+`03` §C.3 makes the fail-out the terminating condition. But
+`CHECK (rounds IS NOT NULL OR time_cap_sec IS NOT NULL)` demands one and `Builder.emom` lays `1..rounds`
+with no `extendOneRound` — only AMRAP is `extensible` — so a number is structurally mandatory.
+
+The seeding agent **derived** rather than chose: minute *m* asks for *m* burpees, §F.1 measures a
+burpee at 4.0 s/rep, so `floor(60 / 4.0) = 15` is the last minute whose prescription still fits inside
+its own window at catalogue pace. It is written as an expression (`ascendingMinuteBound`), not a
+literal, and documented as a **materialisation bound, not a prescription**.
+
+**Ratified.** This is the same move §Q12 sanctioned: a value computed from a catalogued measurement
+beats a guess, and expressing it as a formula means it tracks the catalogue if that 4.0 is ever
+retuned. Nobody reaches minute 15 of death-by-burpees anyway — the bound exists so the compiler has a
+list to lay, not to tell the user when to stop.
+
+Rejected, correctly: Stew Smith's ten-minute Death by Push-ups. That is a real sourced number
+belonging to a **different workout**, and borrowing it would be the RECONDO error in miniature.
+
 ## Q4 — Numerals — **as specced, no change**
 
 Counts render kanji, countdowns render arabic, wheels render arabic mid-spin. This matches the flip

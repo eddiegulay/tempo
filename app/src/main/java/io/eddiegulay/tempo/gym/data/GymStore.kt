@@ -395,6 +395,27 @@ internal class GymStore private constructor(
             Unit
         }
 
+    /**
+     * §C.4's other half: ◁◁ steps back over a segment, and its row goes with it.
+     *
+     * The same two tables [recordSegment] announces, deliberately — a history surface that redrew on
+     * the write must redraw on its withdrawal or it renders a result the store no longer holds — and
+     * inside the same single-writer mutex, so a delete cannot interleave with the `recordSegment` the
+     * user's next 済 is about to issue for the very same `(session_id, ordinal)`.
+     *
+     * **`last_write_elapsed` / `last_write_wall` are deliberately not moved.** They are the anchor
+     * `recoveredActiveMs` credits time up to (§E.3 edge case 6), and there is no honest value to write:
+     * the row being deleted carried the only timestamps involved, and stamping "now" would credit the
+     * user for the seconds they spent stepping back. The transition that emits this effect emits
+     * [checkpoint] immediately after it, which re-anchors the clock from the seek — so the pair leaves
+     * recovery consistent without this statement guessing at a time.
+     */
+    override suspend fun deleteResult(sessionId: Long, ordinal: Int): GymWrite<Unit> =
+        write(TABLE_SESSION, TABLE_SESSION_RESULT) {
+            delete(TABLE_SESSION_RESULT, "session_id = ? AND ordinal = ?", arrayOf("$sessionId", "$ordinal"))
+            Unit
+        }
+
     override suspend fun checkpoint(
         sessionId: Long,
         c: PersistedClock,

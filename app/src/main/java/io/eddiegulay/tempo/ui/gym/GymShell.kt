@@ -16,9 +16,11 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,7 +32,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -50,8 +54,21 @@ import io.eddiegulay.tempo.gym.GymViewModel
 import io.eddiegulay.tempo.gym.LeaveReason
 import io.eddiegulay.tempo.gym.currentTab
 import io.eddiegulay.tempo.gym.tabBarVisible
+import io.eddiegulay.tempo.ui.FaultPanel
+import io.eddiegulay.tempo.ui.FaultStrip
+import io.eddiegulay.tempo.ui.faultCopy
+import io.eddiegulay.tempo.ui.gym.session.CompletePage
+import io.eddiegulay.tempo.ui.gym.session.LivePlayer
+import io.eddiegulay.tempo.ui.gym.session.PlayerSheetRow
+import io.eddiegulay.tempo.ui.gym.session.SessionActions
+import io.eddiegulay.tempo.ui.gym.session.SessionHost
+import io.eddiegulay.tempo.ui.gym.session.SessionScreen
+import io.eddiegulay.tempo.ui.gym.session.SessionUnrecoverableState
+import io.eddiegulay.tempo.ui.gym.session.quitOptions
+import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import kotlinx.coroutines.delay
 
 /**
  * One route plus how deep it sits, which is the pair the route animation needs.
@@ -272,7 +289,7 @@ private fun Modifier.gymEntrance(): Modifier {
  * prose no spec table contains. A heading with nothing beneath it claims nothing.
  *
  * The titles are each page spec's own, so replacing a branch with the real page keeps the word the
- * user already saw: 種目をえらぶ `04` §3, これまで / 最高 / 移り変わり `04` §4, 支度 `03` §A,
+ * user already saw: 種目をえらぶ `04` §3, これまで / 最高 / 移り変わり `04` §4,
  * 設定 / 安全のために `01` §B, and 記録 from `GymTab`.
  *
  * Exhaustive over [GymRoute] with no `else`, deliberately: a route added in a later phase must be
@@ -280,14 +297,13 @@ private fun Modifier.gymEntrance(): Modifier {
  */
 internal fun gymPagePlaceholderTitle(route: GymRoute): String? = when (route) {
     // Written, and reachable.
-    GymRoute.Home, GymRoute.Library, is GymRoute.RoutineDetail -> null
+    GymRoute.Home, GymRoute.Library, is GymRoute.RoutineDetail, is GymRoute.Session -> null
 
     GymRoute.Records -> "記録"
     is GymRoute.Builder -> if (route.editingId == null) "型を作る" else "型を編集"
     is GymRoute.StationPicker -> "種目をえらぶ"
     GymRoute.ExerciseIndex -> "種目"
     is GymRoute.ExerciseDetail -> "種目の中身"
-    is GymRoute.Session -> "支度"
     is GymRoute.Record -> "記録の中身"
     is GymRoute.History -> "これまで"
     GymRoute.Bests -> "最高"
@@ -302,7 +318,14 @@ internal fun gymPagePlaceholderTitle(route: GymRoute): String? = when (route) {
  * [gymPagePlaceholderTitle] decides *whether* there is a page; this only says which composable it is.
  * The placeholder is taken first and returns, so a route can never both draw its page and fall through
  * to a heading — the fall-through is exactly how `GymHomeScreen`, `LibraryIndexScreen` and
- * `LibraryDetailScreen` came to be written, compiling and unreachable.
+ * `LibraryDetailScreen` came to be written, compiling and unreachable, and then how the **entire
+ * session player** did: `SessionHost`, `LivePlayer`, `PreparePage` and `CompletePage` all shipped with
+ * zero call sites while `is GymRoute.Session` still resolved to the 支度 placeholder, so 始める landed
+ * on a heading and a hairline. `GymShellTest` now walks the tree for orphaned pages so a fourth one
+ * cannot be forgotten.
+ *
+ * Every `SessionScreen` gets an arm, and none of them is a `->` into nothing: an unhandled case is a
+ * blank screen in the middle of a workout, which is the one failure this player must not have.
  *
  * [gym] is passed down rather than resolved per page with `viewModel()`: the shell already holds the
  * one instance keyed to `MainActivity`'s store, and a page reaching for its own would be a second
@@ -319,8 +342,148 @@ private fun GymPage(route: GymRoute, gym: GymViewModel) {
         GymRoute.Home -> GymHomeScreen(gym)
         GymRoute.Library -> LibraryIndexScreen(gym)
         is GymRoute.RoutineDetail -> LibraryDetailScreen(gym, route.routineId)
+        is GymRoute.Session -> SessionHost(gym, route) { screen, actions ->
+            when (screen) {
+                // §A's prompt rule, applied to the player itself: **no flash and no spinner**. The
+                // reconstruction is a single indexed read and is over in a frame or two, so a 読み込み中
+                // here would be a word the user sees only when the phone is struggling — and it would
+                // be the first thing 始める showed them. Nothing is drawn but the paper `SessionHost`
+                // already laid down.
+                SessionScreen.Loading -> Unit
+                is SessionScreen.Live -> LivePlayer(screen.state, actions)
+                is SessionScreen.Complete -> CompletePage(screen.state, actions)
+                is SessionScreen.Unrecoverable -> SessionUnrecoverablePage(screen.state, actions)
+                // The read failed, so this is the `Loadable` doctrine's third case and it renders
+                // through the one place a fault becomes words (`DECISIONS.md` §Q6). もう一度 re-reads
+                // and rebuilds; the retry is idempotent because reconstruction writes nothing.
+                is SessionScreen.Failed -> FaultPanel(screen.fault, onRecover = actions::onRetryLoad)
+            }
+        }
+
         // Unreachable: every other route returned a placeholder above, and that `when` is exhaustive.
         else -> Unit
+    }
+}
+
+/** How long the destructive row stays armed after the first tap — §A QUIT_SHEET's second ask. */
+private const val DISCARD_ARM_MS = 3_000L
+
+/**
+ * A session that exists on disk and cannot be replayed — [SessionScreen.Unrecoverable] drawn.
+ *
+ * **Why it is here and not in `ui/gym/session/`.** It is the one player screen nobody had written when
+ * the player was wired up, and an unhandled arm in [GymPage] is a blank screen in the middle of a
+ * workout — strictly the worst of the three outcomes. It is drawn from parts that already exist:
+ * [quitOptions] decides the rows, [PlayerSheetRow] is the quit sheet's own row, and [faultCopy] is the
+ * one fault table. **Not one string here is new** — 鍛錬を終えますか, ここまでを記録する,
+ * 記録せずに終える / 終える, 本当に消しますか and まだ 記録するものがありません are all `QuitSheet.kt`'s,
+ * sourced there to `03-player.md` §A GYM.SESSION.QUIT_SHEET. It should move next to the sheet, and the
+ * arming window and its two sentences should be hoisted out of both; that is reported, not done, because
+ * `ui/gym/session/` belongs to another unit.
+ *
+ * **つづける is removed, and that is the whole difference from the sheet.** There is nothing to continue
+ * — the stored results cannot be landed on the recompiled timeline — so offering the escape would be
+ * offering a door onto the same room. [SessionUnrecoverableState] carries `resultsWritten` for exactly
+ * the reason the sheet does: at zero there is nothing to record, so ここまでを記録する is **omitted**
+ * rather than disabled and the destructive row softens to 終える and asks once.
+ *
+ * *Rejected* — rendering this as a `PlayerSheet` so it matched the quit sheet pixel for pixel. A sheet
+ * is a thing over something, and its scrim would dim an empty screen; worse, with つづける gone the
+ * scrim tap and Back would have to be dead, which is a modal the user cannot dismiss. It is a page.
+ *
+ * *Rejected* — a subtitle when there is work to save. The sheet's is `quitSummaryLine(activeMs, …)` and
+ * an unreplayable session has no timeline to measure those against. Saying nothing is honest; a summary
+ * computed from the rows we have just declared unreadable would not be.
+ */
+@Composable
+private fun SessionUnrecoverablePage(state: SessionUnrecoverableState, actions: SessionActions) {
+    val c = LocalTempoColors.current
+    val options = quitOptions(state.resultsWritten)
+
+    var armed by remember { mutableStateOf(false) }
+    // Which write failed, so もう一度 retries the one the user asked for. A failed **discard** has no
+    // retry the host exposes, and answering it with a finish would be a wrong write dressed as a no-op
+    // — `QuitSheet.kt` makes the same distinction for the same reason.
+    var retryable by remember { mutableStateOf(false) }
+
+    LaunchedEffect(armed) {
+        if (!armed) return@LaunchedEffect
+        delay(DISCARD_ARM_MS)
+        armed = false
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = state.routineName,
+            modifier = Modifier.semantics { heading() },
+            style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = "鍛錬を終えますか",
+            style = TextStyle(fontFamily = Mincho, fontSize = 16.sp, letterSpacing = 2.sp, color = c.inkSoft),
+        )
+        if (options.subtitleIsWarning) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "まだ 記録するものがありません",
+                style = TextStyle(fontFamily = Gothic, fontSize = 13.sp, color = c.inkFaint),
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(c.hair))
+
+        if (options.canRecord) {
+            PlayerSheetRow(
+                label = "ここまでを記録する",
+                description = "ここまでを記録する",
+                color = c.accent,
+                enabled = !state.saving,
+                onClick = {
+                    retryable = true
+                    actions.onQuitSaveRecording()
+                },
+            )
+            Box(Modifier.fillMaxWidth().height(1.dp).background(c.hair))
+        }
+
+        PlayerSheetRow(
+            label = if (armed) "本当に消しますか" else options.discardLabel,
+            description = if (armed) {
+                "本当に消しますか、もう一度 押すと消えます"
+            } else {
+                "記録せずに終える、これまでの記録は消えます"
+            },
+            color = c.inkFaint,
+            enabled = !state.saving,
+            assertive = armed,
+            onClick = {
+                when {
+                    !options.confirmsDiscard || armed -> {
+                        armed = false
+                        retryable = false
+                        actions.onQuitDiscard()
+                    }
+
+                    else -> armed = true
+                }
+            },
+        )
+
+        state.fault?.let { fault ->
+            Spacer(Modifier.height(12.dp))
+            if (retryable) {
+                FaultStrip(fault, onRecover = actions::onRetryFinish)
+            } else {
+                Text(
+                    text = faultCopy(fault).message,
+                    style = TextStyle(fontFamily = Gothic, fontSize = 13.sp, color = c.accent),
+                )
+            }
+        }
     }
 }
 

@@ -22,9 +22,13 @@ import org.junit.Test
  */
 class SeedCatalogTest {
 
+    private fun routine(id: String): RoutineSeed = SeedCatalog.routines.first { it.id == id }
+
     private val reconRon = SeedCatalog.programs.first { it.id == "p_recon_ron" }
-    private val sevenMinute = SeedCatalog.routines.first { it.id == "r_seven_minute" }
-    private val tabata = SeedCatalog.routines.first { it.id == "r_tabata" }
+    private val sevenMinute = routine("r_seven_minute")
+    private val tabata = routine("r_tabata")
+    private val cindy = routine("r_cindy")
+    private val chelsea = routine("r_chelsea")
 
     // ── Recon Ron (§F.2, verified per DECISIONS.md §Q3) ─────────────────────────────────────────
 
@@ -194,6 +198,221 @@ class SeedCatalogTest {
         assertTrue(SeedCatalog.routines.none { it.primaryMetric == BestMetric.HIGHEST_STEP })
     }
 
+    // ── Phase 2's six (§F.5, verified per DECISIONS.md §Q15) ────────────────────────────────────
+
+    @Test
+    fun `シンディ is five, ten, fifteen — not ten, fifteen, fifteen`() {
+        // Design §9's correction and §Q15's first confirmed row. The 10/15/15 version has no source and
+        // is a garbled recollection; this is the workout posted on CrossFit.com on 2004-12-29. It is the
+        // single most misremembered number in the catalogue, which is why it gets its own assertion.
+        assertEquals(
+            listOf("pullup" to 5, "pushup" to 10, "squat" to 15),
+            cindy.stations.map { it.exerciseId to it.reps },
+        )
+        assertTrue(cindy.stations.all { it.measure == Measure.REPS })
+        assertEquals(1200, cindy.timeCapSeconds)
+        // An AMRAP's rounds are the score, not the plan. A number here would be a target, and the whole
+        // point of the engine is that there is not one.
+        assertNull(cindy.rounds)
+    }
+
+    @Test
+    fun `the scaling is three, six, nine in twelve minutes, and points at what it scales`() {
+        // Design §9: Cindy's official beginner scaling, shipped so a beginner does not bounce off the Rx
+        // version. `scaled_from_routine_id` is what makes it a scaling rather than an unrelated routine
+        // that happens to look similar.
+        val scaled = routine("r_cindy_scaled")
+        assertEquals(
+            listOf("ring_row" to 3, "knee_pushup" to 6, "squat" to 9),
+            scaled.stations.map { it.exerciseId to it.reps },
+        )
+        assertEquals(720, scaled.timeCapSeconds)
+        assertEquals("r_cindy", scaled.scaledFromRoutineId)
+    }
+
+    @Test
+    fun `a scaling is seeded after the routine it scales`() {
+        // `scaled_from_routine_id` is a foreign key at `routine`. `defer_foreign_keys` would tolerate
+        // the other order inside the transaction, but relying on it for an ordering the list can simply
+        // have is how a seed becomes sensitive to something invisible.
+        SeedCatalog.routines.forEachIndexed { index, seed ->
+            val parent = seed.scaledFromRoutineId ?: return@forEachIndexed
+            val parentIndex = SeedCatalog.routines.indexOfFirst { it.id == parent }
+            assertTrue(seed.id, parentIndex in 0 until index)
+        }
+    }
+
+    @Test
+    fun `チェルシー is シンディ's stations on a thirty minute grid`() {
+        // The difference between the two routines is **entirely** the engine, which is `00-plan.md`
+        // §1's claim about the engine model being load-bearing, in one assertion. Same 5/10/15.
+        assertEquals(
+            cindy.stations.map { it.exerciseId to it.reps },
+            chelsea.stations.map { it.exerciseId to it.reps },
+        )
+        assertEquals(Engine.EMOM, chelsea.engine)
+        assertEquals(30, chelsea.rounds)
+        assertEquals(60, chelsea.intervalSeconds)
+    }
+
+    @Test
+    fun `every minute grid carries an interval, because the compiler refuses one without`() {
+        // `Builder.emom` opens with `require(window > 0)`, so an EMOM seeded with a null interval is a
+        // crash on 始める rather than a bad estimate.
+        SeedCatalog.routines
+            .filter { it.engine == Engine.EMOM || it.engine == Engine.EMOM_ASCENDING }
+            .forEach {
+                assertTrue(it.id, (it.intervalSeconds ?: 0) > 0)
+                assertTrue(it.id, (it.rounds ?: 0) > 0)
+            }
+    }
+
+    @Test
+    fun `バーバラ is five rounds of 20-30-40-50 with exactly three minutes between them`() {
+        // The rest is the workout, not a courtesy: `03` §B.3 compiles it as RestKind.MANDATED because
+        // skipping it makes the resulting time incomparable to anyone else's バーバラ. Seeding it as
+        // `rest_between_rounds` is what puts it there — a rest expressed as a station would be
+        // skippable like any other.
+        val barbara = routine("r_barbara")
+        assertEquals(
+            listOf("pullup" to 20, "pushup" to 30, "situp" to 40, "squat" to 50),
+            barbara.stations.map { it.exerciseId to it.reps },
+        )
+        assertEquals(5, barbara.rounds)
+        assertEquals(180, barbara.restBetweenRounds)
+        assertEquals(BestMetric.BEST_TIME, barbara.primaryMetric)
+    }
+
+    @Test
+    fun `マーフ's runs are 限界まで carrying 一マイル, never a duration with no seconds`() {
+        // §F.5 and DECISIONS.md §Q15. `DURATION` with a NULL `prescribed_sec` is refused by
+        // routine_station's coherence CHECK — correctly, since a duration station with no duration is
+        // the malformed row that CHECK exists to catch. MAX_EFFORT needs no schema change at all: the
+        // player already closes a MAX_EFFORT LOCOMOTION station on 済, which is what a run is.
+        val murph = routine("r_murph")
+        val runs = murph.stations.filter { it.exerciseId == "run" }
+        assertEquals(2, runs.size)
+        runs.forEach {
+            assertEquals(Measure.MAX_EFFORT, it.measure)
+            assertEquals("一マイル", it.note)
+            assertNull(it.seconds)
+            assertNull(it.reps)
+        }
+        assertEquals(
+            listOf("run", "pullup", "pushup", "squat", "run"),
+            murph.stations.map { it.exerciseId },
+        )
+        assertEquals(
+            listOf(100, 200, 300),
+            murph.stations.filter { it.measure == Measure.REPS }.map { it.reps },
+        )
+    }
+
+    @Test
+    fun `デス・バイ starts at one rep and says the movement is ours`() {
+        // The compiler adds `m − 1` to the prescription in minute m, so one rep **is** "+1 rep per
+        // minute" — and it satisfies the CHECK that a REPS station prescribe a positive count.
+        //
+        // §Q15: デス・バイ is a *format*, not a canonical workout, so the burpee is our choice exactly as
+        // タバタ's exercise is. It says so in タバタ's own words, on the only surface a routine has for
+        // saying anything — a version carries no note column.
+        val deathBy = routine("r_death_by")
+        assertEquals(Engine.EMOM_ASCENDING, deathBy.engine)
+        val station = deathBy.stations.single()
+        assertEquals("burpee", station.exerciseId)
+        assertEquals(1, station.reps)
+        assertEquals("種目は自由に", station.note)
+        assertEquals(tabata.stations.single().note, station.note)
+        // No tier. Design §9's table writes "scales itself" where the other five carry a band, and
+        // filling the column with 中級 would invent the one thing that table declined to say.
+        assertNull(deathBy.tier)
+    }
+
+    @Test
+    fun `デス・バイ's grid is laid to where the prescription stops fitting the minute`() {
+        // The one Phase 2 figure no source supplies (see `ascendingMinuteBound`). It is derived, not
+        // chosen: minute m asks for m burpees, §F.1 measures a burpee at 4.0s, so 60 / 4.0 = 15 is the
+        // last minute completable at catalogue pace. It bounds the *materialisation* — `03` §C.3 says
+        // the fail-out is the protocol's terminating condition — and the compiler needs a bound because
+        // only an AMRAP is `extensible`.
+        assertEquals(15, routine("r_death_by").rounds)
+        assertEquals(60.0, 15 * SeedCatalog.exercises.first { it.id == "burpee" }.secondsPerRep, 0.0)
+    }
+
+    @Test
+    fun `Phase 2's routines are stamped as Phase 2, and Phase 1's are not restamped`() {
+        // The stamp is the whole upgrade mechanism: `planFrom` filters on it, so a routine stamped 1
+        // never reaches an existing database again and a routine stamped 2 reaches it exactly once.
+        val phaseTwo = setOf(
+            "r_cindy", "r_cindy_scaled", "r_chelsea", "r_barbara", "r_murph", "r_death_by",
+        )
+        SeedCatalog.routines.forEach {
+            assertEquals(it.id, if (it.id in phaseTwo) 2 else 1, it.catalogVersion)
+        }
+        assertEquals(
+            phaseTwo,
+            SeedCatalog.routines.filter { it.catalogVersion == 2 }.map { it.id }.toSet(),
+        )
+    }
+
+    @Test
+    fun `every station satisfies the prescription CHECK it will be written under`() {
+        // routine_station's coherence CHECK, as Kotlin. Getting it wrong is a seed that refuses to
+        // insert on a user's first launch — the failure is total and it happens on the launcher.
+        SeedCatalog.routines.flatMap { r -> r.stations.map { r.id to it } }.forEach { (id, s) ->
+            val where = "$id/${s.exerciseId}"
+            when (s.measure) {
+                Measure.REPS -> {
+                    assertTrue(where, (s.reps ?: 0) > 0)
+                    assertNull(where, s.seconds)
+                }
+
+                Measure.DURATION -> {
+                    assertTrue(where, (s.seconds ?: 0) > 0)
+                    assertNull(where, s.reps)
+                }
+
+                Measure.MAX_EFFORT -> {
+                    assertNull(where, s.reps)
+                    assertNull(where, s.seconds)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `an AMRAP's cap is its duration, and its reps are a ceiling over the whole cap`() {
+        // 5 + 1200. And the reps: `04` §3's mock says 「六百回まで」 for シンディ, which is ⌈1200 / 62⌉ = 20
+        // rounds of thirty. Storing one round's thirty — which is what a plain rounds × reps gives for a
+        // routine with no round count — would put 三十回まで on a twenty-minute page.
+        assertEquals(1205, cindy.estimatedSeconds())
+        assertEquals(600, cindy.estimatedReps())
+    }
+
+    @Test
+    fun `a minute grid's duration is its grid, not the work inside it`() {
+        // `RoutineEstimate.kt`'s rule: a round is one interval window whether or not the work fills it.
+        // 5 + 60 × 30 = 1805 (約三十分). Summing the work instead gives 1865 — 約三十一分 for a workout
+        // whose entire premise is that it takes exactly thirty minutes.
+        assertEquals(1805, chelsea.estimatedSeconds())
+        assertEquals(905, routine("r_death_by").estimatedSeconds())
+    }
+
+    @Test
+    fun `a Phase 2 bump moves no Phase 1 estimate`() {
+        // A fresh install seeds every generation; an upgrade seeds only the new one. Any change to how
+        // an older routine's frozen columns are derived would therefore produce two populations whose
+        // 型 cards disagree, with nothing on screen to explain it.
+        assertEquals(475, sevenMinute.estimatedSeconds())
+        assertEquals(235, tabata.estimatedSeconds())
+        // リーコン・ロン's four inter-set rests and its prepare, and nothing else: a MAX_EFFORT station
+        // contributes zero seconds because there is nothing to estimate, which is `GymMath`'s doctrine
+        // for the stored column and the reason マーフ's miles cost nothing either.
+        assertEquals(365, routine("r_recon_ron").estimatedSeconds())
+        assertEquals(0, sevenMinute.estimatedReps())
+        assertEquals(0, tabata.estimatedReps())
+    }
+
     // ── The catalogue (§F.1) ────────────────────────────────────────────────────────────────────
 
     @Test
@@ -255,13 +474,16 @@ class SeedCatalogTest {
         assertNull(SeedCatalog.exercises.first { it.id == "run" }.cue)
     }
 
-    private fun RoutineSeed.estimatedSeconds(): Int = estimatedDurationSeconds(
-        stations = shapes(),
-        secondsPerRep = { id -> SeedCatalog.exercises.firstOrNull { it.id == id }?.secondsPerRep },
-        rounds = rounds,
-        timeCapSeconds = timeCapSeconds,
-        restBetweenStations = restBetweenStations,
-        restBetweenRounds = restBetweenRounds,
-        prepareSeconds = prepareSeconds,
-    )
+    /**
+     * The catalogue's own pace table, standing in for the `exercise` rows the seeder reads.
+     *
+     * The two are the same numbers by construction — the rows are seeded from this list — so a test
+     * that asserts a stored estimate can use it without pretending to have a database.
+     */
+    private val pace: (String) -> Double? =
+        { id -> SeedCatalog.exercises.firstOrNull { it.id == id }?.secondsPerRep }
+
+    private fun RoutineSeed.estimatedSeconds(): Int = estimatedSeconds(pace)
+
+    private fun RoutineSeed.estimatedReps(): Int = estimatedReps(pace)
 }
