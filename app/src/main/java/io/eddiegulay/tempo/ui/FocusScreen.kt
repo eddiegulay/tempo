@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -27,12 +27,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -40,9 +40,15 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import io.eddiegulay.tempo.i18n.Lang
+import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.i18n.Strings
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 import io.eddiegulay.tempo.ui.theme.TempoColors
+import java.util.Locale
 import kotlinx.coroutines.delay
 
 // Classic Pomodoro cadence, in seconds. A long break replaces the short one every fourth focus.
@@ -53,10 +59,24 @@ private const val LONG_EVERY = 4
 
 private enum class FocusMode { Clock, Pomodoro }
 
-private enum class PomodoroPhase(val label: String, val durationSec: Int) {
-    Focus("集中", FOCUS_SEC),
-    ShortBreak("休憩", SHORT_SEC),
-    LongBreak("長休憩", LONG_SEC),
+private enum class PomodoroPhase(val durationSec: Int) {
+    Focus(FOCUS_SEC),
+    ShortBreak(SHORT_SEC),
+    LongBreak(LONG_SEC),
+}
+
+/**
+ * The word a user reads for this phase.
+ *
+ * An extension rather than a constructor argument, for the same reason `Tier.label(Strings)` is one:
+ * a label baked into an enum constant is resolved at class-init and cannot be re-resolved when the
+ * user changes language, so the clock would keep saying 集中 in an English app until the process died
+ * (`.planning/i18n/DECISIONS.md` §L3).
+ */
+private fun PomodoroPhase.label(strings: Strings): String = when (this) {
+    PomodoroPhase.Focus -> strings.focus.phaseFocus
+    PomodoroPhase.ShortBreak -> strings.focus.phaseShortBreak
+    PomodoroPhase.LongBreak -> strings.focus.phaseLongBreak
 }
 
 /**
@@ -70,6 +90,7 @@ private enum class PomodoroPhase(val label: String, val durationSec: Int) {
 @Composable
 fun FocusScreen(modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val haptics = LocalHapticFeedback.current
 
     var mode by rememberSaveable { mutableStateOf(FocusMode.Clock) }
@@ -133,8 +154,7 @@ fun FocusScreen(modifier: Modifier = Modifier) {
         }
 
         Text(
-            text = if (mode == FocusMode.Clock) "タップで秒 ・ 長押しでポモドーロ"
-            else "タップで開始 / 一時停止 ・ 長押しで時計",
+            text = if (mode == FocusMode.Clock) s.focus.hintClock else s.focus.hintPomodoro,
             style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 1.sp, color = c.inkFaint),
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp),
         )
@@ -146,10 +166,12 @@ fun FocusScreen(modifier: Modifier = Modifier) {
 @Composable
 private fun ClockFace(showSeconds: Boolean, colors: TempoColors) {
     val now by rememberSecondTime()
+    // Locale.ROOT: String.format without one uses the default locale, which renders Arabic-Indic
+    // digits on an ar-* device and would feed FlipClock characters it has no cards for (§L8).
     val text = if (showSeconds) {
-        "%02d:%02d:%02d".format(now.hour, now.minute, now.second)
+        "%02d:%02d:%02d".format(Locale.ROOT, now.hour, now.minute, now.second)
     } else {
-        "%02d:%02d".format(now.hour, now.minute)
+        "%02d:%02d".format(Locale.ROOT, now.hour, now.minute)
     }
     FlipClock(
         text = text,
@@ -166,21 +188,27 @@ private fun ClockFace(showSeconds: Boolean, colors: TempoColors) {
 
 @Composable
 private fun PomodoroFace(controller: PomodoroController, colors: TempoColors) {
+    val s = LocalStrings.current
     val minutes = controller.remaining / 60
     val seconds = controller.remaining % 60
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
-            text = controller.phase.label,
+            text = controller.phase.label(s),
             style = TextStyle(
                 fontFamily = Mincho,
                 fontSize = 26.sp,
-                letterSpacing = 8.sp,
+                // 8.sp on 26.sp is 31% tracking — standard CJK heading typesetting, and tuned for a
+                // two-glyph word where the space between glyphs is the only rhythm there is. Latin
+                // already has spaces: at 31% "Focus" stops being a word and becomes five letters.
+                // The tracking is a property of the script, not of the style, so it is switched here
+                // rather than deleted — Japanese still needs every bit of it.
+                letterSpacing = if (s.lang == Lang.Ja) 8.sp else 2.sp,
                 color = if (controller.phase == PomodoroPhase.Focus) colors.accent else colors.inkSoft,
             ),
         )
         Spacer(Modifier.height(18.dp))
         FlipClock(
-            text = "%02d:%02d".format(minutes, seconds),
+            text = "%02d:%02d".format(Locale.ROOT, minutes, seconds),
             inkColor = colors.ink,
             cardColor = colors.card,
             dividerColor = colors.hair,
@@ -199,27 +227,49 @@ private fun PomodoroFace(controller: PomodoroController, colors: TempoColors) {
         )
         Spacer(Modifier.height(20.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-            ControlLabel(text = "リセット", color = colors.inkSoft, onClick = controller::reset)
+            ControlLabel(text = s.focus.controlReset, color = colors.inkSoft, onClick = controller::reset)
             ControlLabel(
-                text = if (controller.running) "計測中" else "停止中",
+                text = if (controller.running) s.focus.controlRunning else s.focus.controlPaused,
                 color = if (controller.running) colors.accent else colors.inkFaint,
                 onClick = controller::startPause,
             )
-            ControlLabel(text = "スキップ", color = colors.inkSoft, onClick = controller::skip)
+            ControlLabel(text = s.focus.controlSkip, color = colors.inkSoft, onClick = controller::skip)
         }
     }
 }
 
+/**
+ * One Pomodoro control: reset, run/pause, skip.
+ *
+ * These are the only three controls on the Focus surface, and until now they were the only three
+ * *invisible* ones: a raw `pointerInput` publishes no click action, so a screen reader could read the
+ * words and never learn they did anything, and at 16sp plus 6dp of padding they were a 33dp target on
+ * a page read from across a desk. They are real buttons now — `pressable` gives them the click
+ * semantics, a lozenge wash and the 48dp floor. It also carried a `clip(RoundedCornerShape(8.dp))`
+ * that clipped nothing, which is the fossil of an indication that never arrived.
+ *
+ * A click modifier was avoidable here only while the alternative was Material's grey rectangle, which
+ * on this near-empty landscape page would have been the loudest thing on screen; the ink wash is not
+ * that, and a control the user is meant to find in a dim room should answer the finger that finds it.
+ *
+ * The surrounding surface keeps its `pointerInput`: a child click modifier consumes the press inside
+ * its own bounds, so tapping a label no longer also toggles the timer behind it, and a long-press
+ * anywhere else still flips modes.
+ */
 @Composable
 private fun ControlLabel(text: String, color: Color, onClick: () -> Unit) {
-    Text(
-        text = text,
-        style = TextStyle(fontFamily = Mincho, fontSize = 16.sp, letterSpacing = 2.sp, color = color),
+    Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .pointerInput(Unit) { detectTapGestures(onTap = { onClick() }) }
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-    )
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .pressable(TempoShapes.Word, role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = TextStyle(fontFamily = Mincho, fontSize = 16.sp, letterSpacing = 2.sp, color = color),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+        )
+    }
 }
 
 // ----- pomodoro state -----

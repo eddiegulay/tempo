@@ -65,6 +65,8 @@ import io.eddiegulay.tempo.gym.session.needsAnotherRound
 import io.eddiegulay.tempo.gym.session.replay
 import io.eddiegulay.tempo.gym.session.stateAt
 import io.eddiegulay.tempo.gym.session.step
+import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.i18n.Strings
 import io.eddiegulay.tempo.ui.tempoBackground
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import kotlinx.coroutines.CoroutineScope
@@ -827,7 +829,10 @@ class SessionController(
         val tl = timeline ?: return
         val ck = clock ?: return
         val ordinal = tl.stateAt(ck.elapsedMs(nowElapsed())).ordinal
-        cues.fire(cue, cueSpeechFor(cue, tl, ordinal, lib))
+        // `cues.strings` rather than a table of the controller's own: the words and the bound voice
+        // move together in `CueEngine.setLanguage`, and asking the engine which language it is
+        // currently speaking is the only way a spoken name cannot disagree with the voice reading it.
+        cues.fire(cue, cueSpeechFor(cue, tl, ordinal, lib, cues.strings))
     }
 
     /**
@@ -841,7 +846,20 @@ class SessionController(
         val key = ordinal to tl.segments[ordinal].effectiveMs
         if (armedKey == key) return
         armedKey = key
-        cues.enterSegment(cueSegmentFor(tl, ordinal, lib), elapsedInSegmentMs)
+        cues.enterSegment(cueSegmentFor(tl, ordinal, lib, cues.strings), elapsedInSegmentMs)
+    }
+
+    /**
+     * The app's language changed under a running session.
+     *
+     * One call, because the phrases and the voice are one fact: [CueEngine.setLanguage] re-probes the
+     * bound `TextToSpeech` as well as swapping the table, and moving only one of them would leave a
+     * Japanese voice reading English station names until something happened to re-bind it. The current
+     * segment's schedule is deliberately not recomputed — see that method — so the next station is
+     * where the new language arrives, which is at most one station away.
+     */
+    fun onLanguage(strings: Strings) {
+        cues.setLanguage(strings)
     }
 
     private fun phaseNow(): Phase {
@@ -961,12 +979,21 @@ fun SessionHost(
     val effectivePrefs = EffectiveGymPreferences(prefs, touchExploration)
     val latestPrefs = rememberUpdatedState(effectivePrefs)
 
+    val strings = LocalStrings.current
+
     val controller = remember(gym, route) {
         var engine: CueEngine? = null
         // The engine cannot report a voice until something asks it to bind, so the answer arrives
         // late — and when it does, the channels have to be re-armed or a TalkBack user gets silence.
         // Read through `latestPrefs` because that answer can arrive minutes after this ran.
-        val created = CueEngine(context) { engine?.arm(latestPrefs.value) }
+        //
+        // **The table is passed, never defaulted.** `CueEngine`'s `strings` parameter defaults to
+        // Japanese so that the migration compiled at every step; a call site that took the default
+        // would speak Japanese under an English UI and would never fail to build, which is precisely
+        // the silent-fallback failure §L2 rejected string resources to avoid. `strings` is not a
+        // `remember` key — a language change is [SessionController.onLanguage]'s to apply, because
+        // rebuilding the controller would rebuild the timeline and the clock with it.
+        val created = CueEngine(context, strings) { engine?.arm(latestPrefs.value) }
         engine = created
         SessionController(
             gym = gym,
@@ -986,6 +1013,9 @@ fun SessionHost(
     // A switch flipped in 設定 mid-session must reach this session: the channels re-arm and
     // 目安で自動的に進む takes effect on the next segment, which is what `effectiveGate` is for.
     LaunchedEffect(controller, effectivePrefs) { controller.onPreferences(effectivePrefs) }
+
+    // And so must a language flipped in the picker. Same shape, same reason.
+    LaunchedEffect(controller, strings) { controller.onLanguage(strings) }
 
     // Whether the health foreground service actually got started for this session — `TrainingHold`
     // reports the platform's answer, not the mount's intention, and it is the only input that makes

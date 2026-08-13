@@ -193,8 +193,9 @@ fun libraryIndexRoutines(
     recentUsage: Map<String, Int>,
     usageCounts: Map<String, Int>,
     stationNames: (RoutineSummary) -> List<String> = { emptyList() },
+    displayName: (RoutineSummary) -> String = { it.name },
 ): LibraryIndexRoutines {
-    val matched = applyFilters(routines, filter, stationNames)
+    val matched = applyFilters(routines, filter, stationNames, displayName)
     val frequent = rankFrequent(matched, recentUsage, usageCounts)
     val builtIn = matched.filter { it.builtIn }
     val user = matched.filterNot { it.builtIn }

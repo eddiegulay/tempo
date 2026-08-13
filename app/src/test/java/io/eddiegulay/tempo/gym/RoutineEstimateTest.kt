@@ -1,5 +1,7 @@
 package io.eddiegulay.tempo.gym
 
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -169,7 +171,7 @@ class RoutineEstimateTest {
         val estimate = estimateRoutine(cindy(), catalogue)
         assertEquals(1200, estimate.durationSeconds)
         assertEquals(600, estimate.totalReps)
-        assertEquals("約 二十分 ・ 六百回まで", estimateLabel(Engine.AMRAP, estimate))
+        assertEquals("約 二十分 ・ 六百回まで", estimateLabel(Engine.AMRAP, estimate, StringsJa))
     }
 
     @Test
@@ -196,14 +198,14 @@ class RoutineEstimateTest {
             catalogue,
         )
         assertEquals(0, estimate.durationSeconds)
-        assertEquals("", estimateLabel(Engine.EMOM_ASCENDING, estimate))
+        assertEquals("", estimateLabel(Engine.EMOM_ASCENDING, estimate, StringsJa))
     }
 
     @Test
     fun `the builder line reads as design writes it`() {
         assertEquals(
             "約 十八分 ・ 三百回",
-            estimateLabel(Engine.INTERVAL_CIRCUIT, RoutineEstimate(1080, 300, approximate = false)),
+            estimateLabel(Engine.INTERVAL_CIRCUIT, RoutineEstimate(1080, 300, approximate = false), StringsJa),
         )
     }
 
@@ -211,7 +213,7 @@ class RoutineEstimateTest {
     fun `a guessed estimate is labelled 目安, every time`() {
         assertEquals(
             "約 十八分 ・ 三百回 目安",
-            estimateLabel(Engine.INTERVAL_CIRCUIT, RoutineEstimate(1080, 300, approximate = true)),
+            estimateLabel(Engine.INTERVAL_CIRCUIT, RoutineEstimate(1080, 300, approximate = true), StringsJa),
         )
     }
 
@@ -221,7 +223,7 @@ class RoutineEstimateTest {
         // rounding, not our arithmetic, and 約 is not a licence to repeat someone else's rounding.
         assertEquals(
             "約 八分",
-            estimateLabel(Engine.INTERVAL_CIRCUIT, RoutineEstimate(475, 0, approximate = false)),
+            estimateLabel(Engine.INTERVAL_CIRCUIT, RoutineEstimate(475, 0, approximate = false), StringsJa),
         )
     }
 
@@ -229,7 +231,7 @@ class RoutineEstimateTest {
     fun `a pure-time circuit omits its rep fragment rather than printing zero`() {
         assertEquals(
             "約 四分",
-            estimateLabel(Engine.INTERVAL_CIRCUIT, RoutineEstimate(240, 0, approximate = false)),
+            estimateLabel(Engine.INTERVAL_CIRCUIT, RoutineEstimate(240, 0, approximate = false), StringsJa),
         )
     }
 
@@ -237,8 +239,35 @@ class RoutineEstimateTest {
     fun `a very short routine floors at one minute rather than reading 約 〇分`() {
         assertEquals(
             "約 一分",
-            estimateLabel(Engine.INTERVAL_CIRCUIT, RoutineEstimate(20, 0, approximate = false)),
+            estimateLabel(Engine.INTERVAL_CIRCUIT, RoutineEstimate(20, 0, approximate = false), StringsJa),
         )
+    }
+
+    // ─── English ────────────────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `an AMRAP's cap is a bound in English too, and it moves to the front`() {
+        // 六百回まで puts the bound after the count; "up to 600 reps" puts it before. A call site that
+        // appended a まで member would have produced "600 reps up to", which is why the whole fragment
+        // is one member of the table rather than a suffix.
+        val estimate = RoutineEstimate(1200, 600, approximate = false)
+        assertEquals("約 二十分 ・ 六百回まで", estimateLabel(Engine.AMRAP, estimate, StringsJa))
+        assertEquals("About 20m · up to 600 reps", estimateLabel(Engine.AMRAP, estimate, StringsEn))
+    }
+
+    @Test
+    fun `an unbounded routine says nothing in either language`() {
+        // デス・バイ runs until you fail. There is no documented copy for "unbounded" and 約 〇分 would
+        // be a claim; the empty string is, and the caller omits the line.
+        val nothing = RoutineEstimate(0, 0, approximate = false)
+        assertEquals("", estimateLabel(Engine.EMOM_ASCENDING, nothing, StringsJa))
+        assertEquals("", estimateLabel(Engine.EMOM_ASCENDING, nothing, StringsEn))
+    }
+
+    @Test
+    fun `目安 still tails the line in English`() {
+        val guessed = RoutineEstimate(1080, 300, approximate = true)
+        assertEquals("About 18m · 300 reps approx.", estimateLabel(Engine.INTERVAL_CIRCUIT, guessed, StringsEn))
     }
 }
 

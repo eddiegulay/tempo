@@ -1,5 +1,7 @@
 package io.eddiegulay.tempo.gym
 
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -314,7 +316,7 @@ class BuilderDraftTest {
     @Test
     fun `migrating to the engine it already has changes nothing and says nothing`() {
         val draft = circuit()
-        val migrated = migrateDraft(draft, Engine.INTERVAL_CIRCUIT)
+        val migrated = migrateDraft(draft, Engine.INTERVAL_CIRCUIT, StringsJa)
         assertEquals(draft, migrated.draft)
         assertTrue(migrated.notices.isEmpty())
     }
@@ -322,7 +324,7 @@ class BuilderDraftTest {
     @Test
     fun `巡回 to 時間内 swaps the round count for a twenty-minute cap`() {
         // §3 edge case 5, verbatim: "巡回→時間内 replaces 巡数 with 制限時間 (default 二十分)".
-        val migrated = migrateDraft(circuit(), Engine.AMRAP)
+        val migrated = migrateDraft(circuit(), Engine.AMRAP, StringsJa)
         assertEquals(Engine.AMRAP, migrated.draft.engine)
         assertNull(migrated.draft.rounds)
         assertEquals(20 * 60, migrated.draft.timeCapSeconds)
@@ -331,20 +333,20 @@ class BuilderDraftTest {
     @Test
     fun `a cap the user already set survives the migration`() {
         val had = circuit().copy(timeCapSeconds = 600)
-        assertEquals(600, migrateDraft(had, Engine.AMRAP).draft.timeCapSeconds)
+        assertEquals(600, migrateDraft(had, Engine.AMRAP, StringsJa).draft.timeCapSeconds)
     }
 
     @Test
     fun `leaving 時間内 drops the cap, because no other engine has a row for it`() {
-        val amrap = migrateDraft(circuit(), Engine.AMRAP).draft
-        val back = migrateDraft(amrap, Engine.INTERVAL_CIRCUIT).draft
+        val amrap = migrateDraft(circuit(), Engine.AMRAP, StringsJa).draft
+        val back = migrateDraft(amrap, Engine.INTERVAL_CIRCUIT, StringsJa).draft
         assertNull(back.timeCapSeconds)
         assertEquals(1, back.rounds)
     }
 
     @Test
     fun `段階 clears the rests and the round count and says one station will be used`() {
-        val migrated = migrateDraft(circuit(), Engine.FIXED_SETS)
+        val migrated = migrateDraft(circuit(), Engine.FIXED_SETS, StringsJa)
         assertEquals(0, migrated.draft.restBetweenStations)
         assertEquals(0, migrated.draft.restBetweenRounds)
         assertNull(migrated.draft.rounds)
@@ -355,7 +357,7 @@ class BuilderDraftTest {
     fun `段階 keeps the extra stations rather than deleting them`() {
         // §3: "extras kept but greyed". Deleting three stations because a chip was tapped is not
         // something a 元に戻す exists for here, and the notice is what makes keeping them honest.
-        val migrated = migrateDraft(circuit(), Engine.FIXED_SETS)
+        val migrated = migrateDraft(circuit(), Engine.FIXED_SETS, StringsJa)
         assertEquals(circuit().stations, migrated.draft.stations)
     }
 
@@ -364,12 +366,12 @@ class BuilderDraftTest {
         // "One per lossy field" — nothing is lost, so there is nothing to say. A notice that always
         // appears is chrome, and the user stops reading the ones that mean something.
         val single = circuit().copy(stations = listOf(reps("pullup", 10)))
-        assertTrue(migrateDraft(single, Engine.FIXED_SETS).notices.isEmpty())
+        assertTrue(migrateDraft(single, Engine.FIXED_SETS, StringsJa).notices.isEmpty())
     }
 
     @Test
     fun `毎分 forces the between-station rest to zero and says so`() {
-        val migrated = migrateDraft(circuit(), Engine.EMOM)
+        val migrated = migrateDraft(circuit(), Engine.EMOM, StringsJa)
         assertEquals(0, migrated.draft.restBetweenStations)
         assertEquals(listOf("毎分では種目の間の休息はありません"), migrated.notices)
     }
@@ -377,40 +379,40 @@ class BuilderDraftTest {
     @Test
     fun `毎分 says nothing when there was no rest to lose`() {
         val restless = circuit().copy(restBetweenStations = 0)
-        assertTrue(migrateDraft(restless, Engine.EMOM).notices.isEmpty())
+        assertTrue(migrateDraft(restless, Engine.EMOM, StringsJa).notices.isEmpty())
     }
 
     @Test
     fun `毎分 gets a minute to work in`() {
         // 毎分 *is* the window: an EMOM with no interval estimates nothing and compiles to nothing.
         // Sixty seconds is the engine's own name, not a chosen number.
-        assertEquals(60, migrateDraft(circuit(), Engine.EMOM).draft.intervalSeconds)
-        assertEquals(60, migrateDraft(circuit(), Engine.EMOM_ASCENDING).draft.intervalSeconds)
+        assertEquals(60, migrateDraft(circuit(), Engine.EMOM, StringsJa).draft.intervalSeconds)
+        assertEquals(60, migrateDraft(circuit(), Engine.EMOM_ASCENDING, StringsJa).draft.intervalSeconds)
     }
 
     @Test
     fun `毎分増 runs to failure, so it carries no round count`() {
-        assertNull(migrateDraft(circuit(), Engine.EMOM_ASCENDING).draft.rounds)
+        assertNull(migrateDraft(circuit(), Engine.EMOM_ASCENDING, StringsJa).draft.rounds)
     }
 
     @Test
     fun `leaving 毎分 drops the interval it can no longer state`() {
-        val emom = migrateDraft(circuit(), Engine.EMOM).draft
-        assertNull(migrateDraft(emom, Engine.INTERVAL_CIRCUIT).draft.intervalSeconds)
+        val emom = migrateDraft(circuit(), Engine.EMOM, StringsJa).draft
+        assertNull(migrateDraft(emom, Engine.INTERVAL_CIRCUIT, StringsJa).draft.intervalSeconds)
     }
 
     @Test
     fun `an engine that counts rounds never lands on a null count`() {
-        val amrap = migrateDraft(circuit(), Engine.AMRAP).draft
+        val amrap = migrateDraft(circuit(), Engine.AMRAP, StringsJa).draft
         assertNull(amrap.rounds)
-        assertEquals(1, migrateDraft(amrap, Engine.EMOM).draft.rounds)
-        assertEquals(1, migrateDraft(amrap, Engine.FOR_TIME_WITH_REST).draft.rounds)
-        assertEquals(1, migrateDraft(amrap, Engine.FOR_TIME).draft.rounds)
+        assertEquals(1, migrateDraft(amrap, Engine.EMOM, StringsJa).draft.rounds)
+        assertEquals(1, migrateDraft(amrap, Engine.FOR_TIME_WITH_REST, StringsJa).draft.rounds)
+        assertEquals(1, migrateDraft(amrap, Engine.FOR_TIME, StringsJa).draft.rounds)
     }
 
     @Test
     fun `a migration never touches the name or the stations' prescriptions`() {
-        val migrated = migrateDraft(circuit(), Engine.AMRAP).draft
+        val migrated = migrateDraft(circuit(), Engine.AMRAP, StringsJa).draft
         assertEquals(circuit().name, migrated.name)
         assertEquals(circuit().stations, migrated.stations)
     }
@@ -421,10 +423,10 @@ class BuilderDraftTest {
     fun `the measures read 回数 秒数 限界まで, in that order`() {
         assertEquals(
             listOf("回数", "秒数", "限界まで"),
-            allowedMeasures(Engine.INTERVAL_CIRCUIT).map { it.measure.label },
+            allowedMeasures(Engine.INTERVAL_CIRCUIT, StringsJa).map { it.measure.label(StringsJa) },
         )
-        assertTrue(allowedMeasures(Engine.INTERVAL_CIRCUIT).all { it.enabled })
-        assertTrue(allowedMeasures(Engine.INTERVAL_CIRCUIT).all { it.reason == null })
+        assertTrue(allowedMeasures(Engine.INTERVAL_CIRCUIT, StringsJa).all { it.enabled })
+        assertTrue(allowedMeasures(Engine.INTERVAL_CIRCUIT, StringsJa).all { it.reason == null })
     }
 
     @Test
@@ -432,16 +434,16 @@ class BuilderDraftTest {
         // §3's picker edge case 2: those engines are *defined* by a fixed rep count. The chip is
         // rendered inert with a reason rather than removed, so the user learns the rule.
         listOf(Engine.EMOM, Engine.EMOM_ASCENDING).forEach { engine ->
-            val maxEffort = allowedMeasures(engine).single { it.measure == Measure.MAX_EFFORT }
+            val maxEffort = allowedMeasures(engine, StringsJa).single { it.measure == Measure.MAX_EFFORT }
             assertFalse(engine.name, maxEffort.enabled)
             assertEquals("この方式では使えません", maxEffort.reason)
-            assertTrue(engine.name, allowedMeasures(engine).single { it.measure == Measure.DURATION }.enabled)
+            assertTrue(engine.name, allowedMeasures(engine, StringsJa).single { it.measure == Measure.DURATION }.enabled)
         }
     }
 
     @Test
     fun `完走 cannot take 秒数, and says why`() {
-        val duration = allowedMeasures(Engine.FOR_TIME).single { it.measure == Measure.DURATION }
+        val duration = allowedMeasures(Engine.FOR_TIME, StringsJa).single { it.measure == Measure.DURATION }
         assertFalse(duration.enabled)
         assertEquals("この方式では使えません", duration.reason)
     }
@@ -451,7 +453,7 @@ class BuilderDraftTest {
         // A `DURATION` with a null second count is refused by the schema's CHECK, so a one-mile run
         // is a `MAX_EFFORT` with a note (`DECISIONS.md` §Q15). Disabling it on FOR_TIME would make
         // the shipped routine unbuildable in the builder that is supposed to be able to author it.
-        assertTrue(allowedMeasures(Engine.FOR_TIME).single { it.measure == Measure.MAX_EFFORT }.enabled)
+        assertTrue(allowedMeasures(Engine.FOR_TIME, StringsJa).single { it.measure == Measure.MAX_EFFORT }.enabled)
     }
 
     @Test
@@ -483,7 +485,7 @@ class BuilderDraftTest {
 
     @Test
     fun `the station rest wheel runs to two minutes in fives and starts at なし`() {
-        val options = restOptions(RestSlot.BETWEEN_STATIONS)
+        val options = restOptions(RestSlot.BETWEEN_STATIONS, StringsJa)
         assertEquals((0..120 step 5).toList(), options.map { it.value })
         assertEquals(WheelOption(0, "なし"), options.first())
         assertEquals(WheelOption(120, "百二十秒"), options.last())
@@ -491,7 +493,7 @@ class BuilderDraftTest {
 
     @Test
     fun `the round rest wheel runs to five minutes in fifteens`() {
-        val options = restOptions(RestSlot.BETWEEN_ROUNDS)
+        val options = restOptions(RestSlot.BETWEEN_ROUNDS, StringsJa)
         assertEquals((0..300 step 15).toList(), options.map { it.value })
         assertEquals(WheelOption(0, "なし"), options.first())
         assertEquals(WheelOption(300, "三百秒"), options.last())
@@ -501,7 +503,9 @@ class BuilderDraftTest {
     fun `a rest reads as the seconds it was set to, never as minutes`() {
         // `DECISIONS.md` §Q10, and this is the surface the rule was written about: the wheel says
         // 六十秒, so the settings row and the detail page must too. `durationKanji` would say 一分.
-        val label = { seconds: Int -> restOptions(RestSlot.BETWEEN_ROUNDS).single { it.value == seconds }.label }
+        val label = { seconds: Int ->
+            restOptions(RestSlot.BETWEEN_ROUNDS, StringsJa).single { it.value == seconds }.label
+        }
         assertEquals("六十秒", label(60))
         assertEquals("九十秒", label(90))
         assertEquals("百八十秒", label(180))
@@ -509,7 +513,7 @@ class BuilderDraftTest {
 
     @Test
     fun `the rep wheel runs one to a hundred and counts in 回`() {
-        val options = repOptions()
+        val options = repOptions(StringsJa)
         assertEquals((1..100).toList(), options.map { it.value })
         assertEquals(WheelOption(1, "一回"), options.first())
         assertEquals(WheelOption(20, "二十回"), options[19])
@@ -520,7 +524,7 @@ class BuilderDraftTest {
     fun `the seconds wheel runs five to three hundred in fives, and never says なし`() {
         // A station cannot be zero seconds long — 限界まで is what an open-ended one is — so the
         // wheel starts at five rather than borrowing the rest wheel's なし.
-        val options = secondOptions()
+        val options = secondOptions(StringsJa)
         assertEquals((5..300 step 5).toList(), options.map { it.value })
         assertEquals(WheelOption(5, "五秒"), options.first())
         assertEquals(WheelOption(30, "三十秒"), options[5])
@@ -529,10 +533,59 @@ class BuilderDraftTest {
 
     @Test
     fun `the round wheel runs one to twenty and counts in 巡`() {
-        val options = roundOptions()
+        val options = roundOptions(StringsJa)
         assertEquals((1..20).toList(), options.map { it.value })
         assertEquals(WheelOption(1, "一巡"), options.first())
         assertEquals(WheelOption(20, "二十巡"), options.last())
+    }
+
+    @Test
+    fun `every wheel offers the same values in both languages`() {
+        // `DECISIONS.md` §Q21 is a rule about the **value** set: a wheel opened on a value it cannot
+        // represent silently rewrites it, and `mergedWheelOptions` repairs that by comparing on
+        // `value`. Only the labels are localised, so a range that drifted by language would make the
+        // repair itself language-dependent — and would move which built-ins are safe to open.
+        val ja = listOf(
+            restOptions(RestSlot.BETWEEN_STATIONS, StringsJa),
+            restOptions(RestSlot.BETWEEN_ROUNDS, StringsJa),
+            repOptions(StringsJa),
+            secondOptions(StringsJa),
+            roundOptions(StringsJa),
+        )
+        val en = listOf(
+            restOptions(RestSlot.BETWEEN_STATIONS, StringsEn),
+            restOptions(RestSlot.BETWEEN_ROUNDS, StringsEn),
+            repOptions(StringsEn),
+            secondOptions(StringsEn),
+            roundOptions(StringsEn),
+        )
+
+        assertEquals(ja.map { list -> list.map { it.value } }, en.map { list -> list.map { it.value } })
+        // …and the labels genuinely moved, so the assertion above is not passing by the wheels having
+        // stayed Japanese.
+        for ((j, e) in ja.zip(en)) assertNotEquals(j.map { it.label }, e.map { it.label })
+    }
+
+    @Test
+    fun `the English wheels read as durations and counts, never as kanji`() {
+        // §L7: §Q10's chosen-versus-measured split is carried entirely by orthography, and English has
+        // one — so the chosen form collapses onto `fmt.duration`, exactly as
+        // `GymSettingsCopy.settingsSecondsLabel` rules for the row this wheel sets. Keeping
+        // `fmt.seconds` would have printed `300s` at the bottom of the round-rest wheel.
+        val rounds = restOptions(RestSlot.BETWEEN_ROUNDS, StringsEn).associate { it.value to it.label }
+        assertEquals("None", rounds.getValue(0))
+        assertEquals("1m", rounds.getValue(60))
+        assertEquals("1m 30s", rounds.getValue(90))
+        assertEquals("5m", rounds.getValue(300))
+
+        // A count is a counter and takes a plural rather than a duration.
+        assertEquals("1 rep", repOptions(StringsEn).first().label)
+        assertEquals("100 reps", repOptions(StringsEn).last().label)
+        assertEquals("1 round", roundOptions(StringsEn).first().label)
+        assertEquals("20 rounds", roundOptions(StringsEn).last().label)
+
+        // 秒数's wheel still has no zero row, so it never says None in either language.
+        assertFalse(secondOptions(StringsEn).any { it.label == StringsEn.gymShared.restNone })
     }
 
     @Test
@@ -540,11 +593,11 @@ class BuilderDraftTest {
         // A wheel scrolled to a value it does not contain lands on its first row instead — the
         // `TempoWheelColumn` seeds its position from `indexOf`, which is −1 for a missing value. That
         // would silently turn a 二十回 default into 一回.
-        assertTrue(repOptions().any { it.value == defaultPrescription(Measure.REPS).reps })
-        assertTrue(secondOptions().any { it.value == defaultPrescription(Measure.DURATION).seconds })
-        assertTrue(restOptions(RestSlot.BETWEEN_STATIONS).any { it.value == 0 })
-        assertTrue(restOptions(RestSlot.BETWEEN_ROUNDS).any { it.value == 60 })
-        assertTrue(roundOptions().any { it.value == 1 })
+        assertTrue(repOptions(StringsJa).any { it.value == defaultPrescription(Measure.REPS).reps })
+        assertTrue(secondOptions(StringsJa).any { it.value == defaultPrescription(Measure.DURATION).seconds })
+        assertTrue(restOptions(RestSlot.BETWEEN_STATIONS, StringsJa).any { it.value == 0 })
+        assertTrue(restOptions(RestSlot.BETWEEN_ROUNDS, StringsJa).any { it.value == 60 })
+        assertTrue(roundOptions(StringsJa).any { it.value == 1 })
     }
 }
 

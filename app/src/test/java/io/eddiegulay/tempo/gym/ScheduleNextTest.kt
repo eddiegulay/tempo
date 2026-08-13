@@ -1,5 +1,6 @@
 package io.eddiegulay.tempo.gym
 
+import io.eddiegulay.tempo.i18n.StringsJa
 import io.eddiegulay.tempo.ui.defaultStart
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -116,7 +117,7 @@ class ScheduleNextTest {
 
     @Test
     fun `the label is the spec's word and is not assembled from fragments`() {
-        assertEquals("予定に入れる", SCHEDULE_ACTION_LABEL)
+        assertEquals("予定に入れる", StringsJa.gymShared.scheduleNext)
     }
 
     // ── §Q7: one implementation, and the other delegates ──────────────────────────────────────────

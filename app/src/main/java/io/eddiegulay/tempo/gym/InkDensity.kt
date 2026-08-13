@@ -1,8 +1,8 @@
 package io.eddiegulay.tempo.gym
 
-import io.eddiegulay.tempo.data.JapaneseDate
 import io.eddiegulay.tempo.gym.data.bucketOf
 import io.eddiegulay.tempo.gym.data.loadScaleOf
+import io.eddiegulay.tempo.i18n.Strings
 import java.time.LocalDate
 import java.time.YearMonth
 import kotlin.math.ceil
@@ -164,6 +164,16 @@ fun loadScaleFrom(days: Collection<DayLoad>): LoadScale = loadScaleOf(days.map {
 
 // ─── What the grid says ─────────────────────────────────────────────────────────────────────────
 
+/*
+ * **Both functions below turn on a month *name*** — 六月, the word, not a count of months.
+ *
+ * They go through [Strings.fmt]'s `monthName`, and emphatically **not** through `months(n)`, which is
+ * a count. Japanese spells both 六月, so the two are indistinguishable in the language being migrated
+ * away from; the wrong one renders `6 months` where a heading should say `June`, which is the precise
+ * shape of bug `.planning/i18n/TREE.md` §3 exists to catch. `HistoryPaging.groupByMonth` draws the
+ * same word and takes the same route.
+ */
+
 /**
  * How many days of a month **carry ink** — the number both captions are built from.
  *
@@ -191,10 +201,10 @@ private fun trainedDays(days: Map<LocalDate, DayLoad>): Int =
  * a fact about June; an empty store is a fact about the app, and `00-plan.md` §4.1 rule 1 exists so
  * the two can never share a composable.
  */
-fun monthCaption(month: YearMonth, days: Map<LocalDate, DayLoad>): String {
+fun monthCaption(month: YearMonth, days: Map<LocalDate, DayLoad>, strings: Strings): String {
     val trained = trainedDays(days)
-    if (trained == 0) return "この月は " + JapaneseDate.kanji(0) + "日"
-    return JapaneseDate.kanjiExtended(trained) + "日 ・ " + JapaneseDate.kanji(month.monthValue) + "月"
+    if (trained == 0) return strings.gymRecords.monthUntrained(strings.fmt.days(0))
+    return strings.fmt.days(trained) + strings.fmt.separator + strings.fmt.monthName(month.monthValue)
 }
 
 /**
@@ -213,10 +223,11 @@ fun monthCaption(month: YearMonth, days: Map<LocalDate, DayLoad>): String {
  * same rule `isBetter` applies to every record in this feature (you set it the first time you hit
  * it), applied here so the sentence does not change under a re-read.
  */
-fun gridSemantics(month: YearMonth, days: Map<LocalDate, DayLoad>): String {
-    val monthLabel = JapaneseDate.kanji(month.monthValue) + "月"
+fun gridSemantics(month: YearMonth, days: Map<LocalDate, DayLoad>, strings: Strings): String {
+    val monthLabel = strings.fmt.monthName(month.monthValue)
+    val listSeparator = strings.fmt.listSeparator
     val trained = trainedDays(days)
-    if (trained == 0) return monthLabel + "、" + monthCaption(month, days)
+    if (trained == 0) return monthLabel + listSeparator + monthCaption(month, days, strings)
 
     val busiest = days.entries
         .filter { it.value.activeMs > 0L }
@@ -224,9 +235,10 @@ fun gridSemantics(month: YearMonth, days: Map<LocalDate, DayLoad>): String {
         .firstOrNull()
         ?.key
 
-    val head = monthLabel + "、" + JapaneseDate.kanjiExtended(trained) + "日 鍛錬しました"
+    val head = monthLabel + listSeparator + strings.gymRecords.trainedDays(strings.fmt.days(trained))
     // Unreachable now that [trainedDays] counts on the same `activeMs > 0` the filter above uses — a
     // month with a trained day has a busiest one by construction. Kept because the alternative to an
     // omitted fragment is naming an arbitrary day, and the two predicates must never drift again.
-    return if (busiest == null) head else head + "、いちばん多かったのは " + JapaneseDate.monthDay(busiest.atStartOfDay())
+    if (busiest == null) return head
+    return head + listSeparator + strings.gymRecords.busiestDay(strings.fmt.monthDay(busiest.atStartOfDay()))
 }

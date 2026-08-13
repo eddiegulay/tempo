@@ -1,11 +1,8 @@
 package io.eddiegulay.tempo.ui.gym
 
 import android.os.SystemClock
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +17,6 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -56,7 +52,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import io.eddiegulay.tempo.calendar.Loadable
 import io.eddiegulay.tempo.data.GymFault
-import io.eddiegulay.tempo.data.JapaneseDate
 import io.eddiegulay.tempo.gym.ActiveSession
 import io.eddiegulay.tempo.gym.GymRoute
 import io.eddiegulay.tempo.gym.GymTab
@@ -64,7 +59,9 @@ import io.eddiegulay.tempo.gym.GymViewModel
 import io.eddiegulay.tempo.gym.ResumableSession
 import io.eddiegulay.tempo.gym.ResumeAffordance
 import io.eddiegulay.tempo.gym.RoutineCard
+import io.eddiegulay.tempo.gym.displayName
 import io.eddiegulay.tempo.gym.resumeOptions
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.FaultPanel
 import io.eddiegulay.tempo.ui.FaultStrip
 import io.eddiegulay.tempo.ui.HeaderAction
@@ -72,6 +69,9 @@ import io.eddiegulay.tempo.ui.rememberMinuteTime
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.combinedPressable
+import io.eddiegulay.tempo.ui.theme.pressable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -106,6 +106,7 @@ import java.time.ZoneId
 @Composable
 fun GymHomeScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val scope = rememberCoroutineScope()
     val now by rememberMinuteTime()
     val zone = remember { ZoneId.systemDefault() }
@@ -135,7 +136,7 @@ fun GymHomeScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
     }
     val menuCard = menuFor?.let(cards::get)
     val deleteCard = deleteFor?.let(cards::get)
-    val sections = remember(ready) { ready?.let(::homeSections).orEmpty() }
+    val sections = remember(ready, s) { ready?.let { homeSections(it, s) }.orEmpty() }
 
     // The routine the open session belongs to, when the store could say. 削除's two sentences are not
     // interchangeable and `timesDone` counts only *finished* sessions, so this is what keeps the
@@ -152,28 +153,30 @@ fun GymHomeScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
         ) {
             Column {
                 Text(
-                    text = "鍛錬",
+                    text = s.gymHome.title,
                     modifier = Modifier.semantics { heading() },
                     style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
                 )
                 Spacer(Modifier.height(7.dp))
                 Text(
-                    text = "${JapaneseDate.era(now)} ・ ${JapaneseDate.monthDay(now)}",
+                    text = s.fmt.era(now) + s.fmt.separator + s.fmt.monthDay(now),
                     style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 4.sp, color = c.inkFaint),
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Top) {
                 // 記録 is not here: it is a tab now, and the accent stays rationed to one word per
                 // header exactly as 予定's 加える does (`00-plan.md` §2 row 16).
+                // 設定 is `GYM.SETTINGS`' own page title, read from that namespace rather than
+                // re-typed here: the word on the button and the heading it opens are one string.
                 HeaderAction(
-                    label = "設定",
-                    description = "設定",
+                    label = s.gymSettings.title,
+                    description = s.gymSettings.title,
                     color = c.inkSoft,
                     onClick = { gym.go(GymRoute.Settings) },
                 )
                 HeaderAction(
-                    label = "作る",
-                    description = "型を作る",
+                    label = s.gymHome.actionCreate,
+                    description = s.gymHome.createDescription,
                     color = if (ready != null) c.accent else c.inkFaint,
                     enabled = ready != null,
                     onClick = { gym.go(GymRoute.Builder(null)) },
@@ -192,7 +195,7 @@ fun GymHomeScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
                     onRecover = gym::retry,
                 )
 
-                ready == null -> HomeMessage("読み込み中")
+                ready == null -> HomeMessage(s.gymHome.loading)
 
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 6.dp),
@@ -352,13 +355,16 @@ private fun LazyListScope.resumeBanner(
         // draws its name and its way back and says nothing else. A missing number is not a zero.
         val liveRow = row?.takeIf { it.sessionId == session.sessionId }
         item(key = "resume") {
+            val s = LocalStrings.current
             Column {
-                SectionHeader(label = "つづき", seeAll = false, onSeeAll = {})
+                SectionHeader(label = s.gymHome.resumeBanner, seeAll = false, onSeeAll = {})
                 val elapsedMs by rememberElapsedRealtime(enabled = liveRow != null)
                 ResumeBannerCard(
+                    // The session's own stored name, never a resolved one: it is the snapshot the
+                    // workout was started under and it is not ours to re-word (§L10).
                     routineName = session.routineName,
-                    elapsed = liveRow?.let { formatElapsedJa(liveElapsedMs(it.clock, elapsedMs)) },
-                    progress = liveRow?.let { progressLine(stationsProgressed(it.results)) },
+                    elapsed = liveRow?.let { s.fmt.durationFromMs(liveElapsedMs(it.clock, elapsedMs)) },
+                    progress = liveRow?.let { progressLine(stationsProgressed(it.results), s) },
                     onResume = onResumeLive,
                 )
             }
@@ -368,12 +374,13 @@ private fun LazyListScope.resumeBanner(
     val stale = row ?: return
     val stopped = recoveredElapsedMs(stale)
     item(key = "resume") {
+        val s = LocalStrings.current
         Column {
-            SectionHeader(label = "つづき", seeAll = false, onSeeAll = {})
+            SectionHeader(label = s.gymHome.resumeBanner, seeAll = false, onSeeAll = {})
             ResumeBannerCard(
                 routineName = stale.routineName,
-                elapsed = if (stopped > 0L) formatElapsedJa(stopped) else null,
-                progress = progressLine(stationsProgressed(stale.results)),
+                elapsed = if (stopped > 0L) s.fmt.durationFromMs(stopped) else null,
+                progress = progressLine(stationsProgressed(stale.results), s),
                 // 続ける is removed, not disabled, when it cannot honestly be offered — the same
                 // predicate the prompt's own doors are cut from.
                 onResume = if (resumeOptions(stale).canResume) ({ onResumeStale(stale) }) else null,
@@ -399,17 +406,21 @@ private fun ResumeBannerCard(
     onResume: (() -> Unit)?,
 ) {
     val c = LocalTempoColors.current
-    val shape = RoundedCornerShape(18.dp)
-    val description = resumeBannerDescription(routineName, elapsed, progress, onResume != null)
+    val s = LocalStrings.current
+    val shape = TempoShapes.Card
+    val description = resumeBannerDescription(routineName, elapsed, progress, onResume != null, s)
 
     Column(
         Modifier
             .fillMaxWidth()
             .padding(vertical = 5.dp)
+            // The clip stays rather than being left to `pressable`: this banner is a card whether or
+            // not it can be resumed, and a corner that existed only on the tappable branch would be a
+            // second thing for the two states to disagree about.
             .clip(shape)
             .background(c.card)
             .border(0.5.dp, c.accent.copy(alpha = 0.35f), shape)
-            .then(if (onResume == null) Modifier else Modifier.clickable(onClick = onResume))
+            .then(if (onResume == null) Modifier else Modifier.pressable(shape, onClick = onResume))
             .clearAndSetSemantics {
                 contentDescription = description
                 if (onResume != null) role = Role.Button
@@ -431,7 +442,7 @@ private fun ResumeBannerCard(
             )
             elapsed?.let {
                 Text(
-                    text = "$it 経過",
+                    text = s.gymHome.elapsed(it),
                     style = TextStyle(fontFamily = Gothic, fontSize = 12.sp, color = c.inkFaint),
                 )
             }
@@ -450,7 +461,9 @@ private fun ResumeBannerCard(
             )
             if (onResume != null) {
                 Text(
-                    text = "続ける →",
+                    // The arrow is a glyph rather than part of the word — the same 「→」 the prompt's
+                    // rows and the safety footnote use — so one member carries 続ける everywhere.
+                    text = s.gymHome.resumeAction + " →",
                     style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 2.sp, color = c.accent),
                 )
             }
@@ -462,6 +475,7 @@ private fun ResumeBannerCard(
 @Composable
 private fun SectionHeader(label: String, seeAll: Boolean, onSeeAll: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -480,12 +494,12 @@ private fun SectionHeader(label: String, seeAll: Boolean, onSeeAll: () -> Unit) 
             Box(
                 modifier = Modifier
                     .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                    .clickable(onClick = onSeeAll)
-                    .semantics { role = Role.Button; contentDescription = "すべて見る" },
+                    .pressable(TempoShapes.Word, role = Role.Button, onClick = onSeeAll)
+                    .semantics { contentDescription = s.gymHome.seeAll },
                 contentAlignment = Alignment.CenterEnd,
             ) {
                 Text(
-                    text = "すべて見る",
+                    text = s.gymHome.seeAll,
                     style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 2.sp, color = c.accent),
                 )
             }
@@ -506,7 +520,6 @@ private fun SectionHeader(label: String, seeAll: Boolean, onSeeAll: () -> Unit) 
  * menu a screen-reader user does not have — the note at `NotificationsScreen.kt:204`, applied to the
  * affordance this page hides three actions behind.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RoutineCardRow(
     card: RoutineCard,
@@ -519,20 +532,21 @@ private fun RoutineCardRow(
     onDelete: () -> Unit,
 ) {
     val c = LocalTempoColors.current
-    val lastLine = remember(card, today, zone) { lastResultLine(card.lastResult, today, zone) }
-    val best = remember(card) { bestLine(card.best) }
+    val s = LocalStrings.current
+    val lastLine = remember(card, today, zone, s) { lastResultLine(card.lastResult, today, zone, s) }
+    val best = remember(card, s) { bestLine(card.best, s) }
     val prThisMonth = remember(card, today) { isPrThisMonth(card.best, today) }
-    val timesDone = remember(card) { timesDoneLabel(card.timesDone) }
-    val description = remember(card, lastLine, best) { routineCardDescription(card, lastLine, best) }
+    val timesDone = remember(card, s) { timesDoneLabel(card.timesDone, s) }
+    val description = remember(card, lastLine, best, s) { routineCardDescription(card, lastLine, best, s) }
 
     // 写して作る for anything; 編集 and 削除 only for what the user owns — a built-in is edited by
     // copying it, which is the copy-on-write the whole library is built on. Destructive last, matching
     // the order the resume prompt's options are read in.
-    val actions = remember(card.routineId, card.builtIn) {
+    val actions = remember(card.routineId, card.builtIn, s) {
         buildList {
-            if (!card.builtIn) add(CustomAccessibilityAction("編集") { onEdit(); true })
-            add(CustomAccessibilityAction("写して作る") { onDuplicate(); true })
-            if (!card.builtIn) add(CustomAccessibilityAction("削除") { onDelete(); true })
+            if (!card.builtIn) add(CustomAccessibilityAction(s.gymLibrary.actionEdit) { onEdit(); true })
+            add(CustomAccessibilityAction(s.gymLibrary.actionDuplicate) { onDuplicate(); true })
+            if (!card.builtIn) add(CustomAccessibilityAction(s.gymLibrary.actionDelete) { onDelete(); true })
         }
     }
 
@@ -540,14 +554,18 @@ private fun RoutineCardRow(
         Modifier
             .fillMaxWidth()
             .padding(vertical = 5.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(c.card)
+            .background(c.card, TempoShapes.Card)
             .sizeIn(minHeight = 72.dp)
-            .combinedClickable(onClick = onOpen, onLongClick = onMenu)
+            .combinedPressable(
+                shape = TempoShapes.Card,
+                onLongClickLabel = s.gymHome.cardLongPress,
+                onLongClick = onMenu,
+                onClick = onOpen,
+            )
             .clearAndSetSemantics {
                 contentDescription = description
                 role = Role.Button
-                onLongClick(label = "型の操作") { onMenu(); true }
+                onLongClick(label = s.gymHome.cardLongPress) { onMenu(); true }
                 customActions = actions
             },
     ) {
@@ -556,14 +574,17 @@ private fun RoutineCardRow(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
-                text = card.name,
+                // A seeded routine reads in the user's language and a user-authored one reads exactly
+                // as they typed it — `displayName` falls through to the stored name for any id the
+                // catalogue does not know (§L10).
+                text = card.displayName(s),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(),
                 style = TextStyle(fontFamily = Mincho, fontSize = 16.sp, color = c.ink),
             )
             Text(
-                text = card.summary,
+                text = routineCardSummary(card, s),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 style = TextStyle(fontFamily = Gothic, fontSize = 13.sp, lineHeight = 19.5.sp, color = c.inkSoft),
@@ -621,25 +642,30 @@ private fun RoutineCardRow(
 @Composable
 private fun UserRoutinesEmpty(onCreate: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 5.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(c.card)
+            .background(c.card, TempoShapes.Card)
             .sizeIn(minHeight = 56.dp)
-            .clickable(onClick = onCreate)
-            .semantics { role = Role.Button; contentDescription = "型はまだありません、型を作る" }
+            .pressable(TempoShapes.Card, role = Role.Button, onClick = onCreate)
+            .semantics {
+                // Two strings joined, never a third one written out: the node has to say the same
+                // words the two lines below draw.
+                contentDescription =
+                    s.gymHome.userEmpty + s.fmt.listSeparator + s.gymHome.createDescription
+            }
             .padding(horizontal = 18.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            text = "型はまだありません",
+            text = s.gymHome.userEmpty,
             style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
         )
         Text(
-            text = "作る →",
+            text = s.gymHome.actionCreate + " →",
             style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 2.sp, color = c.accent),
         )
     }
@@ -666,6 +692,7 @@ private fun UserRoutinesEmpty(onCreate: () -> Unit) {
 @Composable
 private fun SafetyFootnote(onOpen: () -> Unit, onDismiss: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Column(Modifier.fillMaxWidth()) {
         Box(Modifier.fillMaxWidth().padding(top = 18.dp).height(1.dp).background(c.hair))
         Row(
@@ -673,22 +700,28 @@ private fun SafetyFootnote(onOpen: () -> Unit, onDismiss: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "痛みを感じたらやめる",
+                // `GYM.SAFETY`'s own line and title, read from that page's namespace. The footnote is
+                // a door into that page, so a second copy of its words here is a second thing to keep
+                // in step with it.
+                text = s.gymSettings.safetyLine,
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .weight(1f, fill = true)
                     .sizeIn(minHeight = 48.dp)
-                    .clickable(onClick = onOpen)
-                    .semantics { role = Role.Button; contentDescription = "痛みを感じたらやめる、安全のために" }
+                    .pressable(TempoShapes.Word, role = Role.Button, onClick = onOpen)
+                    .semantics {
+                        contentDescription = s.gymSettings.safetyLine +
+                            s.fmt.listSeparator + s.gymSettings.safetyTitle
+                    }
                     .padding(vertical = 20.dp),
                 style = TextStyle(fontFamily = Gothic, fontSize = 11.sp, color = c.inkFaint),
             )
             Text(
-                text = "閉じる",
+                text = s.gymHome.close,
                 modifier = Modifier
                     .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                    .clickable(onClick = onDismiss)
-                    .semantics { role = Role.Button; contentDescription = "閉じる" }
+                    .pressable(TempoShapes.Word, role = Role.Button, onClick = onDismiss)
+                    .semantics { contentDescription = s.gymHome.close }
                     .padding(vertical = 20.dp),
                 style = TextStyle(fontFamily = Gothic, fontSize = 11.sp, color = c.inkFaint),
             )
@@ -710,6 +743,7 @@ private fun SafetyFootnote(onOpen: () -> Unit, onDismiss: () -> Unit) {
 @Composable
 private fun WriteFaultStrip(fault: GymFault, onRetry: () -> Unit, onDismiss: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -717,11 +751,11 @@ private fun WriteFaultStrip(fault: GymFault, onRetry: () -> Unit, onDismiss: () 
         FaultStrip(fault = fault, onRecover = onRetry, modifier = Modifier.weight(1f, fill = true))
         if (writeFaultStuck(fault)) {
             Text(
-                text = "閉じる",
+                text = s.gymHome.close,
                 modifier = Modifier
                     .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                    .clickable(onClick = onDismiss)
-                    .semantics { role = Role.Button; contentDescription = "閉じる" }
+                    .pressable(TempoShapes.Word, role = Role.Button, onClick = onDismiss)
+                    .semantics { contentDescription = s.gymHome.close }
                     .padding(horizontal = 8.dp, vertical = 12.dp),
                 style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 2.sp, color = c.inkFaint),
             )
@@ -747,12 +781,13 @@ private fun RoutineMenu(
     onDismiss: () -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = c.bgSolid,
         title = {
             Text(
-                text = card.name,
+                text = card.displayName(s),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = TextStyle(fontFamily = Mincho, fontSize = 22.sp, color = c.ink),
@@ -760,15 +795,15 @@ private fun RoutineMenu(
         },
         text = {
             Column(Modifier.fillMaxWidth()) {
-                if (!card.builtIn) MenuRow("編集", c.ink, onEdit)
-                MenuRow("写して作る", c.ink, onDuplicate)
-                if (!card.builtIn) MenuRow("削除", c.inkSoft, onDelete)
+                if (!card.builtIn) MenuRow(s.gymLibrary.actionEdit, c.ink, onEdit)
+                MenuRow(s.gymLibrary.actionDuplicate, c.ink, onDuplicate)
+                if (!card.builtIn) MenuRow(s.gymLibrary.actionDelete, c.inkSoft, onDelete)
             }
         },
         confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("やめる", style = TextStyle(fontFamily = Mincho, color = c.inkFaint))
+                Text(s.gymHome.cancel, style = TextStyle(fontFamily = Mincho, color = c.inkFaint))
             }
         },
     )
@@ -779,9 +814,11 @@ private fun MenuRow(label: String, color: Color, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // A menu row inside a dialog: full width, no fill of its own, so `Row`'s 14.dp is what
+            // separates one destructive answer from the two above it under a finger.
             .sizeIn(minHeight = 56.dp)
-            .clickable(onClick = onClick)
-            .semantics { role = Role.Button; contentDescription = label }
+            .pressable(TempoShapes.Row, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label }
             .padding(vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -812,7 +849,11 @@ private fun DeleteRoutineDialog(
     onDismiss: () -> Unit,
 ) {
     val c = LocalTempoColors.current
-    val copy = remember(card.name, timesDone) { deleteRoutineCopy(card.name, timesDone) }
+    val s = LocalStrings.current
+    // The name in the title is the *displayed* one, so the sentence names the routine the user is
+    // looking at. Nothing here is written back, so resolving it is safe (§L10's read-side rule).
+    val name = card.displayName(s)
+    val copy = remember(name, timesDone, s) { deleteRoutineCopy(name, timesDone, s) }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = c.bgSolid,
@@ -835,7 +876,7 @@ private fun DeleteRoutineDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("やめる", style = TextStyle(fontFamily = Mincho, color = c.inkFaint))
+                Text(s.gymHome.cancel, style = TextStyle(fontFamily = Mincho, color = c.inkFaint))
             }
         },
     )

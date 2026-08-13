@@ -1,5 +1,7 @@
 package io.eddiegulay.tempo.gym
 
+import io.eddiegulay.tempo.i18n.Strings
+
 /*
  * 腕立て伏せ と ディップス は続けて置かない方がよい — the builder's one piece of coaching.
  *
@@ -119,4 +121,5 @@ fun routineWraps(engine: Engine, rounds: Int?): Boolean = when (engine) {
  * own label (押す) is deliberately **not** in the sentence: §6 names the movements, and a line reading
  * 「押す が続いています」 would be true, general, and about nothing the user can move.
  */
-fun clashCopy(first: String, second: String): String = "$first と $second は続けて置かない方がよい"
+fun clashCopy(first: String, second: String, strings: Strings): String =
+    strings.gymShared.patternClash(first, second)

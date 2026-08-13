@@ -21,6 +21,7 @@ import io.eddiegulay.tempo.gym.session.markClosed
 import io.eddiegulay.tempo.gym.session.snapshot
 import io.eddiegulay.tempo.gym.session.station
 import io.eddiegulay.tempo.gym.session.step
+import io.eddiegulay.tempo.i18n.StringsJa
 import io.eddiegulay.tempo.ui.gym.session.DONE_DEBOUNCE_MS
 import io.eddiegulay.tempo.ui.gym.session.closesSession
 import io.eddiegulay.tempo.ui.gym.session.cueEventFor
@@ -182,8 +183,8 @@ class SessionReplayTest {
 
     @Test
     fun `the last cell of a circuit is final and owns no interval-end cue`() {
-        assertTrue(cueSegmentFor(circuit, 3, circuitLib).isFinalSegment)
-        assertFalse(cueSegmentFor(circuit, 1, circuitLib).isFinalSegment)
+        assertTrue(cueSegmentFor(circuit, 3, circuitLib, StringsJa).isFinalSegment)
+        assertFalse(cueSegmentFor(circuit, 1, circuitLib, StringsJa).isFinalSegment)
     }
 
     @Test
@@ -200,8 +201,8 @@ class SessionReplayTest {
             ScalingTier.RX,
             circuitLib,
         )
-        assertFalse(cueSegmentFor(amrap, amrap.segments.lastIndex, circuitLib).isFinalSegment)
-        assertNotNull(cueSegmentFor(amrap, 0, circuitLib).capAtMs)
+        assertFalse(cueSegmentFor(amrap, amrap.segments.lastIndex, circuitLib, StringsJa).isFinalSegment)
+        assertNotNull(cueSegmentFor(amrap, 0, circuitLib, StringsJa).capAtMs)
     }
 
     @Test
@@ -210,23 +211,23 @@ class SessionReplayTest {
         // round it is late.
         val twoRounds = compiledCircuit(rounds = 2)
         val firstOfLast = twoRounds.segments.indexOfFirst { it.round == 2 && it.phase == Phase.WORK }
-        assertTrue(cueSegmentFor(twoRounds, firstOfLast, circuitLib).startsFinalRound)
+        assertTrue(cueSegmentFor(twoRounds, firstOfLast, circuitLib, StringsJa).startsFinalRound)
         val secondOfLast = twoRounds.segments.indexOfLast { it.round == 2 && it.phase == Phase.WORK }
-        assertFalse(cueSegmentFor(twoRounds, secondOfLast, circuitLib).startsFinalRound)
-        assertFalse(cueSegmentFor(circuit, 1, circuitLib).startsFinalRound)
+        assertFalse(cueSegmentFor(twoRounds, secondOfLast, circuitLib, StringsJa).startsFinalRound)
+        assertFalse(cueSegmentFor(circuit, 1, circuitLib, StringsJa).startsFinalRound)
     }
 
     @Test
     fun `a rest is armed with the movement that follows it, not with nothing`() {
         // §D.2's two dynamic rows both name the exercise about to start, and 「次、休息 十五秒、
         // そのあと プランク」 is one sentence about one movement.
-        assertEquals("b", nextExerciseName(circuit, 2, circuitLib))
-        assertEquals("b", upcomingExerciseName(circuit, 2, circuitLib))
+        assertEquals("b", nextExerciseName(circuit, 2, circuitLib, StringsJa))
+        assertEquals("b", upcomingExerciseName(circuit, 2, circuitLib, StringsJa))
         // From a station, "upcoming" is that station itself — a fired INTERVAL_END is fired *after*
         // the transition, so the segment on screen is already the new one.
-        assertEquals("a", upcomingExerciseName(circuit, 1, circuitLib))
-        assertEquals("b", nextExerciseName(circuit, 1, circuitLib))
-        assertNull(nextExerciseName(circuit, 3, circuitLib))
+        assertEquals("a", upcomingExerciseName(circuit, 1, circuitLib, StringsJa))
+        assertEquals("b", nextExerciseName(circuit, 1, circuitLib, StringsJa))
+        assertNull(nextExerciseName(circuit, 3, circuitLib, StringsJa))
     }
 
     // ── Counting ────────────────────────────────────────────────────────────────────────────────

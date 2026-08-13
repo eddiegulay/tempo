@@ -1,8 +1,10 @@
 package io.eddiegulay.tempo.gym
 
-import io.eddiegulay.tempo.data.JapaneseDate
 import io.eddiegulay.tempo.gym.data.StationShape
 import io.eddiegulay.tempo.gym.data.structuralHashOf
+import io.eddiegulay.tempo.i18n.Lang
+import io.eddiegulay.tempo.i18n.Strings
+import io.eddiegulay.tempo.i18n.stringsFor
 
 /*
  * Everything `GYM.LIBRARY.BUILDER` and `GYM.LIBRARY.STATION_PICKER` decide, decided without a
@@ -182,7 +184,7 @@ fun canSave(draft: RoutineDraft, saving: Boolean = false, routineLoaded: Boolean
 /**
  * A draft rewritten for a new engine, and the lines the page must show about what that cost.
  *
- * The notices are a list because §6 :1140 says "one per lossy field", and they are Japanese strings
+ * The notices are a list because §6 :1140 says "one per lossy field", and they are resolved strings
  * rather than an enum because both of them are §6's own copy and there are exactly two of them.
  */
 data class DraftMigration(val draft: RoutineDraft, val notices: List<String>)
@@ -233,15 +235,18 @@ const val DEFAULT_INTERVAL_SECONDS = 60
  * Migrating to the engine the draft already has returns it untouched, so an idempotent re-selection
  * (the picker unfolds in place and a tap on the current chip is the obvious way to close it) cannot
  * reset a cap the user has since edited.
+ *
+ * @param strings taken as a parameter rather than read from a Compose local: this is domain code, and
+ *   every rule above is tested on the JVM with no `Context` and no composition.
  */
-fun migrateDraft(draft: RoutineDraft, newEngine: Engine): DraftMigration {
+fun migrateDraft(draft: RoutineDraft, newEngine: Engine, strings: Strings): DraftMigration {
     if (newEngine == draft.engine) return DraftMigration(draft, emptyList())
 
     val minutely = newEngine == Engine.EMOM || newEngine == Engine.EMOM_ASCENDING
     val stepped = newEngine == Engine.FIXED_SETS
     val notices = buildList {
-        if (stepped && draft.stations.size > 1) add(SINGLE_STATION_NOTICE)
-        if (minutely && draft.restBetweenStations > 0) add(NO_STATION_REST_NOTICE)
+        if (stepped && draft.stations.size > 1) add(strings.gymBuilder.noticeSingleStation)
+        if (minutely && draft.restBetweenStations > 0) add(strings.gymBuilder.noticeNoStationRest)
     }
 
     val migrated = draft.copy(
@@ -266,16 +271,7 @@ fun migrateDraft(draft: RoutineDraft, newEngine: Engine): DraftMigration {
     return DraftMigration(migrated, notices)
 }
 
-/** §6 :1140, verbatim. The extras are kept and greyed, so the line is the only thing that says why. */
-private const val SINGLE_STATION_NOTICE = "段階では一種目だけ使われます"
-
-/** §6 :1140, verbatim. A rest forced to zero is indistinguishable from a rest set to zero without it. */
-private const val NO_STATION_REST_NOTICE = "毎分では種目の間の休息はありません"
-
 // ─── The station picker ─────────────────────────────────────────────────────────────────────────
-
-/** Why a はかり方 chip is inert — §6 :1146, and the only reason string the picker has. */
-private const val MEASURE_UNAVAILABLE = "この方式では使えません"
 
 /**
  * One はかり方 chip: which measure, whether it can be chosen here, and — when it cannot — why.
@@ -312,13 +308,23 @@ data class MeasureOption(val measure: Measure, val enabled: Boolean, val reason:
  * widening a refusal is not a transcription, and the cost of being wrong is a measure the user cannot
  * pick with no way to find out why.
  */
-fun allowedMeasures(engine: Engine): List<MeasureOption> = Measure.entries.map { measure ->
-    val enabled = when (measure) {
-        Measure.REPS -> true
-        Measure.DURATION -> engine != Engine.FOR_TIME
-        Measure.MAX_EFFORT -> engine != Engine.EMOM && engine != Engine.EMOM_ASCENDING
-    }
-    MeasureOption(measure, enabled, if (enabled) null else MEASURE_UNAVAILABLE)
+fun allowedMeasures(engine: Engine, strings: Strings): List<MeasureOption> = Measure.entries.map { measure ->
+    val enabled = measureAllowed(engine, measure)
+    MeasureOption(measure, enabled, if (enabled) null else strings.gymBuilder.measureUnavailable)
+}
+
+/**
+ * The predicate on its own, without the sentence that explains a refusal.
+ *
+ * Split out because two callers want different halves. The picker draws chips and needs the reason;
+ * `seededMeasure` only needs to know whether a stored measure is still legal, and threading a string
+ * table through a question that has no words in it would make a page's copy a parameter of its
+ * *correctness* — which is how a pure predicate acquires a `Strings` it never reads.
+ */
+fun measureAllowed(engine: Engine, measure: Measure): Boolean = when (measure) {
+    Measure.REPS -> true
+    Measure.DURATION -> engine != Engine.FOR_TIME
+    Measure.MAX_EFFORT -> engine != Engine.EMOM && engine != Engine.EMOM_ASCENDING
 }
 
 /** What a station asks for, as the picker holds it before it becomes a [StationDraft]. */
@@ -393,23 +399,28 @@ enum class RestSlot { BETWEEN_STATIONS, BETWEEN_ROUNDS }
  * agree — which they cannot if one is 60 and the other 六十秒. The mock and §Q10 outrank a general
  * note; a mid-spin rendering that differs from the resting one is a change of *presentation* the page
  * can still make, and it is the page's to make.
+ *
+ * **The values do not vary by language and must not.** `DECISIONS.md` §Q21 is a rule about the *value*
+ * set — a wheel opened on a value it cannot represent silently rewrites it — so only the labels are
+ * resolved here. `mergedWheelOptions` compares on `value`, and a range that differed by language would
+ * make the merge itself language-dependent.
  */
-fun restOptions(slot: RestSlot): List<WheelOption> = when (slot) {
-    RestSlot.BETWEEN_STATIONS -> STATION_REST_OPTIONS
-    RestSlot.BETWEEN_ROUNDS -> ROUND_REST_OPTIONS
+fun restOptions(slot: RestSlot, strings: Strings): List<WheelOption> = when (slot) {
+    RestSlot.BETWEEN_STATIONS -> STATION_REST_OPTIONS.getValue(strings.lang)
+    RestSlot.BETWEEN_ROUNDS -> ROUND_REST_OPTIONS.getValue(strings.lang)
 }
 
 /** 回数's wheel: `1..100`, counted in 回 (§3, edge case 11). */
-fun repOptions(): List<WheelOption> = REP_OPTIONS
+fun repOptions(strings: Strings): List<WheelOption> = REP_OPTIONS.getValue(strings.lang)
 
 /**
  * 秒数's wheel: `5,10,…,300` (§3, edge case 11).
  *
  * It starts at five rather than at zero, and has no `なし`: a zero-second station is not a station, and
  * an open-ended one is 限界まで — which is a *measure*, chosen on the chips above the wheel, not a
- * value on it. Same bare-seconds rule as [restOptions] (`DECISIONS.md` §Q10).
+ * value on it. Same chosen-duration rule as [restOptions] (`DECISIONS.md` §Q10).
  */
-fun secondOptions(): List<WheelOption> = SECOND_OPTIONS
+fun secondOptions(strings: Strings): List<WheelOption> = SECOND_OPTIONS.getValue(strings.lang)
 
 /**
  * 巡数's wheel: `1..20`, counted in 巡 (§3, edge case 11).
@@ -418,25 +429,70 @@ fun secondOptions(): List<WheelOption> = SECOND_OPTIONS
  * than a decision, since §3 specifies the range beside them and the builder draws the row in its mock.
  * Zero rounds is not a routine, so the wheel starts at one.
  */
-fun roundOptions(): List<WheelOption> = ROUND_OPTIONS
-
-// Built once. The builder recomposes on every keystroke of the name field, and rebuilding a hundred
-// kanji strings per frame to hand a wheel a list it already has is the kind of waste that shows up as
-// a dropped frame on a drag rather than as a number anybody measures.
-private val STATION_REST_OPTIONS = (0..120 step 5).map { WheelOption(it, restWheelLabel(it)) }
-private val ROUND_REST_OPTIONS = (0..300 step 15).map { WheelOption(it, restWheelLabel(it)) }
-private val REP_OPTIONS = (1..100).map { WheelOption(it, JapaneseDate.kanjiExtended(it) + "回") }
-private val SECOND_OPTIONS = (5..300 step 5).map { WheelOption(it, JapaneseDate.kanjiExtended(it) + "秒") }
-private val ROUND_OPTIONS = (1..20).map { WheelOption(it, JapaneseDate.kanjiExtended(it) + "巡") }
+fun roundOptions(strings: Strings): List<WheelOption> = ROUND_OPTIONS.getValue(strings.lang)
 
 /**
- * なし at zero is §6 :1141's own word for no rest — 〇秒 would be a prescription of nothing.
+ * The four wheel labels, in one block because `DECISIONS.md` §Q10 is one rule.
  *
- * Deliberately the same rule as `EngineRows`' own `restLabel`, which spells the *read-only* row on
- * `GYM.LIBRARY.DETAIL`. They are two private functions rather than one shared one because `EngineRows`
- * is another unit's file; `DECISIONS.md` §Q10 is the contract that binds them, and each side pins
- * 六十秒 in its own test so a divergence fails a build rather than reaching a page. **If they are ever
- * unified, unify them onto §Q10's sentence and not onto `durationKanji`.**
+ * **These used to be eight functions.** `BuilderScreen` carried a second copy of all four so that
+ * `mergedWheelOptions` could label the one row these lists do not contain, and both KDocs recorded the
+ * duplication as deliberate — the two files belonged to two units, so §Q10 was enforced by twin tests
+ * rather than by the compiler. One unit now owns both, and the note both copies carried said what to
+ * do about it: **unify onto §Q10's sentence, never onto `durationKanji`.** That is what this is.
+ *
+ * A count renders with its counter, and a duration the user **chose** renders as the value they chose —
+ * bare seconds in Japanese, `なし` at zero (§6 :1141's own word; 〇秒 would be a prescription of
+ * nothing). The zero word is `gymShared.restNone` rather than this namespace's own, because the
+ * row *above* a rest wheel is `engineRows`' string and the rows inside it are these — two entries
+ * saying "None" and "No rest" is precisely how that row comes to contradict itself.
  */
-private fun restWheelLabel(seconds: Int): String =
-    if (seconds <= 0) "なし" else JapaneseDate.kanjiExtended(seconds) + "秒"
+fun restWheelValueLabel(seconds: Int, strings: Strings): String =
+    if (seconds <= 0) strings.gymShared.restNone else setSecondsLabel(seconds, strings)
+
+/** 三十秒 — 秒数's wheel has no zero (a zero-second station is not a station), so no なし branch. */
+fun secondWheelValueLabel(seconds: Int, strings: Strings): String = setSecondsLabel(seconds, strings)
+
+/** 二百回 — 回数's counter. */
+fun repWheelValueLabel(reps: Int, strings: Strings): String = strings.fmt.reps(reps)
+
+/** 三十巡 — 巡数's counter. */
+fun roundWheelValueLabel(rounds: Int, strings: Strings): String = strings.fmt.rounds(rounds)
+
+/**
+ * A number of seconds the user **set**, as against one the app measured.
+ *
+ * **In English the distinction is deleted rather than translated** (`.planning/i18n/DECISIONS.md` §L7).
+ * §Q10 is carried entirely by orthography — 六十秒 against 一分三十秒, two ways of spelling the same
+ * sixty — and English has one orthography, so there is nowhere for the second form to go. The English
+ * arm therefore renders through the same `fmt.duration` a measured value uses: sixty is `1m` on this
+ * wheel exactly as it is on a results line. Keeping `fmt.seconds` would preserve the *shape* of a rule
+ * whose content is gone, and would print `300s` at the bottom of a rest wheel.
+ *
+ * This is `GymSettingsCopy.settingsSecondsLabel`'s ruling, applied to the wheel that page's own rows
+ * are built from — the two must agree, because that page dials this list.
+ */
+fun setSecondsLabel(seconds: Int, strings: Strings): String =
+    if (strings.lang == Lang.Ja) strings.fmt.seconds(seconds) else strings.fmt.duration(seconds)
+
+/*
+ * Built once per language, not once per frame. The builder recomposes on every keystroke of the name
+ * field, and rebuilding a hundred labels per frame to hand a wheel a list it already has is the kind
+ * of waste that shows up as a dropped frame on a drag rather than as a number anybody measures.
+ *
+ * Both languages are built at class-init and the lookup is a map read, matching `prepareOptions`. The
+ * alternative — caching the last one — rebuilds on every flip of the toggle and is more code for less.
+ */
+private val STATION_REST_OPTIONS = wheelPerLanguage(0..120, 5, ::restWheelValueLabel)
+private val ROUND_REST_OPTIONS = wheelPerLanguage(0..300, 15, ::restWheelValueLabel)
+private val REP_OPTIONS = wheelPerLanguage(1..100, 1, ::repWheelValueLabel)
+private val SECOND_OPTIONS = wheelPerLanguage(5..300, 5, ::secondWheelValueLabel)
+private val ROUND_OPTIONS = wheelPerLanguage(1..20, 1, ::roundWheelValueLabel)
+
+private fun wheelPerLanguage(
+    range: IntRange,
+    step: Int,
+    label: (Int, Strings) -> String,
+): Map<Lang, List<WheelOption>> = Lang.entries.associateWith { lang ->
+    val strings = stringsFor(lang)
+    (range.first..range.last step step).map { WheelOption(it, label(it, strings)) }
+}

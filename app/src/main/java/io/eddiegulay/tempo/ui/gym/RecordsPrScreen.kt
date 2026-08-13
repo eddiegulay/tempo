@@ -1,7 +1,6 @@
 package io.eddiegulay.tempo.ui.gym
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,7 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -26,7 +24,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -41,8 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.calendar.Loadable
-import io.eddiegulay.tempo.data.JapaneseDate
 import io.eddiegulay.tempo.gym.BestRowCopy
+import io.eddiegulay.tempo.gym.ExerciseCatalog
 import io.eddiegulay.tempo.gym.GymRoute
 import io.eddiegulay.tempo.gym.GymViewModel
 import io.eddiegulay.tempo.gym.MovementBest
@@ -50,11 +47,17 @@ import io.eddiegulay.tempo.gym.RoutineBest
 import io.eddiegulay.tempo.gym.bestMetricFor
 import io.eddiegulay.tempo.gym.bestMetricLabel
 import io.eddiegulay.tempo.gym.bestValueCopy
+import io.eddiegulay.tempo.gym.displayName
+import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.i18n.Strings
 import io.eddiegulay.tempo.ui.FaultPanel
 import io.eddiegulay.tempo.ui.HeaderAction
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.InkPressIndication
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 
 /*
  * GYM.RECORDS.PR — 最高. `04-library-records.md` §4's third records page.
@@ -88,15 +91,21 @@ import io.eddiegulay.tempo.ui.theme.Mincho
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** §6: `PR tabs | 型ごと / 動きごと`. The declaration order is the display order, 型ごと first. */
-enum class PrTab(val label: String) {
-    Routines("型ごと"),
-    Movements("動きごと"),
+enum class PrTab {
+    Routines,
+    Movements,
     ;
 
     companion object {
         /** §4: *back — straight pop; **the tab selection resets to 型ごと***. */
         val Default: PrTab = Routines
     }
+}
+
+/** 型ごと / 動きごと — the tab's word, from the table rather than a constructor argument (§L3). */
+fun PrTab.label(strings: Strings): String = when (this) {
+    PrTab.Routines -> strings.gymRecords.tabRoutines
+    PrTab.Movements -> strings.gymRecords.tabMovements
 }
 
 /**
@@ -139,14 +148,14 @@ internal data class PrRoutineRow(
  * grouping above chooses a row per routine that need not be the group's newest, so the order has to be
  * re-established over what was chosen rather than inherited from what arrived.
  */
-internal fun prRoutineRows(bests: List<RoutineBest>): List<PrRoutineRow> =
+internal fun prRoutineRows(bests: List<RoutineBest>, strings: Strings): List<PrRoutineRow> =
     bests.groupBy { it.routineId }
         .values
         .mapNotNull { records ->
-            val labellable = records.filter { bestMetricLabel(it.metric) != null }
+            val labellable = records.filter { bestMetricLabel(it.metric, strings) != null }
             val preferred = labellable.firstOrNull { it.metric == bestMetricFor(it.engine) }
             val chosen = preferred ?: labellable.maxByOrNull { it.achievedAt } ?: return@mapNotNull null
-            val copy = bestValueCopy(chosen) ?: return@mapNotNull null
+            val copy = bestValueCopy(chosen, strings) ?: return@mapNotNull null
             PrRoutineRow(
                 routineId = chosen.routineId,
                 sessionId = chosen.sessionId,
@@ -181,16 +190,6 @@ internal data class PrMovementRow(
 )
 
 /**
- * `04-library-records.md` §6: *PR: hardest reached | `いちばん上` | `いちばん上 足上げ腕立て`*.
- *
- * **This surface's word, and only this surface's.** `DECISIONS.md` §Q9 is explicit that いちばん上 is
- * the movement ladder's hardest rung and "is not a routine tile and must not be repurposed as one" —
- * it was the string リーコン・ロン's `HIGHEST_STEP` tile was nearly built out of. A routine's step
- * belongs to `stepFor`, as 第九段 / 十八段のうち.
- */
-private const val HARDEST_REACHED = "いちばん上"
-
-/**
  * A movement's family record as a row, or **null when nothing was counted**.
  *
  * §4 edge case 5 and [MovementBest.singleSetReps]' own KDoc: 一度に counts only sets with a recorded
@@ -210,15 +209,30 @@ private const val HARDEST_REACHED = "いちばん上"
  * keep its shape and fills it with `—` (`ExerciseDetailScreen.movementTiles`); this is a line of text,
  * and a bare dash at the foot of a card reads as a rendering fault.
  */
-internal fun prMovementRow(best: MovementBest): PrMovementRow? {
+internal fun prMovementRow(best: MovementBest, strings: Strings): PrMovementRow? {
     if (best.singleSetReps <= 0) return null
-    val value = JapaneseDate.kanjiExtended(best.singleSetReps) + "回"
-    val meta = "一度に ・ のべ " + JapaneseDate.kanjiExtended(best.lifetimeReps) + "回"
-    val date = best.lastLocalDate?.let { JapaneseDate.monthDay(it.atStartOfDay()) }
-    val hardest = best.hardestReachedExerciseName?.let { "$HARDEST_REACHED $it" }
+    val copy = strings.gymRecords
+    // **Resolved through the catalogue, not read off the row.** `MovementBest.exerciseName` and
+    // `hardestReachedExerciseName` are `exercise.name_ja` frozen into the model by `GymStore`, and a
+    // frozen Japanese name cannot follow the language switch. Both fields are redundant — the model
+    // carries `exerciseId` and `hardestReachedExerciseId` beside them — so the name is resolved from
+    // the id and the stored copy is the fallback for an id the catalogue no longer knows. Deleting the
+    // two fields outright is the real fix and it lives in `gym/GymModels.kt` and `gym/data/GymStore.kt`,
+    // outside this unit; it is reported.
+    val name = ExerciseCatalog.byId(best.exerciseId)?.displayName(strings) ?: best.exerciseName
+    val value = strings.fmt.reps(best.singleSetReps)
+    val lifetime = copy.lifetimeReps(strings.fmt.reps(best.lifetimeReps))
+    val meta = copy.singleSetLabel + strings.fmt.separator + lifetime
+    val date = best.lastLocalDate?.let { strings.fmt.monthDay(it.atStartOfDay()) }
+    val hardest = best.hardestReachedExerciseName?.let { stored ->
+        val rung = best.hardestReachedExerciseId
+            ?.let { ExerciseCatalog.byId(it)?.displayName(strings) }
+            ?: stored
+        copy.hardestReached + " " + rung
+    }
     return PrMovementRow(
         exerciseId = best.exerciseId,
-        name = best.exerciseName,
+        name = name,
         value = value,
         meta = meta,
         date = date,
@@ -228,12 +242,12 @@ internal fun prMovementRow(best: MovementBest): PrMovementRow? {
         // fragment is a sentence rather than an orphan number. §4 writes no sentence for this row, so
         // its skeleton is borrowed rather than a second one invented (`DECISIONS.md` §Q6's line).
         semantics = listOfNotNull(
-            best.exerciseName,
-            "一度に " + value,
-            "のべ " + JapaneseDate.kanjiExtended(best.lifetimeReps) + "回",
+            name,
+            copy.singleSet(value),
+            lifetime,
             date,
             hardest,
-        ).joinToString("、"),
+        ).joinToString(strings.fmt.listSeparator),
     )
 }
 
@@ -248,35 +262,13 @@ internal fun prMovementRow(best: MovementBest): PrMovementRow? {
  * achievement instant of its own, only the family's most recent outing — and rows with neither sort
  * last rather than to the top, because a null is an absence and not a recency.
  */
-internal fun prMovementRows(bests: List<MovementBest>): List<PrMovementRow> =
-    bests.sortedByDescending { it.lastPerformedAt ?: Long.MIN_VALUE }.mapNotNull(::prMovementRow)
+internal fun prMovementRows(bests: List<MovementBest>, strings: Strings): List<PrMovementRow> =
+    bests.sortedByDescending { it.lastPerformedAt ?: Long.MIN_VALUE }
+        .mapNotNull { prMovementRow(it, strings) }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The page
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-
-private const val PAGE_TITLE = "最高"
-
-/** §6: `generic close | とじる`, already the word `EventComposeScreen` and これまで use. */
-private const val CLOSE = "とじる"
-
-/** §6: `records empty | まだ 記録はありません`. Reachable from `Ready` and from nowhere else. */
-private const val EMPTY = "まだ 記録はありません"
-
-/** §6: `PR: empty explanation | 回数を数えた種目だけ ここに出ます | why 動きごと can be empty`. */
-private const val MOVEMENTS_EMPTY_EXPLANATION = "回数を数えた種目だけ ここに出ます"
-
-/** §6: `PR: see all exercises | すべての種目` — this page's exit into `GYM.LIBRARY.EXERCISE_INDEX`. */
-private const val ALL_EXERCISES = "すべての種目"
-
-/** §6: `archived chip | 削除済み`. The row stays tappable; §4's `ArchivedRoutineBest`. */
-private const val ARCHIVED = "削除済み"
-
-private const val LOADING = "読み込み中"
-
-/** §4's accessibility note, verbatim: the two nested fragments are the parent's `customActions`. */
-private const val ACTION_SESSION = "この記録を見る"
-private const val ACTION_HISTORY = "これまでを見る"
 
 /**
  * §2 `list bottom padding | 88.dp with the tab bar, **40.dp without**` — and this page is without.
@@ -307,6 +299,7 @@ private val LIST_BOTTOM = 40.dp
 @Composable
 fun RecordsPrScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     var tab by remember { mutableStateOf(PrTab.Default) }
 
     val routineFlow = remember(gym) { gym.repository.routineBests() }
@@ -323,11 +316,16 @@ fun RecordsPrScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
             verticalAlignment = Alignment.Top,
         ) {
             Text(
-                text = PAGE_TITLE,
+                text = s.gymRecords.bests,
                 modifier = Modifier.semantics { heading() },
                 style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
             )
-            HeaderAction(label = CLOSE, description = CLOSE, color = c.inkFaint, onClick = { gym.onBack() })
+            HeaderAction(
+                label = s.gymRecords.close,
+                description = s.gymRecords.close,
+                color = c.inkFaint,
+                onClick = { gym.onBack() },
+            )
         }
 
         PrTabs(selected = tab, onSelect = { tab = it })
@@ -340,7 +338,7 @@ fun RecordsPrScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
                     Loadable.Loading -> PrLoading()
                     is Loadable.Failed -> FaultPanel(fault = state.fault, onRecover = gym::retry)
                     is Loadable.Ready -> {
-                        val rows = remember(state.value) { prRoutineRows(state.value) }
+                        val rows = remember(state.value, s) { prRoutineRows(state.value, s) }
                         if (rows.isEmpty()) {
                             PrRoutinesEmpty()
                         } else {
@@ -358,7 +356,7 @@ fun RecordsPrScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
                     Loadable.Loading -> PrLoading()
                     is Loadable.Failed -> FaultPanel(fault = state.fault, onRecover = gym::retry)
                     is Loadable.Ready -> {
-                        val rows = remember(state.value) { prMovementRows(state.value) }
+                        val rows = remember(state.value, s) { prMovementRows(state.value, s) }
                         if (rows.isEmpty()) {
                             PrMovementsEmpty(onAllExercises = { gym.go(GymRoute.ExerciseIndex) })
                         } else {
@@ -388,6 +386,7 @@ fun RecordsPrScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
 @Composable
 private fun PrTabs(selected: PrTab, onSelect: (PrTab) -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = 22.dp, end = 22.dp, bottom = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(18.dp),
@@ -397,8 +396,17 @@ private fun PrTabs(selected: PrTab, onSelect: (PrTab) -> Unit) {
             Column(
                 modifier = Modifier
                     .sizeIn(minHeight = 48.dp)
+                    // The wash, and deliberately **no `clip`**: the 1.dp accent rule fills the bottom
+                    // of this column, and a lozenge clip would round its two ends away. The indication
+                    // draws its own outline and does not need the clip to be shaped — which is exactly
+                    // the case `InkPressIndication` is exposed for.
+                    //
+                    // These tabs press where `GymTabBar`'s do not: the dock is chrome and stays silent,
+                    // but 型ごと / 動きごと swap the list underneath them and are content.
                     .selectable(
                         selected = isSelected,
+                        interactionSource = null,
+                        indication = InkPressIndication(TempoShapes.Word),
                         role = Role.Tab,
                         onClick = { onSelect(entry) },
                     ),
@@ -406,7 +414,7 @@ private fun PrTabs(selected: PrTab, onSelect: (PrTab) -> Unit) {
                 verticalArrangement = Arrangement.Center,
             ) {
                 Text(
-                    text = entry.label,
+                    text = entry.label(s),
                     modifier = Modifier.padding(horizontal = 6.dp),
                     style = TextStyle(
                         fontFamily = Mincho,
@@ -417,13 +425,25 @@ private fun PrTabs(selected: PrTab, onSelect: (PrTab) -> Unit) {
                 )
                 Spacer(Modifier.height(6.dp))
                 // Decoration: the tab's selected state is already spoken by `Role.Tab`.
-                Box(
-                    Modifier
-                        .width(if (isSelected) 44.dp else 0.dp)
-                        .height(1.dp)
-                        .background(if (isSelected) c.accent else c.hair)
-                        .clearAndSetSemantics {},
-                )
+                //
+                // **`fillMaxWidth` inside the label's own column, not a fixed 44.dp.** The rule used to
+                // be two Mincho glyphs plus tracking, measured once against 型ごと; under "By routine"
+                // it would have been conspicuously shorter than the word it underlines, and under a
+                // large font scale shorter still. The Column wraps its widest child — the label — so
+                // filling it makes the rule exactly as wide as the word in any language, at any scale.
+                if (isSelected) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(c.accent)
+                            .clearAndSetSemantics {},
+                    )
+                } else {
+                    // The unselected tab drew a zero-width rule, which is nothing; this keeps the
+                    // column's height identical so selecting a tab cannot shift the row.
+                    Spacer(Modifier.height(1.dp))
+                }
             }
         }
     }
@@ -484,19 +504,22 @@ private fun PrRoutineCard(
     onHistory: () -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
+    // Read outside the semantics lambda: it is not a composable scope.
+    val actionSession = s.gymRecords.actionSession
+    val actionHistory = s.gymRecords.seeHistory
     Box(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
-                .background(c.card)
-                .clickable(onClick = onOpen)
+                .background(c.card, TempoShapes.Card)
+                .pressable(TempoShapes.Card, onClick = onOpen)
                 .clearAndSetSemantics {
                     role = Role.Button
                     contentDescription = row.copy.semantics
                     customActions = listOf(
-                        CustomAccessibilityAction(ACTION_SESSION) { onSession(); true },
-                        CustomAccessibilityAction(ACTION_HISTORY) { onHistory(); true },
+                        CustomAccessibilityAction(actionSession) { onSession(); true },
+                        CustomAccessibilityAction(actionHistory) { onHistory(); true },
                     )
                 }
                 .padding(horizontal = 18.dp, vertical = 16.dp),
@@ -531,7 +554,7 @@ private fun PrRoutineCard(
                 if (row.copy.archived) {
                     Spacer(Modifier.width(10.dp))
                     Text(
-                        text = ARCHIVED,
+                        text = s.gymRecords.archived,
                         style = TextStyle(
                             fontFamily = Mincho,
                             fontSize = 11.sp,
@@ -585,7 +608,9 @@ private fun PrFragment(text: String, style: TextStyle, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .sizeIn(minHeight = 48.dp)
-            .clickable(onClick = onClick)
+            // A fragment inside a card that is itself pressed: the lozenge is what tells the two
+            // apart, since a `Card` corner here would echo the card's own and read as a nested box.
+            .pressable(TempoShapes.Word, onClick = onClick)
             .clearAndSetSemantics {},
         contentAlignment = Alignment.CenterStart,
     ) {
@@ -608,7 +633,7 @@ private fun PrMovementList(
             PrMovementCard(row = row, onOpen = { onMovement(row.exerciseId) })
         }
         item(key = "action:exercises") {
-            PrCenteredAction(label = ALL_EXERCISES, onClick = onAllExercises)
+            PrCenteredAction(label = LocalStrings.current.gymRecords.allExercises, onClick = onAllExercises)
         }
     }
 }
@@ -630,9 +655,8 @@ private fun PrMovementCard(row: PrMovementRow, onOpen: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
-                .background(c.card)
-                .clickable(onClick = onOpen)
+                .background(c.card, TempoShapes.Card)
+                .pressable(TempoShapes.Card, onClick = onOpen)
                 .clearAndSetSemantics {
                     role = Role.Button
                     contentDescription = row.semantics
@@ -702,7 +726,7 @@ private fun PrLoading() {
     val c = LocalTempoColors.current
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
-            text = LOADING,
+            text = LocalStrings.current.gymRecords.loading,
             style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
         )
     }
@@ -714,7 +738,7 @@ private fun PrRoutinesEmpty() {
     val c = LocalTempoColors.current
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
-            text = EMPTY,
+            text = LocalStrings.current.gymRecords.recordsEmpty,
             style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
         )
     }
@@ -735,20 +759,21 @@ private fun PrRoutinesEmpty() {
 @Composable
 private fun PrMovementsEmpty(onAllExercises: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text(
-                text = EMPTY,
+                text = s.gymRecords.recordsEmpty,
                 style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
             )
             Text(
-                text = MOVEMENTS_EMPTY_EXPLANATION,
+                text = s.gymRecords.movementsEmptyWhy,
                 style = TextStyle(fontFamily = Gothic, fontSize = 12.sp, lineHeight = 18.sp, color = c.inkFaint),
             )
-            PrCenteredAction(label = ALL_EXERCISES, onClick = onAllExercises)
+            PrCenteredAction(label = s.gymRecords.allExercises, onClick = onAllExercises)
         }
     }
 }
@@ -761,8 +786,8 @@ private fun PrCenteredAction(label: String, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 48.dp)
-            .clickable(onClick = onClick)
-            .semantics { role = Role.Button; contentDescription = label }
+            .pressable(TempoShapes.Word, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label }
             .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {

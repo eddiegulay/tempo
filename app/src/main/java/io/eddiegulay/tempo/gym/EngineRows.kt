@@ -1,6 +1,7 @@
 package io.eddiegulay.tempo.gym
 
-import io.eddiegulay.tempo.data.JapaneseDate
+import io.eddiegulay.tempo.i18n.Lang
+import io.eddiegulay.tempo.i18n.Strings
 
 /*
  * What `GYM.LIBRARY.DETAIL` says about a routine's shape, and it is different for every engine.
@@ -15,8 +16,22 @@ import io.eddiegulay.tempo.data.JapaneseDate
  * populated — マーフ is one round — and the row still must not appear.
  */
 
+/**
+ * Which row this is, independently of what it says.
+ *
+ * **The discriminator exists because a caller dispatches on these rows**, and until the labels moved
+ * into the string table the only thing it could dispatch on was the Japanese text. `BuilderScreen` is
+ * that caller: it turns 種目の間の休息, 巡の間の休息 and 巡数 into wheels and everything else into a
+ * read-only line. Matching on [EngineRow.label] worked exactly as long as there was one language, and
+ * would have failed **silently** in the other — three settings quietly becoming read-only, with no
+ * compile error and no failing test.
+ *
+ * Nothing in this file needs it. It is here so that dispatching on the words is never necessary again.
+ */
+enum class EngineRowKind { TIME_CAP, REST_BETWEEN_STATIONS, REST_BETWEEN_ROUNDS, ROUNDS }
+
 /** One read-only `PickerRow`-shaped line: 制限時間 / 二十分. */
-data class EngineRow(val label: String, val value: String)
+data class EngineRow(val kind: EngineRowKind, val label: String, val value: String)
 
 /**
  * The rows a routine's engine earns, in the order `04-library-records.md` §3's シンディ mock draws
@@ -40,6 +55,9 @@ data class EngineRow(val label: String, val value: String)
  * function is handed it, but no spec table carries a label for it — 毎分 is the *engine*'s name, not a
  * row's — and inventing 間隔 or 一巡の長さ is not permitted. A 毎分 routine with a non-60-second window
  * therefore renders no line about it. Flagged rather than papered over; it needs one string.
+ *
+ * @param strings taken as a parameter rather than read from a Compose local: this is domain code, and
+ *   `04-library-records.md`'s row table is tested on the JVM with no `Context` and no composition.
  */
 fun engineRows(
     engine: Engine,
@@ -47,45 +65,69 @@ fun engineRows(
     timeCapSeconds: Int?,
     restBetweenStations: Int,
     restBetweenRounds: Int,
+    strings: Strings,
 ): List<EngineRow> = buildList {
     if (engine == Engine.AMRAP && timeCapSeconds != null) {
-        add(EngineRow("制限時間", durationKanji(timeCapSeconds)))
+        add(
+            EngineRow(
+                EngineRowKind.TIME_CAP,
+                strings.gymShared.rowTimeCap,
+                strings.fmt.duration(timeCapSeconds),
+            ),
+        )
     }
     if (engine == Engine.INTERVAL_CIRCUIT || engine == Engine.AMRAP) {
-        add(EngineRow("種目の間の休息", restLabel(restBetweenStations)))
+        add(
+            EngineRow(
+                EngineRowKind.REST_BETWEEN_STATIONS,
+                strings.gymShared.rowRestBetweenStations,
+                restLabel(restBetweenStations, strings),
+            ),
+        )
     }
     if (engine == Engine.INTERVAL_CIRCUIT ||
         engine == Engine.FOR_TIME_WITH_REST ||
         engine == Engine.FIXED_SETS
     ) {
-        add(EngineRow("巡の間の休息", restLabel(restBetweenRounds)))
+        add(
+            EngineRow(
+                EngineRowKind.REST_BETWEEN_ROUNDS,
+                strings.gymShared.rowRestBetweenRounds,
+                restLabel(restBetweenRounds, strings),
+            ),
+        )
     }
     when (engine) {
         // 時間内で in the 巡数 slot: the answer to "how many rounds" is genuinely "as many as fit",
         // and §6 gives that exact phrase for exactly this slot.
-        Engine.AMRAP -> add(EngineRow("巡数", "時間内で"))
+        Engine.AMRAP ->
+            add(EngineRow(EngineRowKind.ROUNDS, strings.gymShared.rowRounds, strings.gymShared.roundsWithinCap))
         Engine.INTERVAL_CIRCUIT, Engine.FOR_TIME_WITH_REST, Engine.EMOM, Engine.FIXED_SETS ->
-            if (rounds != null) add(EngineRow("巡数", JapaneseDate.kanjiExtended(rounds) + "巡"))
+            if (rounds != null) {
+                add(EngineRow(EngineRowKind.ROUNDS, strings.gymShared.rowRounds, strings.fmt.rounds(rounds)))
+            }
         Engine.FOR_TIME, Engine.EMOM_ASCENDING -> Unit
     }
 }
 
 /** The detail page's own projection, so a call site does not have to unpack five fields in order. */
-fun engineRows(snapshot: RoutineSnapshot): List<EngineRow> = engineRows(
+fun engineRows(snapshot: RoutineSnapshot, strings: Strings): List<EngineRow> = engineRows(
     engine = snapshot.engine,
     rounds = snapshot.rounds,
     timeCapSeconds = snapshot.timeCapSeconds,
     restBetweenStations = snapshot.restBetweenStations,
     restBetweenRounds = snapshot.restBetweenRounds,
+    strings = strings,
 )
 
 /** The list projection, for the same reason. */
-fun engineRows(summary: RoutineSummary): List<EngineRow> = engineRows(
+fun engineRows(summary: RoutineSummary, strings: Strings): List<EngineRow> = engineRows(
     engine = summary.engine,
     rounds = summary.rounds,
     timeCapSeconds = summary.timeCapSeconds,
     restBetweenStations = summary.restBetweenStations,
     restBetweenRounds = summary.restBetweenRounds,
+    strings = strings,
 )
 
 /**
@@ -93,19 +135,30 @@ fun engineRows(summary: RoutineSummary): List<EngineRow> = engineRows(
  *
  * `DECISIONS.md` §Q10 states the rule once, and it is a rule about *acts*, not about durations: a
  * duration the user **chose** renders as the value they chose — bare seconds via
- * `kanjiExtended(n) + "秒"` — while a duration the app **measured** renders through [durationKanji]
+ * `Formats.seconds` — while a duration the app **measured** renders through `Formats.duration`
  * (一分三十秒), which is `01-focus-settings.md` :826's `secondsLabelJa` contract and stays untouched.
  *
  * Rests are set. The builder wheel (`04-library-records.md` :350) and the settings row
  * (`01-focus-settings.md` :735) both spell sixty seconds 六十秒, so a detail page that echoed the same
  * stored value back as 一分 would be telling the user their routine holds a value they never picked.
- * The 制限時間 row above is left on [durationKanji] deliberately: §3's mock prints a twenty-minute cap
+ * The 制限時間 row above is left on `Formats.duration` deliberately: §3's mock prints a twenty-minute cap
  * as 二十分, and a cap is read as a span of the clock rather than counted out.
  *
  * なし at zero is the builder's own word for it (§6), not 〇秒 — "no rest" is a prescription.
  */
-private fun restLabel(seconds: Int): String =
-    if (seconds <= 0) "なし" else JapaneseDate.kanjiExtended(seconds) + "秒"
+/**
+ * A rest the user **chose**, as the row that reports it prints it.
+ *
+ * §Q10's chosen-vs-measured split, and §L7's ruling on what happens to it. Japanese keeps the split:
+ * a duration you set renders bare (六十秒), one the app measured is spelled out. English has no second
+ * orthography to carry that, so both collapse onto `fmt.duration` — which also keeps this row
+ * agreeing with the wheel that sets it. Before this, the row said `60s` while the wheel said `1m`.
+ */
+private fun restLabel(seconds: Int, strings: Strings): String = when {
+    seconds <= 0 -> strings.gymShared.restNone
+    strings.lang == Lang.Ja -> strings.fmt.seconds(seconds)
+    else -> strings.fmt.duration(seconds)
+}
 
 /** One 最高 tile: a value over a label, read **label-first** by TalkBack (§3, accessibility). */
 data class BestTile(val label: String, val value: String)
@@ -139,7 +192,12 @@ data class BestTile(val label: String, val value: String)
  * without taking やった回数 down with it. Where the step you have reached belongs is [stepFor], as
  * 第九段 / 十八段のうち.
  */
-fun bestTilesFor(engine: Engine, bests: List<RoutineBest>, timesDone: Int): List<BestTile> {
+fun bestTilesFor(
+    engine: Engine,
+    bests: List<RoutineBest>,
+    timesDone: Int,
+    strings: Strings,
+): List<BestTile> {
     if (timesDone <= 0 && bests.isEmpty()) return emptyList()
     val wanted = when (engine) {
         Engine.FOR_TIME, Engine.FOR_TIME_WITH_REST -> listOf(BestMetric.BEST_TIME)
@@ -149,14 +207,14 @@ fun bestTilesFor(engine: Engine, bests: List<RoutineBest>, timesDone: Int): List
     }
     val tiles = wanted.mapNotNull { metric ->
         val best = bests.firstOrNull { it.metric == metric } ?: return@mapNotNull null
-        val label = bestMetricLabel(metric) ?: return@mapNotNull null
-        BestTile(label, bestValueLabel(metric, best.value))
+        val label = bestMetricLabel(metric, strings) ?: return@mapNotNull null
+        BestTile(label, bestValueLabel(metric, best.value, strings))
     }
     // Fail open: the count stands on its own. A `timesDone` of zero beside stored bests is a
     // disagreement between two reads, and the tile that would announce it says 〇回 — so it is the
     // count that is dropped there, not the records.
     if (timesDone <= 0) return tiles
-    return tiles + BestTile("やった回数", JapaneseDate.kanjiExtended(timesDone) + "回")
+    return tiles + BestTile(strings.gymShared.timesDone, strings.fmt.times(timesDone))
 }
 
 /**
@@ -167,11 +225,11 @@ fun bestTilesFor(engine: Engine, bests: List<RoutineBest>, timesDone: Int): List
  * `bestValueCopy` to a `Bests.kt` this unit does not own — **that function should call these two
  * rather than restate them.**
  */
-fun bestMetricLabel(metric: BestMetric): String? = when (metric) {
-    BestMetric.BEST_TIME -> "最速"
-    BestMetric.MOST_ROUNDS -> "最高巡数"
-    BestMetric.MOST_REPS -> "最高反復"
-    BestMetric.MOST_VOLUME -> "最高負荷"
+fun bestMetricLabel(metric: BestMetric, strings: Strings): String? = when (metric) {
+    BestMetric.BEST_TIME -> strings.gymShared.metricBestTime
+    BestMetric.MOST_ROUNDS -> strings.gymShared.metricMostRounds
+    BestMetric.MOST_REPS -> strings.gymShared.metricMostReps
+    BestMetric.MOST_VOLUME -> strings.gymShared.metricMostVolume
     // No documented copy exists for this one, and `DECISIONS.md` §Q9 forbids inventing any:
     // `04-library-records.md` §6 :1131's tile list has five entries and none of them is a step.
     // :1164's いちばん上 is the *movement ladder's* hardest rung, a different surface. See [bestTilesFor].
@@ -185,12 +243,12 @@ fun bestMetricLabel(metric: BestMetric): String? = when (metric) {
  * 最高負荷 is a **unitless** number by decision (§4, edge case 7) — it is never suffixed 回, because
  * weighted volume is not a rep count and printing it as one would invite adding two of them together.
  */
-fun bestValueLabel(metric: BestMetric, value: Double): String = when (metric) {
-    BestMetric.BEST_TIME -> durationKanjiFromMs(value.toLong())
-    BestMetric.MOST_ROUNDS -> JapaneseDate.kanjiExtended(value.toInt()) + "巡"
-    BestMetric.MOST_REPS -> JapaneseDate.kanjiExtended(value.toInt()) + "回"
-    BestMetric.MOST_VOLUME -> JapaneseDate.kanjiExtended(Math.round(value).toInt())
-    BestMetric.HIGHEST_STEP -> JapaneseDate.kanjiExtended(value.toInt())
+fun bestValueLabel(metric: BestMetric, value: Double, strings: Strings): String = when (metric) {
+    BestMetric.BEST_TIME -> strings.fmt.durationFromMs(value.toLong())
+    BestMetric.MOST_ROUNDS -> strings.fmt.rounds(value.toInt())
+    BestMetric.MOST_REPS -> strings.fmt.reps(value.toInt())
+    BestMetric.MOST_VOLUME -> strings.fmt.count(Math.round(value).toInt())
+    BestMetric.HIGHEST_STEP -> strings.fmt.count(value.toInt())
 }
 
 /**
@@ -228,14 +286,12 @@ data class StepCopy(val line: String, val caption: String)
  * borrowed into a numeral run it was not written for. So the title stands alone, as the paragraph
  * above always promised.
  */
-fun stepFor(state: ProgressionState?): StepCopy? {
+fun stepFor(state: ProgressionState?, strings: Strings): StepCopy? {
     if (state == null) return null
-    val unit = when (state.stepUnit) {
-        StepUnit.STEP -> "段"
-        StepUnit.DAY -> "日"
-    }
+    // The seed's own label wins. It is catalogue data — 第一日..第五日 for `p_armstrong` — and is not
+    // this table's to restate; the synthesised form below is the fallback for a step that has none.
     val title = state.currentStep?.labelJa
-        ?: ("第" + JapaneseDate.kanjiExtended(state.currentStepIndex) + unit)
+        ?: strings.gymShared.stepTitle(strings.fmt.count(state.currentStepIndex), state.stepUnit)
     val sets = state.currentStep?.sets.orEmpty()
     val reps = sets.mapNotNull { it.reps }
     // `size` rather than `isEmpty`: a step that is *partly* numeric is the case that matters, and
@@ -243,7 +299,10 @@ fun stepFor(state: ProgressionState?): StepCopy? {
     val line = if (sets.isEmpty() || reps.size != sets.size) {
         title
     } else {
-        title + " ・ " + reps.joinToString(" ") { JapaneseDate.kanjiExtended(it) }
+        title + strings.fmt.separator + reps.joinToString(" ") { strings.fmt.count(it) }
     }
-    return StepCopy(line = line, caption = JapaneseDate.kanjiExtended(state.stepCount) + unit + "のうち")
+    return StepCopy(
+        line = line,
+        caption = strings.gymShared.stepCaption(strings.fmt.count(state.stepCount), state.stepUnit),
+    )
 }

@@ -81,6 +81,16 @@ interface Formats {
     /** 分 — a minutes value. */
     fun minutes(n: Int): String
 
+    /**
+     * 時間 — hours, as a **counter**.
+     *
+     * Deliberately not reachable through [duration]: `durationKanji` has no hours at all by design
+     * (`Numerals.kt:71-77` — the specs count in minutes, so 6000 seconds is 百分), which makes it the
+     * wrong tool for "23 hours remaining" in Japanese and renders 千三百八十分. This is the counter,
+     * and the only correct way to say a number of hours in either language.
+     */
+    fun hours(n: Int): String
+
     /** 日 — days. */
     fun days(n: Int): String
 
@@ -95,6 +105,34 @@ interface Formats {
 
     /** 回 as *occasions* rather than repetitions: 「これまでの十四回」 / "14 times". */
     fun times(n: Int): String
+
+    /**
+     * Marks an already-formatted value as an estimate: `約 八分` / `~8m`.
+     *
+     * Takes the formatted string rather than a number because what is being estimated varies — it is
+     * minutes on the library card and reps in the builder's live line — and a per-unit variant of
+     * every counter would be twenty functions to express one adverb.
+     *
+     * **Japanese carries a space** (`約 八分`), which is the form `RoutineEstimate` uses and
+     * `LibraryIndexScreenTest` pins. Note `GymStore.kt:2082` composes the same idea *without* the
+     * space; that is a pre-existing inconsistency between two surfaces, and routing both through here
+     * settles it on the spaced form rather than preserving the split.
+     *
+     * There is deliberately no "unbounded" form. `estimateLabel` returns `""` for a routine with no
+     * bound and the caller omits the line, because 約 〇分 is not a duration — that hole is documented
+     * and must stay empty (§L10, and the brief's rule about deliberate holes).
+     */
+    fun approx(formatted: String): String
+
+    /**
+     * Position as a *heading*: `第三` / `3rd`.
+     *
+     * Distinct from [ordinal] — Japanese has two constructions and they are not interchangeable.
+     * 第三 prefixes and introduces ("the third ⟨thing⟩"); 三番目 suffixes and enumerates ("third in
+     * order"). English collapses them, so both return the same thing here; Japanese does not, so both
+     * exist.
+     */
+    fun ordinalPrefix(n: Int): String
 
     // ─── dates and clocks ───────────────────────────────────────────────────────────────────────
 
@@ -112,6 +150,18 @@ interface Formats {
 
     /** `水曜日` / `Wednesday`. */
     fun dayOfWeek(now: LocalDateTime): String
+
+    /**
+     * A month as a **name**, for a heading: `六月` / `June`.
+     *
+     * Emphatically not [months], which is a *count* of them. Japanese spells both `六月`, so the two
+     * are indistinguishable there and using the wrong one is invisible in the language being migrated
+     * away from — and then renders `6 months` where a heading should say `June`. The records grid and
+     * the history pager both hit exactly this.
+     *
+     * @param month 1..12, as `LocalDate.monthValue` gives it.
+     */
+    fun monthName(month: Int): String
 
     /**
      * The seven column headers on the records ink grid, Sunday first.
@@ -181,17 +231,21 @@ internal object JaFormats : Formats {
     override fun stations(n: Int): String = count(n) + "種目"
     override fun seconds(n: Int): String = count(n) + "秒"
     override fun minutes(n: Int): String = count(n) + "分"
+    override fun hours(n: Int): String = count(n) + "時間"
     override fun days(n: Int): String = count(n) + "日"
     override fun months(n: Int): String = count(n) + "月"
     override fun items(n: Int): String = count(n) + "件"
     override fun ordinal(n: Int): String = count(n) + "番目"
     override fun times(n: Int): String = count(n) + "回"
+    override fun approx(formatted: String): String = "約 " + formatted
+    override fun ordinalPrefix(n: Int): String = "第" + count(n)
 
     override fun time(now: LocalDateTime): String = JapaneseDate.time(now)
     override fun reading(now: LocalDateTime): String = JapaneseDate.reading(now)
     override fun era(now: LocalDateTime): String = JapaneseDate.era(now)
     override fun monthDay(now: LocalDateTime): String = JapaneseDate.monthDay(now)
     override fun dayOfWeek(now: LocalDateTime): String = JapaneseDate.dayOfWeek(now)
+    override fun monthName(month: Int): String = count(month) + "月"
     override fun weekdayInitials(): List<String> = JA_WEEKDAYS
     override fun eventTime(at: LocalDateTime): String = JapaneseDate.eventTime(at)
     override fun clockAt(at: LocalDateTime): String = JapaneseDate.clock(at)
@@ -269,10 +323,17 @@ internal object EnFormats : Formats {
     override fun stations(n: Int) = plural(n, "station", "stations")
     override fun seconds(n: Int) = "${n}s"
     override fun minutes(n: Int) = "${n}m"
+    override fun hours(n: Int) = "${n}h"
     override fun days(n: Int) = plural(n, "day", "days")
     override fun months(n: Int) = plural(n, "month", "months")
     override fun items(n: Int) = plural(n, "item", "items")
     override fun times(n: Int) = plural(n, "time", "times")
+
+    // "~" rather than "about": it is one character against two words, and every slot this appears in
+    // is a line the survey flagged as width-constrained.
+    override fun approx(formatted: String) = "~$formatted"
+
+    override fun ordinalPrefix(n: Int) = ordinal(n)
 
     /**
      * `1st` · `2nd` · `3rd` · `4th` · `11th` · `21st`.
@@ -313,6 +374,7 @@ internal object EnFormats : Formats {
 
     override fun monthDay(now: LocalDateTime): String = "${now.dayOfMonth} ${MONTHS[now.monthValue - 1]}"
     override fun dayOfWeek(now: LocalDateTime): String = DAYS[now.dayOfWeek.value % 7]
+    override fun monthName(month: Int): String = MONTHS[(month - 1).coerceIn(0, 11)]
     override fun weekdayInitials(): List<String> = EN_WEEKDAYS
     override fun eventTime(at: LocalDateTime): String = JapaneseDate.clock(at)
     override fun clockAt(at: LocalDateTime): String = JapaneseDate.clock(at)

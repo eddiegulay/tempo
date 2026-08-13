@@ -1,6 +1,7 @@
 package io.eddiegulay.tempo.gym.cue
 
 import io.eddiegulay.tempo.gym.SpeechAvailability
+import io.eddiegulay.tempo.i18n.Lang
 
 /**
  * The three seams [CueEngine] is built on, and the reason it can be tested at all.
@@ -76,6 +77,21 @@ interface SpeechSink {
 
     /** `NoEngine` until the engine has answered. Never a reason not to [prepare]. */
     val availability: SpeechAvailability
+
+    /**
+     * Which language the voice speaks, and therefore which voice is probed for.
+     *
+     * **It must track the UI language, and it must be re-probed when that changes.** The channel used
+     * to probe for `Locale.JAPANESE` and nothing else, which was correct while there was one language
+     * and is a silent failure with two: a phrase resolved from the English table, read out by a
+     * Japanese voice, is unintelligible, and a probe that asks the wrong question answers it
+     * confidently. [availability] therefore means *"a voice for [language]"*, never "a voice".
+     *
+     * Changing it re-probes and, if the answer moved, fires [onAvailabilityChanged] — the same callback
+     * the owner already re-arms on, so a switch that costs the user their voice degrades through the
+     * path §D.6 already specifies rather than through a new one.
+     */
+    fun setLanguage(lang: Lang)
 
     /**
      * Fired on the main thread when the engine answers, and the escape from the deadlock this used to

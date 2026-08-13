@@ -6,7 +6,6 @@ import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
@@ -24,7 +23,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -73,9 +71,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.eddiegulay.tempo.calendar.Loadable
 import io.eddiegulay.tempo.data.GymFault
-import io.eddiegulay.tempo.data.JapaneseDate
 import io.eddiegulay.tempo.data.TempoFault
 import io.eddiegulay.tempo.gym.Engine
+import io.eddiegulay.tempo.gym.EngineRowKind
 import io.eddiegulay.tempo.gym.ExerciseCatalog
 import io.eddiegulay.tempo.gym.GymPreferences
 import io.eddiegulay.tempo.gym.GymRepository
@@ -94,16 +92,23 @@ import io.eddiegulay.tempo.gym.adjacentPatternClashes
 import io.eddiegulay.tempo.gym.canAddStation
 import io.eddiegulay.tempo.gym.canSave
 import io.eddiegulay.tempo.gym.clashCopy
+import io.eddiegulay.tempo.gym.displayName
 import io.eddiegulay.tempo.gym.engineRows
 import io.eddiegulay.tempo.gym.estimateLabel
 import io.eddiegulay.tempo.gym.estimateRoutine
 import io.eddiegulay.tempo.gym.isDirty
+import io.eddiegulay.tempo.gym.label
 import io.eddiegulay.tempo.gym.migrateDraft
 import io.eddiegulay.tempo.gym.moveItem
 import io.eddiegulay.tempo.gym.reorderShift
 import io.eddiegulay.tempo.gym.restOptions
+import io.eddiegulay.tempo.gym.restWheelValueLabel
 import io.eddiegulay.tempo.gym.roundOptions
+import io.eddiegulay.tempo.gym.roundWheelValueLabel
+import io.eddiegulay.tempo.gym.setSecondsLabel
 import io.eddiegulay.tempo.gym.structuralHash
+import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.i18n.Strings
 import io.eddiegulay.tempo.ui.FaultPanel
 import io.eddiegulay.tempo.ui.FaultStrip
 import io.eddiegulay.tempo.ui.HeaderAction
@@ -111,6 +116,8 @@ import io.eddiegulay.tempo.ui.TempoValueWheel
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -258,11 +265,16 @@ internal class BuilderDraftHolder : ViewModel() {
      * The notices are *replaced*, not accumulated. They describe the change the user just made; keeping
      * the previous engine's notice under the new engine's row would be a sentence about a shape that is
      * no longer on screen (`DECISIONS.md` §Q17 — there are exactly two notices and neither is chrome).
+     *
+     * The notices are **resolved strings held in state**, so a language flip between this tap and the
+     * next engine change leaves them in the language they were written in. A deliberate trade: the
+     * alternative holds an enum and re-resolves on every read, which buys correctness for a gesture
+     * nobody makes and adds a second vocabulary of migration outcomes to keep in step with §6's two.
      */
-    fun selectEngine(engine: Engine) {
+    fun selectEngine(engine: Engine, strings: Strings) {
         _state.update { current ->
             if (current == null) return@update current
-            val migration = migrateDraft(current.draft, engine)
+            val migration = migrateDraft(current.draft, engine, strings)
             current.copy(draft = migration.draft, notices = migration.notices)
         }
     }
@@ -389,10 +401,18 @@ internal fun newDraft(prefs: GymPreferences): RoutineDraft = RoutineDraft(
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** 型を作る / 型を編集 — §6's two builder titles, chosen by whether there is a routine behind it. */
-internal fun builderTitle(editingId: String?): String = if (editingId == null) "型を作る" else "型を編集"
+internal fun builderTitle(editingId: String?, strings: Strings): String =
+    if (editingId == null) strings.gymBuilder.titleCreate else strings.gymBuilder.titleEdit
 
-/** 不明な種目 (§6 :1129) — a station whose exercise the catalogue no longer knows still lists. */
-internal const val UNKNOWN_EXERCISE = "不明な種目"
+/**
+ * 不明な種目 (§6 :1129) — a station whose exercise the catalogue no longer knows still lists.
+ *
+ * **A function rather than the `const val` it used to be**, and that is the whole of the change: a
+ * constant is fixed at class-init and cannot be re-resolved when the user flips the language switch
+ * (`.planning/i18n/DECISIONS.md` §L3 makes the same argument about the thirteen label-carrying enums).
+ * It is drawn where an exercise name would be and is never compared against or stored, so it is copy.
+ */
+internal fun unknownExercise(strings: Strings): String = strings.gymBuilder.unknownExercise
 
 /**
  * What a station row shows on its right: 二十回 / 三十秒 / 限界まで.
@@ -406,23 +426,32 @@ internal const val UNKNOWN_EXERCISE = "不明な種目"
  * it), so it renders as nothing rather than 〇回 — the empty string is the honest report of a value
  * that is missing, and 〇回 would be a prescription.
  */
-internal fun stationValueLabel(station: StationDraft): String = when (station.measure) {
-    Measure.REPS -> station.reps?.let { JapaneseDate.kanjiExtended(it) + "回" }.orEmpty()
-    Measure.DURATION -> station.seconds?.let { JapaneseDate.kanjiExtended(it) + "秒" }.orEmpty()
-    Measure.MAX_EFFORT -> Measure.MAX_EFFORT.label
+internal fun stationValueLabel(station: StationDraft, strings: Strings): String = when (station.measure) {
+    Measure.REPS -> station.reps?.let { strings.fmt.reps(it) }.orEmpty()
+    // A prescribed duration is a duration the user *chose*, so it takes the wheel's own form and not
+    // `fmt.duration` — `setSecondsLabel` is where §Q10 and §L7 are stated once for all four surfaces.
+    Measure.DURATION -> station.seconds?.let { setSecondsLabel(it, strings) }.orEmpty()
+    Measure.MAX_EFFORT -> Measure.MAX_EFFORT.label(strings)
 }
 
-/** 「一番目、腕立て伏せ、二十回」 — §3's accessibility line for a station row, verbatim. */
-internal fun stationSemantics(position: Int, name: String, value: String): String =
-    listOf(JapaneseDate.kanji(position + 1) + "番目", name, value)
+/**
+ * 「一番目、腕立て伏せ、二十回」 — §3's accessibility line for a station row, verbatim.
+ *
+ * The ordinal was `JapaneseDate.kanji` here and `kanjiExtended` on the detail page's identical 番目
+ * line; `fmt.ordinal` settles both on the latter, which agrees with the former over every position a
+ * station list can reach (`STATION_CAP` is 24).
+ */
+internal fun stationSemantics(position: Int, name: String, value: String, strings: Strings): String =
+    listOf(strings.fmt.ordinal(position + 1), name, value)
         .filter { it.isNotBlank() }
-        .joinToString("、")
+        .joinToString(strings.fmt.listSeparator)
 
 /** 「腕立て伏せ の並べ替え」 — the handle's own description (§3, accessibility). */
-internal fun handleSemantics(name: String): String = "$name の並べ替え"
+internal fun handleSemantics(name: String, strings: Strings): String = strings.gymBuilder.reorderHandle(name)
 
 /** 「三番目に移動しました」 — announced on drop, and on a TalkBack move action (§3, accessibility). */
-internal fun moveAnnouncement(position: Int): String = JapaneseDate.kanji(position + 1) + "番目に移動しました"
+internal fun moveAnnouncement(position: Int, strings: Strings): String =
+    strings.gymBuilder.movedTo(strings.fmt.ordinal(position + 1))
 
 /**
  * 「三番目に移動しました、腕立て伏せ と ディップス は続けて置かない方がよい」 — the move, and the clash it
@@ -438,8 +467,8 @@ internal fun moveAnnouncement(position: Int): String = JapaneseDate.kanji(positi
  * Joined with 、 — [stationSemantics]' own separator, so nothing new is worded. Null warning means the
  * move alone, which is what a reorder into clean order should say.
  */
-internal fun moveAnnouncementWith(position: Int, warning: String?): String =
-    listOfNotNull(moveAnnouncement(position), warning).joinToString("、")
+internal fun moveAnnouncementWith(position: Int, warning: String?, strings: Strings): String =
+    listOfNotNull(moveAnnouncement(position, strings), warning).joinToString(strings.fmt.listSeparator)
 
 /**
  * 「これまでの六回の記録はそのまま残ります」 — §3 edge case 8, shown when the routine has history **and**
@@ -449,9 +478,9 @@ internal fun moveAnnouncementWith(position: Int, warning: String?): String =
  * in the title writes a new version of nothing and must not raise a line about records surviving. Null
  * when the line is not owed, so the caller has nothing to decide.
  */
-internal fun historySafeLine(sessions: Int, structureDirty: Boolean): String? =
+internal fun historySafeLine(sessions: Int, structureDirty: Boolean, strings: Strings): String? =
     if (sessions > 0 && structureDirty) {
-        "これまでの" + JapaneseDate.kanjiExtended(sessions) + "回の記録はそのまま残ります"
+        strings.gymBuilder.historySafe(strings.fmt.times(sessions))
     } else {
         null
     }
@@ -469,7 +498,8 @@ internal fun duplicateName(name: String, routineId: String?, library: List<Routi
 }
 
 /** 「保存、名前と種目が要ります」 — §3's rule that a disabled word always says why. */
-internal fun saveSemantics(canSave: Boolean): String = if (canSave) "保存" else "保存、名前と種目が要ります"
+internal fun saveSemantics(canSave: Boolean, strings: Strings): String =
+    if (canSave) strings.gymBuilder.save else strings.gymBuilder.saveBlocked
 
 /**
  * What the 保存 action *announces*, which is not always what [saveSemantics] alone would say.
@@ -480,8 +510,8 @@ internal fun saveSemantics(canSave: Boolean): String = if (canSave) "保存" els
  * is that a disabled word says why, not that it says something. 保存中 is the label already on screen
  * and is the honest reason; no new copy.
  */
-internal fun saveDescription(saving: Boolean, canSave: Boolean): String =
-    if (saving) "保存中" else saveSemantics(canSave)
+internal fun saveDescription(saving: Boolean, canSave: Boolean, strings: Strings): String =
+    if (saving) strings.gymBuilder.saving else saveSemantics(canSave, strings)
 
 /**
  * Whether an edit's read failure owes the **full-page** `FaultPanel`.
@@ -566,11 +596,13 @@ internal fun stationWarnings(
     draft: RoutineDraft,
     pattern: (String) -> Pattern?,
     name: (String) -> String,
+    strings: Strings,
 ): Map<Int, String> = adjacentPatternClashes(draft, pattern)
     .associate { clash ->
         clash.secondIndex to clashCopy(
             name(draft.stations[clash.firstIndex].exerciseId),
             name(draft.stations[clash.secondIndex].exerciseId),
+            strings,
         )
     }
 
@@ -605,28 +637,14 @@ internal fun mergedWheelOptions(
         (options + WheelOption(selected, labelFor(selected))).sortedBy { it.value }
     }
 
-/**
- * The four wheel labels, in one block because `DECISIONS.md` §Q10 is one rule.
- *
- * A duration the user **chose** renders as the value they chose — bare seconds, `なし` at zero (§6
- * :1141's own word; 〇秒 would be a prescription of nothing) — and a count renders in kanji with its
- * counter. These are the forms `restOptions`, `secondOptions`, `repOptions` and `roundOptions` already
- * build their own rows with; they exist here only so [mergedWheelOptions] can label the one row those
- * lists do not contain, and they are duplicated rather than shared because `gym/BuilderDraft.kt` keeps
- * its label private and belongs to another unit. If they are ever unified, unify onto §Q10's sentence
- * and not onto `durationKanji`.
+/*
+ * The four wheel labels used to live here as a second copy of `gym/BuilderDraft.kt`'s, because the two
+ * files belonged to two units and §Q10 was enforced by twin tests rather than by the compiler. Both
+ * copies' KDoc said what to do the day one unit owned both — "unify onto §Q10's sentence and not onto
+ * `durationKanji`" — and that is done: `restWheelValueLabel`, `secondWheelValueLabel`,
+ * `repWheelValueLabel` and `roundWheelValueLabel` are now `BuilderDraft`'s, beside the option lists
+ * they label, and are imported here for [mergedWheelOptions]' benefit.
  */
-internal fun restWheelValueLabel(seconds: Int): String =
-    if (seconds <= 0) "なし" else JapaneseDate.kanjiExtended(seconds) + "秒"
-
-/** 三十秒 — 秒数's wheel has no zero (a zero-second station is not a station), so no なし branch. */
-internal fun secondWheelValueLabel(seconds: Int): String = JapaneseDate.kanjiExtended(seconds) + "秒"
-
-/** 二百回 — 回数's counter. */
-internal fun repWheelValueLabel(reps: Int): String = JapaneseDate.kanjiExtended(reps) + "回"
-
-/** 三十巡 — 巡数's counter. */
-internal fun roundWheelValueLabel(rounds: Int): String = JapaneseDate.kanjiExtended(rounds) + "巡"
 
 /**
  * The engines the 方式 row offers, in §3's mock order — 巡回 段階 毎分 毎分増 完走 時間内 — **plus
@@ -655,12 +673,41 @@ internal val ENGINE_CHOICES = listOf(
 private val STATION_ROW_HEIGHT = 56.dp
 
 /** Which `PickerRow` is unfolded. Exactly one, ever — §3's `WheelOpen` state. */
-private enum class BuilderRow { Engine, StationRest, RoundRest, Rounds }
+internal enum class BuilderRow { Engine, StationRest, RoundRest, Rounds }
 
-/** §3's own row labels, and the labels `engineRows` already spells for the detail page. */
-private const val ROW_STATION_REST = "種目の間の休息"
-private const val ROW_ROUND_REST = "巡の間の休息"
-private const val ROW_ROUNDS = "巡数"
+/**
+ * Which wheel an engine row unfolds into, or **null** for a row the builder can only state.
+ *
+ * **This used to be a `when` on `EngineRow.label` against three Japanese `private const val`s**, and it
+ * is separated out here because that made it the one piece of this page that a JVM test could not
+ * reach. It worked exactly as long as the app had one language: `engineRows` spells the labels, this
+ * page re-declared the same three literals, and equality held. Translate `engineRows` and all three
+ * arms stop matching — 種目の間の休息, 巡の間の休息 and 巡数 fall through to the `else`, the builder's
+ * three dialable settings silently become read-only lines, and **nothing** says so. No compile error,
+ * no exception, no failing test, and a user who cannot reach the rest wheels has no way to tell that
+ * the page is broken rather than simply that shape.
+ *
+ * `EngineRowKind` is the stable discriminator (`gym/EngineRows.kt`) and this `when` over it is
+ * exhaustive, so a fifth row cannot be added without an answer here. `BuilderScreenTest` pins the
+ * result against **both** tables — the assertion the old code could not have carried, because the old
+ * code's correctness was a property of the copy.
+ *
+ * `BuilderRow.Engine` is never returned: 方式 is not one of `engineRows`' rows, it is the picker above
+ * them. It shares the enum because only one row on the page is unfolded at a time.
+ */
+internal fun builderRowControl(kind: EngineRowKind, engine: Engine): BuilderRow? = when (kind) {
+    EngineRowKind.REST_BETWEEN_STATIONS -> BuilderRow.StationRest
+    EngineRowKind.REST_BETWEEN_ROUNDS -> BuilderRow.RoundRest
+    // 巡数 is a wheel only where it is a number. 時間内 answers it with 時間内で — "as many as fit" is
+    // not a value on a wheel — and reads out as the row `engineRows` wrote.
+    EngineRowKind.ROUNDS -> if (engine == Engine.AMRAP) null else BuilderRow.Rounds
+    // 制限時間. **There is no wheel for it**: §3 edge case 11 lists the ranges for the station rest, the
+    // round rest, 巡数, 回数 and 秒数 and gives none for a time cap, and inventing one would be
+    // inventing numbers. Every AMRAP authored here therefore carries `migrateDraft`'s documented 二十分
+    // default and the row states it. Reported — it needs a range in §3 before it can be dialled,
+    // exactly as 毎分's window needed a name it never got (`DECISIONS.md` §Q16).
+    EngineRowKind.TIME_CAP -> null
+}
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The page
@@ -681,6 +728,7 @@ private const val ROW_ROUNDS = "巡数"
 @Composable
 fun BuilderScreen(gym: GymViewModel, editingId: String?, modifier: Modifier = Modifier) {
     val holder: BuilderDraftHolder = viewModel()
+    val s = LocalStrings.current
     val prefs by gym.prefs.collectAsStateWithLifecycle()
 
     // Seeded synchronously, before the state is read, so 作る never flashes a 読み込み中 it does not
@@ -731,7 +779,7 @@ fun BuilderScreen(gym: GymViewModel, editingId: String?, modifier: Modifier = Mo
     // so the page takes `statusBarsPadding` itself rather than borrowing the player's 12.dp offset.
     Column(modifier.fillMaxSize().statusBarsPadding()) {
         BuilderHeader(
-            title = builderTitle(editingId),
+            title = builderTitle(editingId, s),
             saving = ready?.saving == true,
             canSave = ready != null && canSave(ready.draft, ready.saving, ready.loaded),
             onCancel = leave,
@@ -798,6 +846,7 @@ private fun BuilderHeader(
     onSave: () -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -812,17 +861,17 @@ private fun BuilderHeader(
         )
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             HeaderAction(
-                label = "やめる",
-                description = "やめる",
+                label = s.gymBuilder.cancel,
+                description = s.gymBuilder.cancel,
                 color = c.inkFaint,
                 enabled = !saving,
                 onClick = onCancel,
             )
             HeaderAction(
-                label = if (saving) "保存中" else "保存",
+                label = if (saving) s.gymBuilder.saving else s.gymBuilder.save,
                 // Not `saveSemantics(canSave)` alone: `canSave` is false for the whole `Saving` state,
                 // and 「名前と種目が要ります」 while the write is in flight is a reason that is untrue.
-                description = saveDescription(saving, canSave),
+                description = saveDescription(saving, canSave, s),
                 color = if (canSave) c.accent else c.inkFaint,
                 enabled = canSave,
                 onClick = onSave,
@@ -854,6 +903,7 @@ private fun BuilderBody(
     onPickStation: (Int?) -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val draft = state.draft
     val scroll = rememberScrollState()
 
@@ -862,14 +912,19 @@ private fun BuilderBody(
         expanded = if (expanded == row) null else row
     }
 
-    val name: (String) -> String = { id -> ExerciseCatalog.byId(id)?.nameJa ?: UNKNOWN_EXERCISE }
+    // A **drawn** name, so it is resolved per language (`gym/CatalogDisplay.kt`): the catalogue's own
+    // `name_en` column has been correctly seeded since schema v1 and was simply never read. Deliberately
+    // not applied to `draftOf`, which seeds the editable name field, or to `duplicateName`, which
+    // compares against stored names — both consume a name as *data*, and translating either writes
+    // English into the user's own rows.
+    val name: (String) -> String = { id -> ExerciseCatalog.byId(id)?.displayName(s) ?: unknownExercise(s) }
     // Named argument, not a trailing lambda: the last parameter of `estimateRoutine` is
     // `maxEffortSeconds`, so a trailing lambda would silently pass the catalogue as the median-history
     // lookup and leave every station unresolved.
     val estimate = remember(draft) { estimateRoutine(draft, exercise = { ExerciseCatalog.byId(it) }) }
-    val estimateLine = remember(draft.engine, estimate) { estimateLabel(draft.engine, estimate) }
+    val estimateLine = remember(draft.engine, estimate, s) { estimateLabel(draft.engine, estimate, s) }
     val pattern: (String) -> Pattern? = { id -> ExerciseCatalog.byId(id)?.pattern }
-    val warnings = remember(draft) { stationWarnings(draft, pattern = pattern, name = name) }
+    val warnings = remember(draft, s) { stationWarnings(draft, pattern = pattern, name = name, strings = s) }
     // The clash map the routine *would* have after a move, asked before the move is announced. The
     // announcer speaks once per gesture and it has to speak about the order the user just made, not the
     // one they left — see [moveAnnouncementWith].
@@ -878,22 +933,28 @@ private fun BuilderBody(
             draft.copy(stations = moveItem(draft.stations, from, to)),
             pattern = pattern,
             name = name,
+            strings = s,
         )
     }
-    val rows = remember(draft) {
+    val rows = remember(draft, s) {
         engineRows(
             engine = draft.engine,
             rounds = draft.rounds,
             timeCapSeconds = draft.timeCapSeconds,
             restBetweenStations = draft.restBetweenStations,
             restBetweenRounds = draft.restBetweenRounds,
+            strings = s,
         )
     }
     val collides = remember(draft.name, draft.routineId, library) {
         duplicateName(draft.name, draft.routineId, library)
     }
-    val historyLine = remember(sessions, draft, state.original) {
-        historySafeLine(sessions, state.original != null && structuralHash(draft) != structuralHash(state.original))
+    val historyLine = remember(sessions, draft, state.original, s) {
+        historySafeLine(
+            sessions,
+            state.original != null && structuralHash(draft) != structuralHash(state.original),
+            s,
+        )
     }
 
     var viewportTop by remember { mutableStateOf(0f) }
@@ -937,18 +998,18 @@ private fun BuilderBody(
         }
         if (collides) {
             // Warns, never blocks: two routines called 朝の五分 are the user's business (§3 edge 4).
-            NoticeLine("同じ名前の型があります")
+            NoticeLine(s.gymBuilder.duplicateName)
         }
 
         EnginePickerRow(
             engine = draft.engine,
             expanded = expanded == BuilderRow.Engine,
             onToggle = { toggle(BuilderRow.Engine) },
-            onSelect = holder::selectEngine,
+            onSelect = { engine -> holder.selectEngine(engine, s) },
         )
         state.notices.forEach { NoticeLine(it) }
 
-        FieldLabel("種目")
+        FieldLabel(s.gymBuilder.fieldStations)
         StationList(
             draft = draft,
             warnings = warnings,
@@ -963,14 +1024,16 @@ private fun BuilderBody(
         )
         AddStationRow(enabled = canAddStation(draft)) { onPickStation(null) }
 
+        // **Dispatched on `row.kind`, never on `row.label`** — [builderRowControl] carries the whole
+        // argument, and the labels themselves are only ever drawn.
         rows.forEach { row ->
-            when (row.label) {
-                ROW_STATION_REST -> WheelRow(
+            when (builderRowControl(row.kind, draft.engine)) {
+                BuilderRow.StationRest -> WheelRow(
                     label = row.label,
                     value = row.value,
-                    options = restOptions(RestSlot.BETWEEN_STATIONS),
+                    options = restOptions(RestSlot.BETWEEN_STATIONS, s),
                     selected = draft.restBetweenStations,
-                    labelFor = ::restWheelValueLabel,
+                    labelFor = { restWheelValueLabel(it, s) },
                     expanded = expanded == BuilderRow.StationRest,
                     onToggle = { toggle(BuilderRow.StationRest) },
                     onSelect = { seconds -> holder.edit { it.copy(restBetweenStations = seconds) } },
@@ -978,41 +1041,32 @@ private fun BuilderBody(
 
                 // The round rest steps by 15 and タバタ rests 10, so this wheel in particular is opened
                 // on a value it does not contain — [mergedWheelOptions] is what keeps it (`§Q21`).
-                ROW_ROUND_REST -> WheelRow(
+                BuilderRow.RoundRest -> WheelRow(
                     label = row.label,
                     value = row.value,
-                    options = restOptions(RestSlot.BETWEEN_ROUNDS),
+                    options = restOptions(RestSlot.BETWEEN_ROUNDS, s),
                     selected = draft.restBetweenRounds,
-                    labelFor = ::restWheelValueLabel,
+                    labelFor = { restWheelValueLabel(it, s) },
                     expanded = expanded == BuilderRow.RoundRest,
                     onToggle = { toggle(BuilderRow.RoundRest) },
                     onSelect = { seconds -> holder.edit { it.copy(restBetweenRounds = seconds) } },
                 )
 
-                // 巡数 is a wheel only where it is a number. 時間内 answers it with 時間内で — "as many
-                // as fit" is not a value on a wheel — and reads out as the row `engineRows` wrote.
-                ROW_ROUNDS -> if (draft.engine == Engine.AMRAP) {
-                    ReadOnlyRow(row.label, row.value)
-                } else {
-                    WheelRow(
-                        label = row.label,
-                        value = row.value,
-                        options = roundOptions(),
-                        selected = draft.rounds ?: 1,
-                        labelFor = ::roundWheelValueLabel,
-                        expanded = expanded == BuilderRow.Rounds,
-                        onToggle = { toggle(BuilderRow.Rounds) },
-                        onSelect = { rounds -> holder.edit { it.copy(rounds = rounds) } },
-                    )
-                }
+                BuilderRow.Rounds -> WheelRow(
+                    label = row.label,
+                    value = row.value,
+                    options = roundOptions(s),
+                    selected = draft.rounds ?: 1,
+                    labelFor = { roundWheelValueLabel(it, s) },
+                    expanded = expanded == BuilderRow.Rounds,
+                    onToggle = { toggle(BuilderRow.Rounds) },
+                    onSelect = { rounds -> holder.edit { it.copy(rounds = rounds) } },
+                )
 
-                // 制限時間, and nothing else reaches here. **There is no wheel for it**: §3 edge case 11
-                // lists the ranges for the station rest, the round rest, 巡数, 回数 and 秒数 and gives
-                // none for a time cap, and inventing one would be inventing numbers. Every AMRAP
-                // authored here therefore carries `migrateDraft`'s documented 二十分 default and the row
-                // states it. Reported — it needs a range in §3 before it can be dialled, exactly as
-                // 毎分's window needed a name it never got (`DECISIONS.md` §Q16).
-                else -> ReadOnlyRow(row.label, row.value)
+                // 制限時間, and AMRAP's 巡数 / 時間内で. Not greyed and not hidden: both are true
+                // statements about the routine, and hiding them would leave the estimate below claiming
+                // a duration with nothing on the page to account for it.
+                BuilderRow.Engine, null -> ReadOnlyRow(row.label, row.value)
             }
         }
 
@@ -1037,6 +1091,7 @@ private fun BuilderBody(
 @Composable
 private fun NameField(value: String, autoFocus: Boolean, onChange: (String) -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val focusRequester = remember { FocusRequester() }
     // Straight into typing on a new routine; on an edit the user came to change something specific,
     // and a keyboard in their face is presumptuous (§3's two `Ready` states, and the composer's
@@ -1049,7 +1104,7 @@ private fun NameField(value: String, autoFocus: Boolean, onChange: (String) -> U
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
-            text = "名前",
+            text = s.gymBuilder.fieldName,
             style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 3.sp, color = c.inkFaint),
         )
         BasicTextField(
@@ -1061,7 +1116,7 @@ private fun NameField(value: String, autoFocus: Boolean, onChange: (String) -> U
             modifier = Modifier
                 .weight(1f)
                 .focusRequester(focusRequester)
-                .semantics { contentDescription = "名前" },
+                .semantics { contentDescription = s.gymBuilder.fieldName },
             decorationBox = { inner ->
                 Column {
                     // No placeholder word. §6 carries none for this field, and the composer's 題名 is a
@@ -1089,23 +1144,26 @@ private fun EnginePickerRow(
     onSelect: (Engine) -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Column(Modifier.fillMaxWidth().animateContentSize(tween(220, easing = LinearOutSlowInEasing))) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .sizeIn(minHeight = 48.dp)
-                .clickable(onClick = onToggle)
-                .semantics { role = Role.Button; contentDescription = "方式、${engine.label}" }
+                .pressable(TempoShapes.Row, role = Role.Button, onClick = onToggle)
+                .semantics {
+                    contentDescription = s.gymBuilder.fieldEngine + s.fmt.listSeparator + engine.label(s)
+                }
                 .padding(vertical = 14.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "方式",
+                text = s.gymBuilder.fieldEngine,
                 style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 3.sp, color = c.inkFaint),
             )
             Text(
-                text = engine.label,
+                text = engine.label(s),
                 style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, color = c.ink),
             )
         }
@@ -1118,18 +1176,21 @@ private fun EnginePickerRow(
                     val selected = choice == engine
                     Box(
                         modifier = Modifier
-                            .sizeIn(minHeight = 48.dp)
-                            .clickable { onSelect(choice) }
+                            // 素 is two glyphs — 26.dp of label in a row of chips scrolled sideways
+                            // under a thumb. `minWidth` grows the target into the 10.dp gutter on
+                            // either side without moving the word, exactly as the notification
+                            // screen's inline actions do.
+                            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                            .pressable(TempoShapes.Word, role = Role.RadioButton) { onSelect(choice) }
                             .semantics {
-                                role = Role.RadioButton
-                                contentDescription = choice.label
-                                if (selected) stateDescription = "選択中"
+                                contentDescription = choice.label(s)
+                                if (selected) stateDescription = s.gymBuilder.selected
                             }
                             .padding(horizontal = 10.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = choice.label,
+                            text = choice.label(s),
                             style = TextStyle(
                                 fontFamily = Mincho,
                                 fontSize = 13.sp,
@@ -1178,11 +1239,12 @@ private fun StationList(
     onMove: (Int, Int) -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val stations = draft.stations
     if (stations.isEmpty()) {
         // §3's `EmptyStations`: the list box is **absent**, not an empty card, and ＋ 加える sits
         // directly under the heading with the one sentence that says what to do.
-        NoticeLine("種目を加えてください")
+        NoticeLine(s.gymBuilder.emptyStations)
         return
     }
 
@@ -1216,7 +1278,7 @@ private fun StationList(
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(TempoShapes.Card)
             .background(c.card)
             .onGloballyPositioned { listTop = it.boundsInWindow().top }
             .animateContentSize(tween(160, easing = LinearOutSlowInEasing)),
@@ -1226,7 +1288,7 @@ private fun StationList(
             StationRow(
                 position = index,
                 label = name(station.exerciseId),
-                value = stationValueLabel(station),
+                value = stationValueLabel(station, s),
                 // 段階では一種目だけ使われます — the extras are kept and greyed, and the notice above is
                 // the only thing that says why (`migrateDraft`, §3 edge case 5).
                 dimmed = draft.engine == Engine.FIXED_SETS && index > 0,
@@ -1246,13 +1308,13 @@ private fun StationList(
                     val target = index - 1
                     val clash = warningsAfterMove(index, target)[target]
                     onMove(index, target)
-                    announcement = moveAnnouncementWith(target, clash)
+                    announcement = moveAnnouncementWith(target, clash, s)
                 },
                 onMoveDown = {
                     val target = index + 1
                     val clash = warningsAfterMove(index, target)[target]
                     onMove(index, target)
-                    announcement = moveAnnouncementWith(target, clash)
+                    announcement = moveAnnouncementWith(target, clash, s)
                 },
                 onDragStart = {
                     dragFrom = index
@@ -1269,7 +1331,7 @@ private fun StationList(
                         if (target != start) {
                             val clash = warningsAfterMove(start, target)[target]
                             onMove(start, target)
-                            announcement = moveAnnouncementWith(target, clash)
+                            announcement = moveAnnouncementWith(target, clash, s)
                         }
                     }
                     dragFrom = null
@@ -1320,7 +1382,8 @@ private fun StationRow(
     onDragCancel: () -> Unit,
 ) {
     val c = LocalTempoColors.current
-    val description = stationSemantics(position, label, value)
+    val s = LocalStrings.current
+    val description = stationSemantics(position, label, value, s)
     // **The gesture block outlives the lambdas it was given.** `pointerInput` restarts only when its
     // key changes, so the `detectDragGesturesAfterLongPress` running during a drag is the one composed
     // *before* the drag started — and the callbacks it captured are that composition's. `onDrop` reads
@@ -1332,10 +1395,10 @@ private fun StationRow(
     val dropAt by rememberUpdatedState(onDrop)
     val cancelDrag by rememberUpdatedState(onDragCancel)
     val actions = buildList {
-        if (canMoveUp) add(CustomAccessibilityAction("上へ動かす") { onMoveUp(); true })
-        if (canMoveDown) add(CustomAccessibilityAction("下へ動かす") { onMoveDown(); true })
-        add(CustomAccessibilityAction("編集") { onEdit(); true })
-        add(CustomAccessibilityAction("削除") { onRemove(); true })
+        if (canMoveUp) add(CustomAccessibilityAction(s.gymBuilder.actionMoveUp) { onMoveUp(); true })
+        if (canMoveDown) add(CustomAccessibilityAction(s.gymBuilder.actionMoveDown) { onMoveDown(); true })
+        add(CustomAccessibilityAction(s.gymBuilder.actionEdit) { onEdit(); true })
+        add(CustomAccessibilityAction(s.gymBuilder.actionDelete) { onRemove(); true })
     }
 
     Row(
@@ -1351,7 +1414,9 @@ private fun StationRow(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .clickable(onClick = onEdit)
+                // The row's own corner, not the card's: this is one station inside the list, and a
+                // wash carrying the container's 18.dp would round away from the handle beside it.
+                .pressable(TempoShapes.Row, onClick = onEdit)
                 .clearAndSetSemantics {
                     contentDescription = description
                     role = Role.Button
@@ -1398,8 +1463,8 @@ private fun StationRow(
                     )
                 }
                 .semantics {
-                    contentDescription = handleSemantics(label)
-                    if (dragging) stateDescription = "移動中"
+                    contentDescription = handleSemantics(label, s)
+                    if (dragging) stateDescription = s.gymBuilder.dragging
                 },
             contentAlignment = Alignment.Center,
         ) {
@@ -1441,18 +1506,19 @@ private fun MoveAnnouncer(announcement: String) {
 @Composable
 private fun AddStationRow(enabled: Boolean, onClick: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Column(Modifier.fillMaxWidth()) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .sizeIn(minHeight = 48.dp)
-                .clickable(enabled = enabled, onClick = onClick)
-                .semantics { role = Role.Button; contentDescription = "＋ 加える" }
+                .pressable(TempoShapes.Word, enabled = enabled, role = Role.Button, onClick = onClick)
+                .semantics { contentDescription = s.gymBuilder.addStation }
                 .padding(vertical = 12.dp),
             contentAlignment = Alignment.CenterEnd,
         ) {
             Text(
-                text = "＋ 加える",
+                text = s.gymBuilder.addStation,
                 style = TextStyle(
                     fontFamily = Mincho,
                     fontSize = 14.sp,
@@ -1461,7 +1527,7 @@ private fun AddStationRow(enabled: Boolean, onClick: () -> Unit) {
                 ),
             )
         }
-        if (!enabled) NoticeLine("これ以上は加えられません")
+        if (!enabled) NoticeLine(s.gymBuilder.stationCapReached)
     }
 }
 
@@ -1497,6 +1563,7 @@ private fun WheelRow(
     onSelect: (Int) -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val merged = remember(options, selected) { mergedWheelOptions(options, selected, labelFor) }
     val values = remember(merged) { merged.map { it.value } }
     val labels = remember(merged) { merged.associate { it.value to it.label } }
@@ -1506,8 +1573,8 @@ private fun WheelRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .sizeIn(minHeight = 48.dp)
-                .clickable(onClick = onToggle)
-                .semantics { role = Role.Button; contentDescription = "$label、$value" }
+                .pressable(TempoShapes.Row, role = Role.Button, onClick = onToggle)
+                .semantics { contentDescription = label + s.fmt.listSeparator + value }
                 .padding(vertical = 14.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
@@ -1546,11 +1613,12 @@ private fun WheelRow(
 @Composable
 private fun ReadOnlyRow(label: String, value: String) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 48.dp)
-            .clearAndSetSemantics { contentDescription = "$label、$value" }
+            .clearAndSetSemantics { contentDescription = label + s.fmt.listSeparator + value }
             .padding(vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -1627,9 +1695,10 @@ private fun WarningLine(text: String) {
 @Composable
 private fun BuilderLoadingState() {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
-            text = "読み込み中",
+            text = s.gymBuilder.loading,
             style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
         )
     }
@@ -1645,15 +1714,19 @@ private fun BuilderLoadingState() {
 @Composable
 private fun DiscardDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = c.bgSolid,
         title = {
-            Text(text = "編集をやめますか", style = TextStyle(fontFamily = Mincho, fontSize = 22.sp, color = c.ink))
+            Text(
+                text = s.gymBuilder.discardTitle,
+                style = TextStyle(fontFamily = Mincho, fontSize = 22.sp, color = c.ink),
+            )
         },
         text = {
             Text(
-                text = "保存していない変更は消えます。",
+                text = s.gymBuilder.discardBody,
                 style = TextStyle(
                     fontFamily = Mincho,
                     fontSize = 14.sp,
@@ -1665,12 +1738,12 @@ private fun DiscardDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("やめる", style = TextStyle(fontFamily = Mincho, color = c.accent))
+                Text(s.gymBuilder.cancel, style = TextStyle(fontFamily = Mincho, color = c.accent))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("もどる", style = TextStyle(fontFamily = Mincho, color = c.inkFaint))
+                Text(s.gymBuilder.discardBack, style = TextStyle(fontFamily = Mincho, color = c.inkFaint))
             }
         },
     )

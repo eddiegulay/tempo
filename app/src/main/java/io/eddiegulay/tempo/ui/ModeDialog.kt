@@ -1,7 +1,6 @@
 package io.eddiegulay.tempo.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +25,8 @@ import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 
 /**
  * The one door out of the launcher: 集中 (the landscape clock) or 鍛錬 (the gym).
@@ -100,10 +101,12 @@ private fun ModeRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            // clickable merges the pair into one node: a title and its gloss announced separately read
+            // pressable merges the pair into one node: a title and its gloss announced separately read
             // as two orphan fragments. The label is the mode's own name, so the action is spoken as
-            // "double tap to 集中" rather than "activate".
-            .clickable(onClickLabel = title, role = Role.Button, onClick = onClick)
+            // "double tap to 集中" rather than "activate". The row shape is the dialog's too — the two
+            // rows are divided by a hairline, so the wash rounds inside it rather than butting against
+            // it, and a gate into a whole mode should not feel like a switch snapping over.
+            .pressable(TempoShapes.Row, onClickLabel = title, role = Role.Button, onClick = onClick)
             .heightIn(min = 56.dp)
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,

@@ -1,5 +1,6 @@
 package io.eddiegulay.tempo.gym
 
+import io.eddiegulay.tempo.i18n.StringsJa
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -114,7 +115,7 @@ class PatternWarningTest {
     fun `the warning is design §6's sentence, verbatim`() {
         assertEquals(
             "腕立て伏せ と ディップス は続けて置かない方がよい",
-            clashCopy("腕立て伏せ", "ディップス"),
+            clashCopy("腕立て伏せ", "ディップス", StringsJa),
         )
     }
 

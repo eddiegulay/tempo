@@ -11,8 +11,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -38,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -58,11 +60,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.eddiegulay.tempo.gym.Phase
 import io.eddiegulay.tempo.gym.session.RestKind
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.Enso
 import io.eddiegulay.tempo.ui.faultCopy
 import io.eddiegulay.tempo.ui.theme.Gothic
+import io.eddiegulay.tempo.ui.theme.InkPressIndication
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 
 /*
  * The live half of the session player: which of the five pages is on screen, and the chrome all of
@@ -335,16 +341,23 @@ internal fun PlayerFrame(
             // failed write on a live screen: one accent line rather than a dialog, stated where it
             // happened, dismissed by touching it. There is no もう一度 because the only retry the host
             // exposes is for a finish, which surfaces on the quit sheet instead.
-            val message = faultCopy(fault).message
+            val message = faultCopy(fault, LocalStrings.current).message
             Text(
                 text = message,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = actions::onDismissFault)
-                    .padding(horizontal = 22.dp, vertical = 8.dp)
+                    // The line was a full-bleed strip 34.dp tall — under the 48.dp floor, and its
+                    // press would have washed corner to corner across the screen. The outer 16.dp
+                    // inset makes it an object with edges; the 22.dp the mock asks for between the
+                    // screen and the sentence is the two paddings together, so the text has not moved.
+                    .padding(horizontal = 16.dp)
+                    // A bare accent sentence with no fill and no border, so it takes the lozenge —
+                    // `Word` resolves 50% against the shorter side, which on a full-width line is a
+                    // long capsule rather than a circle.
+                    .playerPressable(TempoShapes.Word, role = Role.Button) { actions.onDismissFault() }
+                    .padding(horizontal = 6.dp, vertical = 16.dp)
                     .semantics {
                         contentDescription = message
-                        role = Role.Button
                         liveRegion = LiveRegionMode.Polite
                     },
                 textAlign = TextAlign.Center,
@@ -496,16 +509,62 @@ internal fun PlayerSheet(
 
 private const val SHEET_MS = 240
 
+/**
+ * [pressable], with the ink laid on **twice** — the player's press, and the only place in Tempo that
+ * asks for more than the house one.
+ *
+ * `InkPress`'s alpha is tuned for a launcher held still in one hand and read at rest: half of
+ * Material's press layer, "findable by a finger that is already on the glass". This screen is the one
+ * that is read under physical effort — a thumb that is sweaty, a phone propped against a water bottle
+ * at arm's length, and a control that must confirm it took the tap before the user commits to the next
+ * rep. At the house alpha a ┃┃ that registered and a ┃┃ that missed look the same from a metre away.
+ *
+ * Two [InkPressIndication]s over one shared [MutableInteractionSource] give the same wash, the same
+ * shape and the same asymmetric timing, composited over itself: ~0.116 on Paper against 0.06, which
+ * lands just above Material's own 0.10–0.12 and is still the house gesture rather than a new one. The
+ * alternative — a second alpha constant in `InkPress` — would have put a "player" special case in a
+ * file whose whole argument is that there is one press, and every other screen would have had to learn
+ * to ignore it.
+ *
+ * *Rejected* — scaling the control on press, or swapping its colour. Both are motions this app does
+ * not make anywhere else, and §A's layout-stability rule forbids anything in this frame changing size.
+ */
+@Composable
+internal fun Modifier.playerPressable(
+    shape: Shape,
+    enabled: Boolean = true,
+    onClickLabel: String? = null,
+    role: Role? = null,
+    onClick: () -> Unit,
+): Modifier {
+    val source = remember { MutableInteractionSource() }
+    return this
+        .indication(source, InkPressIndication(shape))
+        .pressable(
+            shape = shape,
+            enabled = enabled,
+            onClickLabel = onClickLabel,
+            role = role,
+            interactionSource = source,
+            onClick = onClick,
+        )
+}
+
 /** ✕ — 48.dp target at start 16 / top 12, `c.inkSoft`. One way out of the player, on every page. */
 @Composable
 private fun QuitGlyph(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
+    val label = LocalStrings.current.gymSession.quitGlyphAction
     Box(
         modifier = modifier
             .size(48.dp)
-            .clickable(onClick = onClick)
+            // `Glyph` and not `Word`: ✕ sits at the *start* of its 48.dp box (the target reaches
+            // right, into dead space, so the glyph itself stays on the 16.dp margin the mock draws),
+            // and a capsule around an off-centre mark reads as a mis-drawn button. The squircle reads
+            // as the target it is.
+            .playerPressable(TempoShapes.Glyph, onClick = onClick)
             .clearAndSetSemantics {
-                contentDescription = "鍛錬を終える"
+                contentDescription = label
                 role = Role.Button
             },
         contentAlignment = Alignment.CenterStart,
@@ -528,13 +587,14 @@ private fun QuitGlyph(onClick: () -> Unit, modifier: Modifier = Modifier) {
 private fun SessionHairline(fraction: Float) {
     val c = LocalTempoColors.current
     val safe = if (fraction.isNaN()) 0f else fraction.coerceIn(0f, 1f)
+    val label = progressLabel(LocalStrings.current, safe)
     Box(
         Modifier
             .fillMaxWidth()
             .height(1.dp)
             .background(c.hair)
             .progressSemantics(safe)
-            .semantics { contentDescription = progressLabel(safe) },
+            .semantics { contentDescription = label },
     ) {
         Box(Modifier.fillMaxWidth(safe).fillMaxHeight().background(c.inkSoft))
     }
@@ -567,7 +627,11 @@ private fun ControlGlyph(control: BarControl) {
     Box(
         modifier = Modifier
             .size(64.dp)
-            .clickable(enabled = enabled, onClick = control.onClick)
+            // The bar's three glyphs are the controls a set is driven with, so they take the whole
+            // 64.dp slot as their press rather than the ~24.dp the mark occupies. Disabled, the wash
+            // is silent — `pressable` stops emitting interactions — which is what keeps a mandated
+            // rest's dead ▷ visibly dead rather than merely unresponsive.
+            .playerPressable(TempoShapes.Glyph, enabled = enabled, onClick = control.onClick)
             .clearAndSetSemantics {
                 contentDescription = label
                 role = Role.Button
@@ -598,33 +662,35 @@ private fun ControlGlyph(control: BarControl) {
  */
 @Composable
 internal fun liveControls(state: SessionUiState, actions: SessionActions): BarControls {
+    val strings = LocalStrings.current
+    val s = strings.gymSession
     val emomRemainder = state.restKind == RestKind.EMOM_REMAINDER
     val inPrepare = state.prepare != null || state.phase == Phase.PREPARE
     val back = BarControl(
         glyph = "◁",
-        description = if (inPrepare) "戻る" else "前へ、二回押すと一つ戻る",
+        description = if (inPrepare) s.controlsBackPrepare else s.controlsBack,
         state = when {
             emomRemainder -> ControlState.Hidden
             inPrepare -> ControlState.Disabled
             else -> ControlState.Enabled
         },
-        disabledReason = if (inPrepare) "戻る" else null,
+        disabledReason = if (inPrepare) s.controlsBackPrepare else null,
         onClick = actions::onBackTap,
     )
     val pause = BarControl(
         glyph = "┃┃",
-        description = "休止",
+        description = s.controlsPause,
         onClick = actions::onPause,
     )
     val forward = BarControl(
         glyph = "▷",
-        description = "とばす",
+        description = s.controlsForward,
         state = when {
             emomRemainder -> ControlState.Hidden
             state.canSkipForward -> ControlState.Enabled
             else -> ControlState.Disabled
         },
-        disabledReason = skipDisabledDescription(state.restKind),
+        disabledReason = skipDisabledDescription(strings, state.restKind),
         onClick = actions::onSkipForward,
     )
     return BarControls(back, pause, forward)

@@ -8,7 +8,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -25,7 +24,6 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -52,14 +50,15 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
-import io.eddiegulay.tempo.data.JapaneseDate
 import io.eddiegulay.tempo.data.TempoFault
 import io.eddiegulay.tempo.gym.BreakdownRow
 import io.eddiegulay.tempo.gym.ExerciseCatalog
@@ -70,16 +69,22 @@ import io.eddiegulay.tempo.gym.SegmentResult
 import io.eddiegulay.tempo.gym.SessionSummary
 import io.eddiegulay.tempo.gym.breakdownRow
 import io.eddiegulay.tempo.gym.comparisonCopy
-import io.eddiegulay.tempo.gym.durationKanjiFromMs
+import io.eddiegulay.tempo.gym.displayName
 import io.eddiegulay.tempo.gym.heroTime
+import io.eddiegulay.tempo.gym.label
 import io.eddiegulay.tempo.gym.partialChipCopy
 import io.eddiegulay.tempo.gym.prChip
+import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.i18n.Strings
 import io.eddiegulay.tempo.ui.Enso
 import io.eddiegulay.tempo.ui.FaultStrip
 import io.eddiegulay.tempo.ui.ensoSweep
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.InkPressIndication
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 import kotlinx.coroutines.delay
 
 /*
@@ -123,9 +128,6 @@ import kotlinx.coroutines.delay
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // Pure logic — Android-free, JUnit-tested in `gym/ui/RecordSummaryTest.kt`
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-
-/** A value slot with nothing in it. `—`, as everywhere else in 鍛錬 (`gym/Numerals.kt`). */
-private const val NO_VALUE = "—"
 
 /**
  * A full circle. **Not [io.eddiegulay.tempo.ui.ENSO_SWEEP_DEGREES]**, which is 312° — the gap is what
@@ -208,7 +210,8 @@ data class RecordAccolades(
  * becomes 到達"). The label changes because the number means something different: a デス・バイ's clock
  * is not time you spent, it is how far up the ladder you got before the minute beat you.
  */
-fun recordHeroLabel(failedOut: Boolean): String = if (failedOut) "到達" else "活動時間"
+fun recordHeroLabel(failedOut: Boolean, strings: Strings): String =
+    if (failedOut) strings.gymRecords.heroLabelReached else strings.gymRecords.activeTime
 
 /**
  * 十七分で 力尽きた — the chip an `EMOM_ASCENDING` fail-out carries instead of 途中まで.
@@ -216,7 +219,8 @@ fun recordHeroLabel(failedOut: Boolean): String = if (failedOut) "到達" else "
  * The duration goes through `durationKanjiFromMs` like every other measured duration in the app
  * (`DECISIONS.md` §Q10: measured durations are 一分三十秒-shaped, chosen ones are bare seconds).
  */
-fun failedOutChip(activeMs: Long): String = durationKanjiFromMs(activeMs) + "で 力尽きた"
+fun failedOutChip(activeMs: Long, strings: Strings): String =
+    strings.gymRecords.failedOut(strings.fmt.durationFromMs(activeMs))
 
 /**
  * The one chip under the ring: 途中まで ・ 二十種目中 八, or 十七分で 力尽きた, or nothing.
@@ -225,9 +229,9 @@ fun failedOutChip(activeMs: Long): String = durationKanjiFromMs(activeMs) + "で
  * never collide. The precedence is stated anyway, because the day an engine writes a fail-out as
  * incomplete, the honest chip is the one that says *why* it ended.
  */
-fun recordHeaderChip(data: RecordSummaryData): String? = when {
-    data.failedOut -> failedOutChip(data.summary.activeMs)
-    else -> partialChipCopy(data.summary)
+fun recordHeaderChip(data: RecordSummaryData, strings: Strings): String? = when {
+    data.failedOut -> failedOutChip(data.summary.activeMs, strings)
+    else -> partialChipCopy(data.summary, strings)
 }
 
 /**
@@ -254,9 +258,9 @@ fun shouldSuppressAccolades(summary: SessionSummary): Boolean =
  * this screen does not use it, because the user has just this second trained — a session that ends with
  * a zero-day streak is an arithmetic disagreement, not a fact worth stating over a finished workout.
  */
-fun streakLine(days: Int?): String? {
+fun streakLine(days: Int?, strings: Strings): String? {
     if (days == null || days <= 0) return null
-    return JapaneseDate.kanjiExtended(days) + "日 連続"
+    return strings.gymRecords.streakDays(strings.fmt.days(days))
 }
 
 /**
@@ -272,14 +276,23 @@ fun streakLine(days: Int?): String? {
  * A fixed three-column row cannot omit a column without unaligning the labels, so the slot takes the
  * app's own empty value instead. 〇回 in 20.sp reads as a score.
  */
-fun recordTiles(summary: SessionSummary): List<RecordTile> = listOf(
-    RecordTile(tileValue(summary.stationsCompleted, "種目"), "種目"),
-    RecordTile(tileValue(summary.roundsCompleted, "巡"), "巡"),
-    RecordTile(tileValue(summary.totalReps, "回"), "回"),
+fun recordTiles(summary: SessionSummary, strings: Strings): List<RecordTile> = listOf(
+    RecordTile(
+        tileValue(summary.stationsCompleted, strings, strings.fmt::stations),
+        strings.gymRecords.tileLabelStations,
+    ),
+    RecordTile(
+        tileValue(summary.roundsCompleted, strings, strings.fmt::rounds),
+        strings.gymRecords.tileLabelRounds,
+    ),
+    RecordTile(
+        tileValue(summary.totalReps, strings, strings.fmt::reps),
+        strings.gymRecords.tileLabelReps,
+    ),
 )
 
-private fun tileValue(count: Int, unit: String): String =
-    if (count <= 0) NO_VALUE else JapaneseDate.kanjiExtended(count) + unit
+private fun tileValue(count: Int, strings: Strings, counter: (Int) -> String): String =
+    if (count <= 0) strings.fmt.noValue else counter(count)
 
 /**
  * The comparison, the streak and the PR chip, after both the mode and the session have had their say.
@@ -289,15 +302,15 @@ private fun tileValue(count: Int, unit: String): String =
  * would mean walking the whole history for one line; making the component enforce it means the Phase 3
  * page cannot get it wrong by handing over the number it happens to have.
  */
-fun recordAccolades(mode: RecordMode, data: RecordSummaryData): RecordAccolades {
+fun recordAccolades(mode: RecordMode, data: RecordSummaryData, strings: Strings): RecordAccolades {
     val suppressed = shouldSuppressAccolades(data.summary)
     return RecordAccolades(
-        comparison = comparisonCopy(data.summary, data.previous),
+        comparison = comparisonCopy(data.summary, data.previous, strings),
         // A first session is a fact, not a compliment, so it survives the suppression that silences
         // the comparison — but not a partial one: 「はじめての記録」 over a session the user walked out
         // of claims a milestone they did not reach.
         firstEver = data.previous == null && data.summary.complete,
-        streak = if (mode == RecordMode.Live) streakLine(data.streakDays) else null,
+        streak = if (mode == RecordMode.Live) streakLine(data.streakDays, strings) else null,
         chip = if (suppressed) null else prChip(data.summary, data.isStillBest),
     )
 }
@@ -342,7 +355,8 @@ fun recordSweepAngle(summary: SessionSummary): Float {
 fun breakdownRows(
     results: List<SegmentResult>,
     exerciseName: (String?) -> String?,
-): List<BreakdownRow> = results.mapNotNull { breakdownRow(it, exerciseName(it.exerciseId)) }
+    strings: Strings,
+): List<BreakdownRow> = results.mapNotNull { breakdownRow(it, exerciseName(it.exerciseId), strings) }
 
 /**
  * Whether どうでしたか is drawn above the three buttons.
@@ -357,11 +371,16 @@ fun ratingPromptVisible(mode: RecordMode, rating: Rating?): Boolean =
     mode == RecordMode.Live || rating == null
 
 /** `未評価` / `ちょうど を選択` — the rating group's `stateDescription` (`03` §A COMPLETE accessibility). */
-fun ratingGroupState(rating: Rating?): String =
-    if (rating == null) "未評価" else rating.label + " を選択"
+fun ratingGroupState(rating: Rating?, strings: Strings): String =
+    if (rating == null) {
+        strings.gymRecords.ratingUnset
+    } else {
+        strings.gymRecords.ratingSelected(rating.label(strings))
+    }
 
 /** `きついとして記録する` — the `onClick` label a rating chip carries (`04` §4 accessibility). */
-fun ratingOptionLabel(rating: Rating): String = rating.label + "として記録する"
+fun ratingOptionLabel(rating: Rating, strings: Strings): String =
+    strings.gymRecords.ratingOption(rating.label(strings))
 
 /**
  * How long the accolades wait — §A COMPLETE's "Ordering is load-bearing", in one number.
@@ -378,11 +397,13 @@ fun ratingOptionLabel(rating: Rating): String = rating.label + "として記録�
 fun accoladeDelayMs(rated: Boolean): Long = if (rated) 400L else 6_000L
 
 /** `七分間、活動時間 六分十四秒、途中まで ・ 二十種目中 八` — the header as one node, chip included. */
-fun recordHeroSemantics(data: RecordSummaryData): String = listOfNotNull(
+fun recordHeroSemantics(data: RecordSummaryData, strings: Strings): String = listOfNotNull(
+    // The routine's name is `session.routine_name`, frozen at write time and never retranslated
+    // (§L10). It is spoken in the language it was performed in, which is the honest thing to say.
     data.summary.routineName,
-    recordHeroLabel(data.failedOut) + " " + heroTime(data.summary.activeMs),
-    recordHeaderChip(data),
-).joinToString("、")
+    recordHeroLabel(data.failedOut, strings) + " " + heroTime(data.summary.activeMs, strings),
+    recordHeaderChip(data, strings),
+).joinToString(strings.fmt.listSeparator)
 
 /**
  * `二十種目、五巡、三百二十回` — the three tiles as **one** node.
@@ -390,24 +411,25 @@ fun recordHeroSemantics(data: RecordSummaryData): String = listOfNotNull(
  * Three separate nodes read as three orphan numbers (§A COMPLETE accessibility). The labels are left
  * out on purpose: every value already carries its own unit, so 「種目 二十種目」 would say it twice.
  */
-fun recordTilesSemantics(tiles: List<RecordTile>): String =
-    tiles.joinToString("、") { it.value }
+fun recordTilesSemantics(tiles: List<RecordTile>, strings: Strings): String =
+    tiles.joinToString(strings.fmt.listSeparator) { it.value }
 
 /** `前回より 二十二秒 速い、四日 連続、自己最高` — the delayed block as one polite announcement. */
-fun accoladeSemantics(accolades: RecordAccolades): String? {
+fun accoladeSemantics(accolades: RecordAccolades, strings: Strings): String? {
     val parts = listOfNotNull(
-        accolades.comparison ?: "はじめての記録".takeIf { accolades.firstEver },
+        accolades.comparison ?: strings.gymRecords.firstEver.takeIf { accolades.firstEver },
         accolades.streak,
-        accolades.chip?.label,
+        accolades.chip?.label(strings),
     )
-    return parts.joinToString("、").takeIf { it.isNotEmpty() }
+    return parts.joinToString(strings.fmt.listSeparator).takeIf { it.isNotEmpty() }
 }
 
 /** `バーピー、とばした` / `腕立て伏せ、0:41、済、二十回` — one breakdown row, one node. */
-fun breakdownSemantics(row: BreakdownRow): String = if (row.skipped) {
-    row.name + "、" + row.status
+fun breakdownSemantics(row: BreakdownRow, strings: Strings): String = if (row.skipped) {
+    row.name + strings.fmt.listSeparator + row.status
 } else {
-    listOfNotNull(row.name, row.duration, row.status, row.reps).joinToString("、")
+    listOfNotNull(row.name, row.duration, row.status, row.reps)
+        .joinToString(strings.fmt.listSeparator)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -441,16 +463,17 @@ fun RecordSummary(
     onRate: (Rating?) -> Unit,
     onRepeat: () -> Unit,
     modifier: Modifier = Modifier,
-    exerciseName: (String?) -> String? = { id -> id?.let { ExerciseCatalog.byId(it)?.nameJa } },
+    exerciseName: (String?) -> String? = rememberCatalogueNames(),
     footer: @Composable ColumnScope.() -> Unit = {},
 ) {
+    val s = LocalStrings.current
     val scroll = rememberScrollState()
-    val accolades = remember(mode, data) { recordAccolades(mode, data) }
-    val tiles = remember(data.summary) { recordTiles(data.summary) }
+    val accolades = remember(mode, data, s) { recordAccolades(mode, data, s) }
+    val tiles = remember(data.summary, s) { recordTiles(data.summary, s) }
     // Keyed on the rows only: the resolver is a property of the *page* and never changes within one,
     // while a default lambda argument is a fresh instance on every recomposition and would rebuild the
     // whole breakdown twenty times a second for nothing.
-    val rows = remember(data.results) { breakdownRows(data.results, exerciseName) }
+    val rows = remember(data.results, s) { breakdownRows(data.results, exerciseName, s) }
 
     /*
      * The rating gate. Historical has nothing to gate — its accolades are as old as its numbers and
@@ -538,7 +561,7 @@ fun RecordSummary(
                 FaultStrip(fault = ratingFault, onRecover = { onRate(rating) })
             }
 
-            SectionLabel("内訳")
+            SectionLabel(s.gymRecords.breakdownHeading)
             rows.forEach { row -> BreakdownRowLine(row) }
 
             Spacer(Modifier.height(24.dp))
@@ -547,6 +570,22 @@ fun RecordSummary(
             Spacer(Modifier.height(64.dp))
         }
     }
+}
+
+/**
+ * The default resolver: the **live** catalogue, in the reader's language.
+ *
+ * `Exercise` carries `name_ja` and `name_en` on the same row (§L1), so a movement is named from the
+ * table it was seeded into rather than from a translation key — `displayName` is the whole of that.
+ * The historical page overrides this with the pinned `routine_version` snapshot, whose names are
+ * frozen and stay in whatever language they were written in (§L10).
+ *
+ * `remember`ed rather than allocated per recomposition, so `breakdownRows`' key can stay the row list.
+ */
+@Composable
+private fun rememberCatalogueNames(): (String?) -> String? {
+    val s = LocalStrings.current
+    return remember(s) { { id: String? -> id?.let { ExerciseCatalog.byId(it)?.displayName(s) } } }
 }
 
 /**
@@ -563,6 +602,7 @@ fun RecordSummary(
 @Composable
 private fun RecordHero(mode: RecordMode, data: RecordSummaryData) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val target = remember(data.summary) { recordSweepAngle(data.summary) }
     val plays = remember(mode, data.summary) { playsEnsoClosure(mode, data.summary) }
@@ -578,13 +618,13 @@ private fun RecordHero(mode: RecordMode, data: RecordSummaryData) {
         }
     }
 
-    val chip = recordHeaderChip(data)
+    val chip = recordHeaderChip(data, s)
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .semantics(mergeDescendants = true) {
                 heading()
-                contentDescription = recordHeroSemantics(data)
+                contentDescription = recordHeroSemantics(data, s)
             },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -609,10 +649,10 @@ private fun RecordHero(mode: RecordMode, data: RecordSummaryData) {
                     ),
                 )
                 Spacer(Modifier.height(10.dp))
-                HeroTime(heroTime(data.summary.activeMs))
+                HeroTime(heroTime(data.summary.activeMs, s))
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = recordHeroLabel(data.failedOut),
+                    text = recordHeroLabel(data.failedOut, s),
                     style = TextStyle(
                         fontFamily = Gothic,
                         fontSize = 12.sp,
@@ -626,7 +666,7 @@ private fun RecordHero(mode: RecordMode, data: RecordSummaryData) {
             Spacer(Modifier.height(14.dp))
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(TempoShapes.Word)
                     .background(c.card)
                     .height(28.dp)
                     .padding(horizontal = 14.dp),
@@ -646,31 +686,57 @@ private fun RecordHero(mode: RecordMode, data: RecordSummaryData) {
     }
 }
 
+/** 六分十四秒 / `6m 14s` — the hero's ceiling. Below this the text is shrunk to fit, never wrapped. */
+private val HERO_MAX = 64.sp
+
+/**
+ * A hair under 1, so that rounding in the shrunken layout cannot put the last glyph over the edge.
+ *
+ * The text is `softWrap = false, maxLines = 1`, so an overshoot is *clipped* rather than ellipsised —
+ * the failure is silent, and a percent of slack is cheaper than finding out on a 320.dp screen.
+ */
+private const val HERO_FIT = 0.99f
+
 /**
  * 六分十四秒 at 64.sp, and never wrapped.
  *
- * Six kanji at 64.sp is wider than a phone, so the size is capped the way `03` §A WORK edge case 7 caps
- * the countdown — with one deliberate change to its arithmetic. WORK divides the available width by
- * **4.2**, which encodes the four-character shape of `0:23`; a hero time is five or six kanji and that
- * divisor would still overflow. Dividing by **the string's own length** instead invents no number at
- * all and is the more accurate form anyway, because a CJK glyph advances almost exactly one em.
+ * Six kanji at 64.sp is wider than a phone, so the hero is shrunk to fit — **measured, not counted**.
  *
- * `fontScale` is in the denominator for the same reason: `X.sp` occupies `X × fontScale` dp, so a cap
- * expressed in sp that ignored it would fail at exactly the accessibility setting it exists for.
+ * The previous arithmetic divided the available width by `text.length`, justified by "a CJK glyph
+ * advances almost exactly one em". That is true of the shipped Mincho — 分 and あ both advance
+ * 1000/1000 — and false of Latin, where `A` is 762, `i` is 317 and `0` is 520, averaging about half an
+ * em. `6m 14s` was therefore sized at roughly 40% of the width it had, on a hero whose whole job is to
+ * be the biggest thing on the page. It never overflowed; it was simply small.
+ *
+ * So the string is measured once at [HERO_MAX] and scaled by the ratio it overshoots by. Text advance
+ * is linear in font size, so one measurement settles it — no binary search, and no per-script
+ * constant. [rememberTextMeasurer] resolves fonts and density itself, which also retires the manual
+ * `fontScale` division: a cap in sp that ignored the accessibility setting failed at exactly the
+ * setting it existed for, and this one cannot, because what is measured is what will be drawn.
  */
 @Composable
 private fun HeroTime(text: String) {
     val c = LocalTempoColors.current
     val density = LocalDensity.current
+    val measurer = rememberTextMeasurer()
     BoxWithConstraints {
-        val glyphs = text.length.coerceAtLeast(1)
-        val cap = (maxWidth.value / (glyphs * density.fontScale)).sp
-        val size: TextUnit = if (cap < 64.sp) cap else 64.sp
+        val style = TextStyle(fontFamily = Mincho, fontSize = HERO_MAX, color = c.ink)
+        val available = with(density) { maxWidth.toPx() }
+        val size: TextUnit = remember(text, available, style, measurer) {
+            val measured = measurer
+                .measure(AnnotatedString(text), style, softWrap = false, maxLines = 1)
+                .size.width
+            if (measured <= 0 || measured <= available) {
+                HERO_MAX
+            } else {
+                (HERO_MAX.value * HERO_FIT * available / measured).sp
+            }
+        }
         Text(
             text = text,
             maxLines = 1,
             softWrap = false,
-            style = TextStyle(fontFamily = Mincho, fontSize = size, color = c.ink),
+            style = style.copy(fontSize = size),
         )
     }
 }
@@ -679,10 +745,11 @@ private fun HeroTime(text: String) {
 @Composable
 private fun RecordTiles(tiles: List<RecordTile>) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Column(
         Modifier
             .fillMaxWidth()
-            .clearAndSetSemantics { contentDescription = recordTilesSemantics(tiles) },
+            .clearAndSetSemantics { contentDescription = recordTilesSemantics(tiles, s) },
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             tiles.forEach { tile ->
@@ -744,8 +811,9 @@ private fun RecordTiles(tiles: List<RecordTile>) {
  */
 @Composable
 private fun AccoladeAnnouncer(revealed: Boolean, accolades: RecordAccolades) {
+    val s = LocalStrings.current
     val announcement =
-        if (revealed && !accolades.isEmpty) accoladeSemantics(accolades).orEmpty() else ""
+        if (revealed && !accolades.isEmpty) accoladeSemantics(accolades, s).orEmpty() else ""
     Box(
         Modifier
             .fillMaxWidth()
@@ -769,7 +837,8 @@ private fun AccoladeAnnouncer(revealed: Boolean, accolades: RecordAccolades) {
 @Composable
 private fun Accolades(accolades: RecordAccolades) {
     val c = LocalTempoColors.current
-    val description = accoladeSemantics(accolades)
+    val s = LocalStrings.current
+    val description = accoladeSemantics(accolades, s)
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -787,7 +856,7 @@ private fun Accolades(accolades: RecordAccolades) {
             )
         } else if (accolades.firstEver) {
             Text(
-                text = "はじめての記録",
+                text = s.gymRecords.firstEver,
                 style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 2.sp, color = c.inkSoft),
             )
         }
@@ -800,14 +869,14 @@ private fun Accolades(accolades: RecordAccolades) {
         accolades.chip?.let { chip ->
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(TempoShapes.Word)
                     .background(c.card)
                     .height(28.dp)
                     .padding(horizontal = 14.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = chip.label,
+                    text = chip.label(s),
                     style = TextStyle(
                         fontFamily = Mincho,
                         fontSize = 12.sp,
@@ -841,10 +910,11 @@ private fun RatingBlock(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Column(modifier.fillMaxWidth().padding(top = 22.dp)) {
         if (ratingPromptVisible(mode, rating)) {
             Text(
-                text = "どうでしたか",
+                text = s.gymRecords.ratingPrompt,
                 modifier = Modifier.semantics { heading() },
                 style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 3.sp, color = c.inkFaint),
             )
@@ -854,7 +924,7 @@ private fun RatingBlock(
             modifier = Modifier
                 .fillMaxWidth()
                 .selectableGroup()
-                .semantics { stateDescription = ratingGroupState(rating) },
+                .semantics { stateDescription = ratingGroupState(rating, s) },
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Rating.entries.forEach { option ->
@@ -863,25 +933,32 @@ private fun RatingBlock(
                     modifier = Modifier
                         .weight(1f)
                         .height(56.dp)
-                        .clip(RoundedCornerShape(16.dp))
+                        // A filled, bordered, discrete object — a small card, and so `Card`'s corner
+                        // rather than the 16.dp literal that used to be written twice in five lines
+                        // (fill and border), which is the drift `TempoShapes` exists to stop.
+                        .clip(TempoShapes.Card)
                         .background(c.card)
                         .then(
                             if (selected) {
-                                Modifier.border(1.dp, c.accent, RoundedCornerShape(16.dp))
+                                Modifier.border(1.dp, c.accent, TempoShapes.Card)
                             } else {
                                 Modifier
                             },
                         )
+                        // `selectable` is not wrapped by `pressable` — one of three, exactly one
+                        // chosen — so the wash is attached by hand with the shape the clip takes.
                         .selectable(
                             selected = selected,
+                            interactionSource = null,
+                            indication = InkPressIndication(TempoShapes.Card),
                             role = Role.RadioButton,
                             onClick = { onRate(if (selected) null else option) },
                         )
-                        .semantics { onClick(label = ratingOptionLabel(option), action = null) },
+                        .semantics { onClick(label = ratingOptionLabel(option, s), action = null) },
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = option.label,
+                        text = option.label(s),
                         style = TextStyle(
                             fontFamily = Mincho,
                             fontSize = 15.sp,
@@ -915,12 +992,13 @@ private fun SectionLabel(text: String) {
 @Composable
 private fun BreakdownRowLine(row: BreakdownRow) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val colour = if (row.skipped) c.inkFaint else c.inkSoft
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 36.dp)
-            .clearAndSetSemantics { contentDescription = breakdownSemantics(row) }
+            .clearAndSetSemantics { contentDescription = breakdownSemantics(row, s) }
             .padding(vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -951,27 +1029,39 @@ private fun BreakdownRowLine(row: BreakdownRow) {
 /**
  * もう一度 — back to the routine, which is the only thing this screen offers to do next in Phase 1.
  *
+ * **Not a retry.** `もう一度` is also the fault layer's action word, and the two are one string in
+ * Japanese and two in English: this one means *do this workout again* — its own KDoc says "back to the
+ * routine" — where `FaultStrings.retry` means *ask the store again*. It therefore has its own key and
+ * must never be pointed at `s.fault.retry`.
+ *
  * Disabled with its reason when the routine has been deleted (`04` §6 :1182): the action is *greyed
  * rather than dropped*, which is this app's idiom for a control that exists and cannot be used, and it
  * carries `disabled()` so TalkBack stops offering it.
+ *
+ * **The reason is `faultCopy`'s sentence, not a second one.** この型は削除されています is already
+ * `GymFaultStrings.routineGone`, written for the same fact about the same object; it is drawn here as
+ * a caption rather than reached through `faultCopy` because nothing has *failed* — the page renders
+ * fine and one action does not apply. That is a difference of placement, not of content, and a second
+ * key for it would be exactly the divergence §Q7 forbids: two sentences to keep in step, in two
+ * languages, saying that a routine is gone.
  */
 @Composable
 private fun RepeatAction(archived: Boolean, onRepeat: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 48.dp)
-            .clickable(enabled = !archived, onClick = onRepeat)
+            .pressable(TempoShapes.Word, enabled = !archived, role = Role.Button, onClick = onRepeat)
             .semantics {
-                role = Role.Button
-                contentDescription = "もう一度"
+                contentDescription = s.gymRecords.repeat
                 if (archived) disabled()
             },
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = "もう一度",
+            text = s.gymRecords.repeat,
             style = TextStyle(
                 fontFamily = Mincho,
                 fontSize = 15.sp,
@@ -983,7 +1073,7 @@ private fun RepeatAction(archived: Boolean, onRepeat: () -> Unit) {
     if (archived) {
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "この型は削除されています",
+            text = s.fault.gym.routineGone,
             modifier = Modifier.fillMaxWidth(),
             style = TextStyle(fontFamily = Gothic, fontSize = 12.sp, color = c.inkFaint),
         )

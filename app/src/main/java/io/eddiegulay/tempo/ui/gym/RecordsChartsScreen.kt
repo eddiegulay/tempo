@@ -1,7 +1,6 @@
 package io.eddiegulay.tempo.ui.gym
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -65,16 +64,21 @@ import io.eddiegulay.tempo.gym.chartSemantics
 import io.eddiegulay.tempo.gym.chartSuppressionCopy
 import io.eddiegulay.tempo.gym.data.zeroFilledLoad
 import io.eddiegulay.tempo.gym.isDense
+import io.eddiegulay.tempo.gym.label
 import io.eddiegulay.tempo.gym.linePoints
 import io.eddiegulay.tempo.gym.rangeDays
 import io.eddiegulay.tempo.gym.rangeWeeks
 import io.eddiegulay.tempo.gym.trailingMean
+import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.i18n.Strings
 import io.eddiegulay.tempo.ui.FaultStrip
 import io.eddiegulay.tempo.ui.HeaderAction
 import io.eddiegulay.tempo.ui.rememberMinuteTime
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 import java.time.LocalDate
 
 /*
@@ -168,7 +172,11 @@ internal sealed interface VolumeGate {
  *
  * The message is [chartSuppressionCopy]'s, not a literal: one sentence, one owner.
  */
-internal fun volumeGate(load: Loadable<TrainingLoad?>, everTrained: Loadable<Boolean>): VolumeGate =
+internal fun volumeGate(
+    load: Loadable<TrainingLoad?>,
+    everTrained: Loadable<Boolean>,
+    strings: Strings,
+): VolumeGate =
     when (load) {
         Loadable.Loading -> VolumeGate.Loading
         is Loadable.Failed -> VolumeGate.Failed(load.fault)
@@ -177,15 +185,15 @@ internal fun volumeGate(load: Loadable<TrainingLoad?>, everTrained: Loadable<Boo
                 Loadable.Loading -> VolumeGate.Loading
                 is Loadable.Failed -> VolumeGate.Failed(everTrained.fault)
                 is Loadable.Ready ->
-                    if (everTrained.value) VolumeGate.Open else gateFor(historyDays = 0)
+                    if (everTrained.value) VolumeGate.Open else gateFor(historyDays = 0, strings)
             }
-            else -> gateFor(days)
+            else -> gateFor(days, strings)
         }
     }
 
 /** [chartSuppressionCopy]'s answer as a gate, so the threshold is asked for in exactly one place. */
-private fun gateFor(historyDays: Int): VolumeGate =
-    chartSuppressionCopy(historyDays)?.let { VolumeGate.Suppressed(it) } ?: VolumeGate.Open
+private fun gateFor(historyDays: Int, strings: Strings): VolumeGate =
+    chartSuppressionCopy(historyDays, strings)?.let { VolumeGate.Suppressed(it) } ?: VolumeGate.Open
 
 /**
  * The daily volume series as a **contiguous spine of [days] values**, ending on [end].
@@ -229,19 +237,6 @@ internal fun weeklyMinuteValues(points: List<WeekPoint>): List<Double> =
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The page
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-
-/** §6: `records / history / charts / PR titles | … / 移り変わり / …` — utsurikawari, how things shift. */
-private const val PAGE_TITLE = "移り変わり"
-
-private const val CLOSE = "とじる"
-
-/** §6: `records empty | まだ 記録はありません`. Reachable only from a resolved "never trained". */
-private const val EMPTY = "まだ 記録はありません"
-
-private const val LOADING = "読み込み中"
-
-/** §4's exit into `GYM.RECORDS.HISTORY`, and §6's `see all`-shaped centred action. */
-private const val SEE_HISTORY = "これまでを見る"
 
 /** §2: `chart canvas | 96.dp tall, width − 44.dp`. The 44 is this page's 22.dp of padding, twice. */
 private val CHART_HEIGHT = 96.dp
@@ -300,6 +295,7 @@ private const val MEAN_WINDOW_DAYS = 7
 @Composable
 fun RecordsChartsScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     var range by remember { mutableStateOf(ChartRange.Default) }
 
     // The minute clock is read through a `derivedStateOf` rather than with `by`, so this page
@@ -337,11 +333,16 @@ fun RecordsChartsScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
             verticalAlignment = Alignment.Top,
         ) {
             Text(
-                text = PAGE_TITLE,
+                text = s.gymRecords.chartsTitle,
                 modifier = Modifier.semantics { heading() },
                 style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
             )
-            HeaderAction(label = CLOSE, description = CLOSE, color = c.inkFaint, onClick = { gym.onBack() })
+            HeaderAction(
+                label = s.gymRecords.close,
+                description = s.gymRecords.close,
+                color = c.inkFaint,
+                onClick = { gym.onBack() },
+            )
         }
 
         RangeChips(selected = range, onSelect = { range = it })
@@ -356,7 +357,7 @@ fun RecordsChartsScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
                     range = range,
                     weekly = weekly,
                     volume = volume,
-                    gate = volumeGate(trainingLoad, everTrained),
+                    gate = volumeGate(trainingLoad, everTrained, s),
                     today = today,
                     onRetry = gym::retry,
                     onHistory = { gym.go(GymRoute.History()) },
@@ -377,6 +378,7 @@ fun RecordsChartsScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
 @Composable
 private fun RangeChips(selected: ChartRange, onSelect: (ChartRange) -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -385,20 +387,20 @@ private fun RangeChips(selected: ChartRange, onSelect: (ChartRange) -> Unit) {
             val isSelected = entry == selected
             Box(
                 modifier = Modifier
-                    .sizeIn(minHeight = 48.dp)
-                    .clickable { onSelect(entry) }
+                    // 週 is one glyph; the target grows into the gutter, the word stays centred.
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    .pressable(TempoShapes.Word, role = Role.Button) { onSelect(entry) }
                     .semantics {
-                        role = Role.Button
                         // §3's accessibility line for a chosen chip, verbatim. There is no documented
                         // word for the unselected state and none is invented — an unselected chip
                         // carries no state, which is also what it means.
-                        if (isSelected) stateDescription = "選択中"
+                        if (isSelected) stateDescription = s.gymRecords.chipSelected
                     }
                     .padding(horizontal = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = entry.label,
+                    text = entry.label(s),
                     style = TextStyle(
                         fontFamily = Mincho,
                         fontSize = 13.sp,
@@ -428,6 +430,7 @@ private fun ChartsBody(
     onRetry: () -> Unit,
     onHistory: () -> Unit,
 ) {
+    val s = LocalStrings.current
     Column(
         Modifier
             .fillMaxSize()
@@ -439,7 +442,7 @@ private fun ChartsBody(
         VolumeChart(range = range, volume = volume, gate = gate, today = today, onRetry = onRetry)
 
         Spacer(Modifier.height(10.dp))
-        ChartsCenteredAction(label = SEE_HISTORY, onClick = onHistory)
+        ChartsCenteredAction(label = s.gymRecords.seeHistory, onClick = onHistory)
         Spacer(Modifier.height(LIST_BOTTOM))
     }
 }
@@ -459,13 +462,14 @@ private fun WeeklySessionsChart(
     weekly: Loadable<List<WeekPoint>>,
     onRetry: () -> Unit,
 ) {
+    val s = LocalStrings.current
     when (weekly) {
         Loadable.Loading -> {
-            ChartHeading(chartHeading(ChartKind.WEEKLY_SESSIONS))
+            ChartHeading(chartHeading(ChartKind.WEEKLY_SESSIONS, s))
             ChartLoading()
         }
         is Loadable.Failed -> {
-            ChartHeading(chartHeading(ChartKind.WEEKLY_SESSIONS))
+            ChartHeading(chartHeading(ChartKind.WEEKLY_SESSIONS, s))
             FaultStrip(fault = weekly.fault, onRecover = onRetry, modifier = Modifier.padding(vertical = 6.dp))
         }
         is Loadable.Ready -> {
@@ -475,17 +479,17 @@ private fun WeeklySessionsChart(
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val dense = denseFor(counts.size, maxWidth)
                 Column(Modifier.fillMaxWidth()) {
-                    ChartHeading(chartHeading(ChartKind.WEEKLY_SESSIONS, dense))
-                    val summary = chartSemantics(ChartKind.WEEKLY_SESSIONS, range, asDoubles)
+                    ChartHeading(chartHeading(ChartKind.WEEKLY_SESSIONS, s, dense))
+                    val summary = chartSemantics(ChartKind.WEEKLY_SESSIONS, range, asDoubles, s)
                     if (dense) {
                         LineCanvas(values = asDoubles, semantics = summary)
                     } else {
                         BarCanvas(values = counts, semantics = summary)
                     }
-                    chartAxisLabels(points.map { it.weekStart })?.let { (first, last) ->
+                    chartAxisLabels(points.map { it.weekStart }, s)?.let { (first, last) ->
                         ChartAxisRow(first, last)
                     }
-                    ChartCaption(chartCaption(ChartKind.WEEKLY_SESSIONS, asDoubles))
+                    ChartCaption(chartCaption(ChartKind.WEEKLY_SESSIONS, asDoubles, s))
                 }
             }
         }
@@ -499,7 +503,8 @@ private fun ActiveMinutesChart(
     weekly: Loadable<List<WeekPoint>>,
     onRetry: () -> Unit,
 ) {
-    ChartHeading(chartHeading(ChartKind.ACTIVE_MINUTES))
+    val s = LocalStrings.current
+    ChartHeading(chartHeading(ChartKind.ACTIVE_MINUTES, s))
     when (weekly) {
         Loadable.Loading -> ChartLoading()
         is Loadable.Failed ->
@@ -508,9 +513,9 @@ private fun ActiveMinutesChart(
             val minutes = remember(weekly.value) { weeklyMinuteValues(weekly.value) }
             LineCanvas(
                 values = minutes,
-                semantics = chartSemantics(ChartKind.ACTIVE_MINUTES, range, minutes),
+                semantics = chartSemantics(ChartKind.ACTIVE_MINUTES, range, minutes, s),
             )
-            ChartCaption(chartCaption(ChartKind.ACTIVE_MINUTES, minutes))
+            ChartCaption(chartCaption(ChartKind.ACTIVE_MINUTES, minutes, s))
         }
     }
 }
@@ -533,7 +538,8 @@ private fun VolumeChart(
     today: LocalDate,
     onRetry: () -> Unit,
 ) {
-    ChartHeading(chartHeading(ChartKind.VOLUME))
+    val s = LocalStrings.current
+    ChartHeading(chartHeading(ChartKind.VOLUME, s))
     when (gate) {
         VolumeGate.Loading -> ChartLoading()
         is VolumeGate.Failed ->
@@ -556,9 +562,9 @@ private fun VolumeChart(
                     daily = spine,
                     mean = mean,
                     ceiling = ceiling,
-                    semantics = chartSemantics(ChartKind.VOLUME, range, spine),
+                    semantics = chartSemantics(ChartKind.VOLUME, range, spine, s),
                 )
-                ChartCaption(chartCaption(ChartKind.VOLUME, spine))
+                ChartCaption(chartCaption(ChartKind.VOLUME, spine, s))
             }
         }
     }
@@ -787,7 +793,7 @@ private fun ChartLoading() {
     val c = LocalTempoColors.current
     Box(Modifier.fillMaxWidth().height(CHART_HEIGHT), contentAlignment = Alignment.Center) {
         Text(
-            text = LOADING,
+            text = LocalStrings.current.gymRecords.loading,
             style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
         )
     }
@@ -817,7 +823,7 @@ private fun ChartsLoading() {
     val c = LocalTempoColors.current
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
-            text = LOADING,
+            text = LocalStrings.current.gymRecords.loading,
             style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
         )
     }
@@ -829,7 +835,7 @@ private fun ChartsEmpty() {
     val c = LocalTempoColors.current
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
-            text = EMPTY,
+            text = LocalStrings.current.gymRecords.recordsEmpty,
             style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
         )
     }
@@ -843,8 +849,8 @@ private fun ChartsCenteredAction(label: String, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 48.dp)
-            .clickable(onClick = onClick)
-            .semantics { role = Role.Button; contentDescription = label }
+            .pressable(TempoShapes.Word, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label }
             .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {

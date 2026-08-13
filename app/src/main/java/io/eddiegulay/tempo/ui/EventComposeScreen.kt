@@ -5,7 +5,6 @@ import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,7 +38,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
@@ -53,11 +51,14 @@ import io.eddiegulay.tempo.calendar.EventDraft
 import io.eddiegulay.tempo.calendar.Loadable
 import io.eddiegulay.tempo.calendar.openAccountSettings
 import io.eddiegulay.tempo.calendar.rememberCalendarPermissionState
-import io.eddiegulay.tempo.data.JapaneseDate
 import io.eddiegulay.tempo.data.TempoFault
+import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.i18n.Strings
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
@@ -77,6 +78,7 @@ import java.time.temporal.ChronoUnit
 @Composable
 fun EventComposeScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val context = LocalContext.current
 
     val editing by viewModel.composing.collectAsStateWithLifecycle()
@@ -110,7 +112,7 @@ fun EventComposeScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifi
     var open by remember(editing) { mutableStateOf(Picker.None) }
 
     // A new event with nowhere to go. Not a failure — the device simply has no writable calendar —
-    // but it makes 保存 impossible, so it is stated up front rather than left as a dead grey word.
+    // but it makes saving impossible, so it is stated up front rather than left as a dead grey word.
     val nothingToWriteTo = editing == null && calendarsState is Loadable.Ready && calendars.isEmpty()
 
     // The strip shows a real fault first; failing that, the structural reasons the user can't save.
@@ -120,11 +122,17 @@ fun EventComposeScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifi
         ?: (calendarsState as? Loadable.Failed)?.fault
         ?: CalendarFault.NoWritableCalendar.takeIf { nothingToWriteTo }
 
-    val canSave = title.isNotBlank() && calendarId >= 0 && !readOnly && !writing
+    val canSave = canSaveEvent(
+        title = title,
+        calendarId = calendarId,
+        isNewEvent = editing == null,
+        readOnly = readOnly,
+        writing = writing,
+    )
     val heading = when {
-        readOnly -> "予定"
-        editing != null -> "予定を編集"
-        else -> "予定を加える"
+        readOnly -> s.calendar.headingView
+        editing != null -> s.calendar.headingEdit
+        else -> s.calendar.addEvent
     }
 
     // Every fault carries a way out; this is where each one leads.
@@ -134,7 +142,7 @@ fun EventComposeScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifi
             CalendarFault.NoWritableCalendar -> openAccountSettings(context)
             // The event was deleted elsewhere; there is nothing left here to edit.
             CalendarFault.EventGone -> viewModel.cancelCompose()
-            // "もう一度" — clear the strip and let them press 保存 again with the draft still intact.
+            // Retry — clear the strip and let them press save again with the draft still intact.
             else -> viewModel.dismissCalendarFault()
         }
     }
@@ -160,15 +168,15 @@ fun EventComposeScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifi
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 HeaderAction(
-                    label = if (readOnly) "とじる" else "やめる",
-                    description = if (readOnly) "とじる" else "やめる",
+                    label = if (readOnly) s.calendar.close else s.calendar.cancel,
+                    description = if (readOnly) s.calendar.close else s.calendar.cancel,
                     color = c.inkFaint,
                     onClick = viewModel::cancelCompose,
                 )
                 if (!readOnly) {
                     HeaderAction(
-                        label = if (writing) "保存中" else "保存",
-                        description = "保存",
+                        label = if (writing) s.calendar.saving else s.calendar.save,
+                        description = s.calendar.save,
                         color = if (canSave) c.accent else c.inkFaint,
                         enabled = canSave,
                         // Proposes the change; the dialog commits it. See [EventConfirmDialog].
@@ -216,7 +224,7 @@ fun EventComposeScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifi
 
             if (readOnly && editing?.recurring == true) {
                 Text(
-                    text = "繰り返しの予定",
+                    text = s.calendar.recurringNotice,
                     modifier = Modifier.padding(top = 10.dp),
                     style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 2.sp, color = c.inkFaint),
                 )
@@ -225,7 +233,7 @@ fun EventComposeScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifi
             Spacer(Modifier.height(10.dp))
 
             ToggleRow(
-                label = "終日",
+                label = s.calendar.allDay,
                 on = allDay,
                 enabled = !readOnly,
                 onToggle = {
@@ -236,8 +244,8 @@ fun EventComposeScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifi
             Rule()
 
             PickerRow(
-                label = "開始",
-                value = formatValue(start, allDay),
+                label = s.calendar.fieldStart,
+                value = formatValue(start, allDay, s),
                 enabled = !readOnly,
                 expanded = open == Picker.Start,
                 onClick = { open = if (open == Picker.Start) Picker.None else Picker.Start },
@@ -254,8 +262,8 @@ fun EventComposeScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifi
             Rule()
 
             PickerRow(
-                label = "終了",
-                value = formatValue(end, allDay),
+                label = s.calendar.fieldEnd,
+                value = formatValue(end, allDay, s),
                 enabled = !readOnly,
                 expanded = open == Picker.End,
                 onClick = { open = if (open == Picker.End) Picker.None else Picker.End },
@@ -281,14 +289,14 @@ fun EventComposeScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifi
 
             when {
                 readOnly -> editing?.let { event ->
-                    CenteredAction(label = "カレンダーで開く", color = c.accent) {
+                    CenteredAction(label = s.calendar.openInCalendarApp, color = c.accent) {
                         viewModel.openInCalendarApp(context, event)
                     }
                 }
                 // Proposes; [EventConfirmDialog] commits. Deleting is the one change here that cannot
                 // be undone, and it withdraws the meeting from everyone invited to it.
                 editing != null -> CenteredAction(
-                    label = "削除",
+                    label = s.calendar.delete,
                     color = c.accent,
                     enabled = !writing,
                     onClick = viewModel::requestDelete,
@@ -301,6 +309,36 @@ fun EventComposeScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifi
 }
 
 private enum class Picker { None, Start, End }
+
+/**
+ * When 保存 is live.
+ *
+ * `.planning/calendar-design.md` §3.5 says "保存 is enabled iff the title is non-blank", and it says it
+ * under **Save**, in the section about creating an event. That rule is kept exactly where it was
+ * written: an event nobody has named is an accidental press, and a launcher full of blank events is
+ * worse than a launcher that asked for one word.
+ *
+ * **It is not extended to an event that already exists**, and that is the change here. Applying it in
+ * both modes made the `（無題）` placeholder load-bearing: an untitled event was only editable at all
+ * because the repository had substituted a title into it on the way in, and pressing 保存 then wrote
+ * that invented title to `Events.TITLE` — into the user's account, onto their other devices, and into
+ * the copy of the invite every guest holds. Removing the placeholder without touching this condition
+ * would have traded a wrong title for a worse bug: an untitled event nobody could reschedule.
+ *
+ * So an existing event is savable on its structural conditions alone. Its title is the calendar's fact,
+ * not Tempo's to require, and clearing one is an explicit act the confirmation dialog restates before
+ * anything is written.
+ *
+ * `internal` and pure so the rule can be pinned by a JVM test, which a `canSave` inlined into a
+ * composable could not be.
+ */
+internal fun canSaveEvent(
+    title: String,
+    calendarId: Long,
+    isNewEvent: Boolean,
+    readOnly: Boolean,
+    writing: Boolean,
+): Boolean = calendarId >= 0 && !readOnly && !writing && (!isNewEvent || title.isNotBlank())
 
 /**
  * New events land on the next clean half-hour — nobody schedules anything at 14:07.
@@ -322,9 +360,9 @@ internal fun defaultStart(now: LocalDateTime = LocalDateTime.now()): LocalDateTi
         }
     }
 
-private fun formatValue(at: LocalDateTime, allDay: Boolean): String {
-    val date = JapaneseDate.monthDay(at)
-    return if (allDay) date else "$date ・ ${JapaneseDate.clock(at)}"
+private fun formatValue(at: LocalDateTime, allDay: Boolean, strings: Strings): String {
+    val date = strings.fmt.monthDay(at)
+    return if (allDay) date else date + strings.fmt.separator + strings.fmt.clockAt(at)
 }
 
 @Composable
@@ -336,11 +374,15 @@ private fun Rule() {
 @Composable
 private fun TitleField(value: String, readOnly: Boolean, autoFocus: Boolean, onChange: (String) -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val style = TextStyle(fontFamily = Mincho, fontSize = 20.sp, color = if (readOnly) c.inkSoft else c.ink)
 
     if (readOnly) {
         Box(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
-            Text(text = value, style = style)
+            // The one branch that may name an untitled event, because it cannot be saved: there is no
+            // 保存 on a read-only event and this `Text` goes nowhere but the screen. The editable field
+            // below shows its 題名 hint instead, which says the same thing without becoming the value.
+            Text(text = value.ifBlank { s.calendar.untitled }, style = style)
         }
         Rule()
         return
@@ -358,12 +400,12 @@ private fun TitleField(value: String, readOnly: Boolean, autoFocus: Boolean, onC
         modifier = Modifier
             .fillMaxWidth()
             .focusRequester(focusRequester)
-            .semantics { contentDescription = "題名" },
+            .semantics { contentDescription = s.calendar.fieldTitle },
         decorationBox = { inner ->
             Column {
                 Box(Modifier.padding(vertical = 14.dp)) {
                     if (value.isEmpty()) {
-                        Text(text = "題名", style = style.copy(color = c.inkFaint))
+                        Text(text = s.calendar.fieldTitle, style = style.copy(color = c.inkFaint))
                     }
                     inner()
                 }
@@ -376,6 +418,7 @@ private fun TitleField(value: String, readOnly: Boolean, autoFocus: Boolean, onC
 @Composable
 private fun LocationField(value: String, readOnly: Boolean, onChange: (String) -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val style = TextStyle(fontFamily = Gothic, fontSize = 15.sp, color = if (readOnly) c.inkSoft else c.ink)
 
     if (readOnly) {
@@ -392,11 +435,11 @@ private fun LocationField(value: String, readOnly: Boolean, onChange: (String) -
         singleLine = true,
         textStyle = style,
         cursorBrush = SolidColor(c.accent),
-        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "場所" },
+        modifier = Modifier.fillMaxWidth().semantics { contentDescription = s.calendar.fieldLocation },
         decorationBox = { inner ->
             Box(Modifier.padding(vertical = 14.dp)) {
                 if (value.isEmpty()) {
-                    Text(text = "場所", style = style.copy(color = c.inkFaint))
+                    Text(text = s.calendar.fieldLocation, style = style.copy(color = c.inkFaint))
                 }
                 inner()
             }
@@ -411,15 +454,19 @@ private fun LocationField(value: String, readOnly: Boolean, onChange: (String) -
 @Composable
 private fun ToggleRow(label: String, on: Boolean, enabled: Boolean, onToggle: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
+    val state = if (on) s.calendar.toggleOn else s.calendar.toggleOff
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 48.dp)
-            .clickable(enabled = enabled, onClick = onToggle)
+            // The form's rows are separated by full-width hairlines, so the wash takes the row shape
+            // and stops just inside them: pressing 終日 darkens the band between two rules rather than
+            // painting a tile that crosses them.
+            .pressable(TempoShapes.Row, enabled = enabled, role = Role.Switch, onClick = onToggle)
             .semantics {
-                role = Role.Switch
                 contentDescription = label
-                stateDescription = if (on) "する" else "しない"
+                stateDescription = state
             }
             .padding(vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -430,7 +477,7 @@ private fun ToggleRow(label: String, on: Boolean, enabled: Boolean, onToggle: ()
             style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, color = c.inkSoft),
         )
         Text(
-            text = if (on) "する" else "しない",
+            text = state,
             style = TextStyle(
                 fontFamily = Mincho,
                 fontSize = 14.sp,
@@ -453,13 +500,17 @@ private fun PickerRow(
     onChange: (LocalDateTime) -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
+    val spoken = label + s.fmt.listSeparator + value
     Column(Modifier.fillMaxWidth().animateContentSize(tween(220, easing = LinearOutSlowInEasing))) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .sizeIn(minHeight = 48.dp)
-                .clickable(enabled = enabled, onClick = onClick)
-                .semantics { role = Role.Button; contentDescription = "$label、$value" }
+                // The header of the field, not the wheel below it: the press stops at the rule and
+                // the unfolded wheel is never washed with it.
+                .pressable(TempoShapes.Row, enabled = enabled, role = Role.Button, onClick = onClick)
+                .semantics { contentDescription = spoken }
                 .padding(vertical = 14.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
@@ -487,9 +538,10 @@ private fun PickerRow(
 @Composable
 private fun CalendarChips(calendars: List<CalendarInfo>, selectedId: Long, onSelect: (Long) -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Column(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
         Text(
-            text = "カレンダー",
+            text = s.calendar.fieldCalendar,
             style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 3.sp, color = c.inkFaint),
         )
         Spacer(Modifier.height(10.dp))
@@ -498,12 +550,14 @@ private fun CalendarChips(calendars: List<CalendarInfo>, selectedId: Long, onSel
                 val selected = calendar.id == selectedId
                 Row(
                     modifier = Modifier
-                        .sizeIn(minHeight = 48.dp)
-                        .clickable { onSelect(calendar.id) }
+                        // A chip is a word with a dot beside it and no fill of its own, so it presses
+                        // as a lozenge. `minWidth` is the floor for a one-word calendar name; the
+                        // extra width grows into the 20dp gap and moves nothing.
+                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .pressable(TempoShapes.Word, role = Role.RadioButton) { onSelect(calendar.id) }
                         .semantics {
-                            role = Role.RadioButton
                             contentDescription = calendar.displayName
-                            stateDescription = if (selected) "選択中" else ""
+                            stateDescription = if (selected) s.calendar.chipSelected else ""
                         },
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -541,8 +595,11 @@ private fun CenteredAction(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 48.dp)
-            .clickable(enabled = enabled, onClick = onClick)
-            .semantics { role = Role.Button; contentDescription = label },
+            // Full width and 48 tall, so the lozenge resolves to a 24dp radius: a long soft capsule
+            // under 削除する, which is the last thing this page wants to look like a hard-edged
+            // destructive button.
+            .pressable(TempoShapes.Word, enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
         Text(

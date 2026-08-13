@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -24,9 +25,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.eddiegulay.tempo.gym.GymTab
+import io.eddiegulay.tempo.gym.label
+import io.eddiegulay.tempo.i18n.Lang
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 
@@ -101,6 +107,7 @@ private fun GymTabItem(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Column(
         modifier = modifier
             .fillMaxHeight()
@@ -123,11 +130,22 @@ private fun GymTabItem(
         }
         Spacer(Modifier.height(7.dp))
         Text(
-            text = tab.label,
+            text = tab.label(s),
+            // **Bounded, which it was not.** Three words share the bar in `weight(1f)` thirds, and
+            // 鍛錬 / 型 / 記録 are two, one and two glyphs — so nothing could overflow and nothing
+            // needed to say what happens if it did. Train / Routines / Records are five to eight
+            // characters, and at 200% font scale the tracking scales with them; unbounded, the middle
+            // tab would paint over its neighbours rather than clip.
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 4.dp),
             style = TextStyle(
                 fontFamily = Mincho,
                 fontSize = 13.sp,
-                letterSpacing = 3.sp,
+                // 3.sp of tracking is right for two CJK glyphs and wrong for eight Latin ones: it is
+                // ~8% of the Japanese word's width and ~25% of the English one's.
+                letterSpacing = if (s.lang == Lang.Ja) 3.sp else 1.sp,
                 color = if (selected) c.accent else c.inkFaint,
             ),
         )

@@ -1,5 +1,7 @@
 package io.eddiegulay.tempo.gym
 
+import io.eddiegulay.tempo.i18n.Strings
+
 /*
  * What the health foreground service's notification says — `00-plan.md` §6 Phase 3, `03-player.md` §E.5.
  *
@@ -82,13 +84,14 @@ data class TrainingNotice(
  * is precisely what forfeits exhaustiveness: a sixth `Phase` added in Phase 4 would have rendered
  * silently as 記録 on a live notification instead of failing to compile here.
  */
-fun noticePhaseLabel(phase: Phase, paused: Boolean): String = if (paused) "休止" else when (phase) {
-    Phase.PREPARE -> "支度"
-    Phase.WORK -> "運動"
-    Phase.REPS -> "運動・回数"
-    Phase.REST -> "休息"
-    Phase.COMPLETE -> "記録"
-}
+fun noticePhaseLabel(phase: Phase, paused: Boolean, strings: Strings): String =
+    if (paused) strings.gymCue.phasePaused else when (phase) {
+        Phase.PREPARE -> strings.gymCue.phasePrepare
+        Phase.WORK -> strings.gymCue.phaseWork
+        Phase.REPS -> strings.gymCue.phaseReps
+        Phase.REST -> strings.gymCue.phaseRest
+        Phase.COMPLETE -> strings.gymCue.phaseComplete
+    }
 
 /**
  * The title: the routine, and only the routine.
@@ -102,15 +105,21 @@ fun noticeTitle(notice: TrainingNotice): String = notice.routineName
 /**
  * `運動 ・ 腕立て伏せ`, or just `休息`, or just `休止`.
  *
- * The ` ・ ` join is the feature's own (「七分間 ・ 六分十四秒 ・ 八種目」, `03` §A's resume prompt), and
- * the exercise clause is dropped exactly when the player itself has no movement to name — 支度 and
- * every rest, where `SessionUiState.exercise` is null. A paused session drops it too: 休止 is the
- * whole of what is true, and 「休止 ・ 腕立て伏せ」 would read as a push-up in progress.
+ * The join is the feature's own (「七分間 ・ 六分十四秒 ・ 八種目」, `03` §A's resume prompt) and comes
+ * from `fmt.separator`, not from a literal — the middle dot is CJK punctuation, and Latin typography
+ * spells the same join `·`. The exercise clause is dropped exactly when the player itself has no
+ * movement to name — 支度 and every rest, where `SessionUiState.exercise` is null. A paused session
+ * drops it too: 休止 is the whole of what is true, and 「休止 ・ 腕立て伏せ」 would read as a push-up in
+ * progress.
+ *
+ * The exercise name itself is **not** translated here. It arrives already resolved from the catalogue
+ * and is `catalog.*`'s to choose between `nameJa` and `nameEn`; a user-authored routine's is their own
+ * data either way.
  */
-fun noticeText(notice: TrainingNotice): String {
-    val phase = noticePhaseLabel(notice.phase, notice.paused)
+fun noticeText(notice: TrainingNotice, strings: Strings): String {
+    val phase = noticePhaseLabel(notice.phase, notice.paused, strings)
     val exercise = notice.exerciseName?.takeIf { !notice.paused && it.isNotBlank() }
-    return if (exercise == null) phase else "$phase ・ $exercise"
+    return if (exercise == null) phase else phase + strings.fmt.separator + exercise
 }
 
 /** 休止 while running, 続ける while paused. Exactly one action, and it is always the reversible one. */
@@ -118,17 +127,18 @@ fun noticeControl(notice: TrainingNotice): TrainingControl =
     if (notice.paused) TrainingControl.RESUME else TrainingControl.PAUSE
 
 /** The button's word — `03` §A WORK's `┃┃ = "休止"` and §A PAUSED's 続ける, unchanged. */
-fun noticeControlLabel(control: TrainingControl): String = when (control) {
-    TrainingControl.PAUSE -> "休止"
-    TrainingControl.RESUME -> "続ける"
+fun noticeControlLabel(control: TrainingControl, strings: Strings): String = when (control) {
+    TrainingControl.PAUSE -> strings.gymCue.controlPause
+    TrainingControl.RESUME -> strings.gymCue.controlResume
 }
 
 /**
  * `七分間、運動 ・ 腕立て伏せ` — the notification as one sentence, for the reader that speaks it.
  *
  * TalkBack reads a notification's title and text as one utterance anyway; stating the join here means
- * the order is asserted rather than left to the platform, and it is the same 、 the record screen's
- * merged nodes use (`RecordSummary.recordHeroSemantics`).
+ * the order is asserted rather than left to the platform, and it is the same `fmt.listSeparator` — 、
+ * in Japanese, a comma in English — that the record screen's merged nodes use
+ * (`RecordSummary.recordHeroSemantics`).
  */
-fun noticeSemantics(notice: TrainingNotice): String =
-    noticeTitle(notice) + "、" + noticeText(notice)
+fun noticeSemantics(notice: TrainingNotice, strings: Strings): String =
+    noticeTitle(notice) + strings.fmt.listSeparator + noticeText(notice, strings)

@@ -1,6 +1,6 @@
 package io.eddiegulay.tempo.gym
 
-import io.eddiegulay.tempo.data.JapaneseDate
+import io.eddiegulay.tempo.i18n.Strings
 
 /*
  * The words a finished session gets, in the two places it appears: `GYM.SESSION.COMPLETE` (live) and
@@ -23,9 +23,6 @@ import io.eddiegulay.tempo.data.JapaneseDate
  *    returns null and the surface omits the line, rather than inventing a sentence. The one case that
  *    costs us something real is named at [comparisonCopy].
  */
-
-/** Nothing to report, in a slot that must still have a shape. Never `〇`, never blank. */
-private const val NO_VALUE = "—"
 
 /**
  * A session shorter than this sets nothing and beats nothing (`03-player.md` §A, COMPLETE edge case 6).
@@ -58,7 +55,7 @@ const val MINIMUM_MEANINGFUL_SESSION_MS = 30_000L
  * the tiles above it still show the honest numbers, so nothing is hidden, only unremarked. **If one
  * string is ever added to this feature, make it the slower case.**
  */
-fun comparisonCopy(current: SessionSummary, previous: SessionSummary?): String? {
+fun comparisonCopy(current: SessionSummary, previous: SessionSummary?, strings: Strings): String? {
     if (previous == null) return null
     if (!current.complete) return null
     if (current.activeMs < MINIMUM_MEANINGFUL_SESSION_MS) return null
@@ -78,7 +75,7 @@ fun comparisonCopy(current: SessionSummary, previous: SessionSummary?): String? 
     // of twenty-two has not elapsed.
     val seconds = (fasterByMs / 1000L).toInt()
     if (seconds <= 0) return null
-    return "前回より " + durationKanji(seconds) + " 速い"
+    return strings.gymRecords.fasterThanLast(strings.fmt.duration(seconds))
 }
 
 /**
@@ -96,12 +93,23 @@ fun comparisonCopy(current: SessionSummary, previous: SessionSummary?): String? 
  * @param isStillBest recomputed on read. The live screen passes `true` — a record set thirty seconds
  *   ago is by definition still standing.
  */
-enum class PrChip(val label: String) {
+enum class PrChip {
     /** `c.accent` — the record stands. */
-    CURRENT("自己最高"),
+    CURRENT,
 
     /** `c.inkFaint` — it was a record when it was set, and has since been beaten. */
-    FORMER("当時の自己最高"),
+    FORMER,
+}
+
+/**
+ * 自己最高 / 当時の自己最高 — the chip's word, from the table rather than from a constructor argument.
+ *
+ * §L3: a label fixed at class-init cannot be re-resolved when the user flips the language switch, so
+ * every label-carrying enum in this feature lost its property and gained this.
+ */
+fun PrChip.label(strings: Strings): String = when (this) {
+    PrChip.CURRENT -> strings.gymRecords.prCurrent
+    PrChip.FORMER -> strings.gymRecords.prFormer
 }
 
 /**
@@ -127,11 +135,15 @@ fun prChip(summary: SessionSummary, isStillBest: Boolean): PrChip? {
  * Null for a complete session. A `stations_planned` of zero — an engine with no station plan, or a
  * damaged row — degrades to the bare 途中まで rather than printing 〇種目中 〇, which reads as a score.
  */
-fun partialChipCopy(summary: SessionSummary): String? {
+fun partialChipCopy(summary: SessionSummary, strings: Strings): String? {
     if (summary.complete) return null
-    if (summary.stationsPlanned <= 0) return "途中まで"
-    return "途中まで ・ " + JapaneseDate.kanjiExtended(summary.stationsPlanned) + "種目中 " +
-        JapaneseDate.kanjiExtended(summary.stationsCompleted.coerceAtLeast(0))
+    val partial = strings.gymRecords.partial
+    if (summary.stationsPlanned <= 0) return partial
+    val stations = strings.gymRecords.partialStations(
+        completed = strings.fmt.count(summary.stationsCompleted.coerceAtLeast(0)),
+        stations = strings.fmt.stations(summary.stationsPlanned),
+    )
+    return partial + strings.fmt.separator + stations
 }
 
 /**
@@ -144,7 +156,7 @@ fun partialChipCopy(summary: SessionSummary): String? {
 data class BreakdownRow(
     /** 腕立て伏せ, or 不明な種目 when the catalogue no longer knows the id the session recorded. */
     val name: String,
-    /** `0:41` — arabic, so a column of them can be scanned. [NO_VALUE] on a skipped station. */
+    /** `0:41` — arabic, so a column of them can be scanned. `fmt.noValue` on a skipped station. */
     val duration: String,
     /** 済 or とばした. */
     val status: String,
@@ -178,25 +190,31 @@ data class BreakdownRow(
  *   (`04-library-records.md` §6) rather than a blank, because a nameless row in a list of names looks
  *   like a rendering bug and this is a data fact.
  */
-fun breakdownRow(result: SegmentResult, exerciseName: String?): BreakdownRow? {
+fun breakdownRow(result: SegmentResult, exerciseName: String?, strings: Strings): BreakdownRow? {
     if (result.phase != Phase.WORK && result.phase != Phase.REPS) return null
-    val name = exerciseName ?: "不明な種目"
+    val name = exerciseName ?: strings.gymRecords.unknownExercise
     if (result.skipped) {
-        return BreakdownRow(name = name, duration = NO_VALUE, status = "とばした", reps = null, skipped = true)
+        return BreakdownRow(
+            name = name,
+            duration = strings.fmt.noValue,
+            status = strings.gymRecords.statusSkipped,
+            reps = null,
+            skipped = true,
+        )
     }
     val actual = result.actualReps
     val prescribed = result.prescribedReps
     val reps = when {
         actual != null && prescribed != null && actual != prescribed ->
-            JapaneseDate.kanjiExtended(actual) + "回 / " + JapaneseDate.kanjiExtended(prescribed) + "回"
-        actual != null -> JapaneseDate.kanjiExtended(actual) + "回"
-        prescribed != null -> JapaneseDate.kanjiExtended(prescribed) + "回"
+            strings.gymRecords.repsShortfall(strings.fmt.count(actual), strings.fmt.count(prescribed))
+        actual != null -> strings.fmt.reps(actual)
+        prescribed != null -> strings.fmt.reps(prescribed)
         else -> null
     }
     return BreakdownRow(
         name = name,
-        duration = clockDuration(result.actualMs),
-        status = "済",
+        duration = strings.fmt.clock(result.actualMs),
+        status = strings.gymRecords.statusDone,
         reps = reps,
         skipped = false,
     )
@@ -210,7 +228,7 @@ fun breakdownRow(result: SegmentResult, exerciseName: String?): BreakdownRow? {
  * shown it needs a different label; do not quietly swap the argument (`04-library-records.md` §4,
  * edge case 6).
  */
-fun heroTime(activeMs: Long): String = durationKanjiFromMs(activeMs)
+fun heroTime(activeMs: Long, strings: Strings): String = strings.fmt.durationFromMs(activeMs)
 
 /**
  * The four text slots of a history row, in the geometry `04-library-records.md` §4 draws.
@@ -245,21 +263,21 @@ data class SessionRowLines(
  * circuit has no rep count, and zero there is an inapplicability, not a result (`03-player.md` §A,
  * COMPLETE edge case 4). A row can therefore legitimately carry a detail line of just the day.
  */
-fun sessionRowLines(summary: SessionSummary): SessionRowLines {
+fun sessionRowLines(summary: SessionSummary, strings: Strings): SessionRowLines {
     val parts = buildList {
-        add(JapaneseDate.kanji(summary.localDate.dayOfMonth) + "日")
-        if (summary.roundsCompleted > 0) add(JapaneseDate.kanjiExtended(summary.roundsCompleted) + "巡")
-        if (summary.totalReps > 0) add(JapaneseDate.kanjiExtended(summary.totalReps) + "回")
+        add(strings.gymRecords.dayOfMonth(strings.fmt.count(summary.localDate.dayOfMonth)))
+        if (summary.roundsCompleted > 0) add(strings.fmt.rounds(summary.roundsCompleted))
+        if (summary.totalReps > 0) add(strings.fmt.reps(summary.totalReps))
     }
-    val partial = partialChipCopy(summary)
+    val partial = partialChipCopy(summary, strings)
     return SessionRowLines(
         name = summary.routineName,
-        duration = heroTime(summary.activeMs),
-        detail = parts.joinToString(" ・ "),
-        rating = summary.rating?.label,
+        duration = heroTime(summary.activeMs, strings),
+        detail = parts.joinToString(strings.fmt.separator),
+        rating = summary.rating?.label(strings),
         // The list has no `isStillBest` — it would be a per-row query — so a row shows the current
         // 自己最高 only. 当時の自己最高 is the detail page's distinction, where the best has been read.
-        chip = partial ?: prChip(summary, isStillBest = true)?.label,
+        chip = partial ?: prChip(summary, isStillBest = true)?.label(strings),
         partial = partial != null,
     )
 }
@@ -277,12 +295,17 @@ fun sessionRowLines(summary: SessionSummary): SessionRowLines {
  *
  * Minutes truncate. 二千四百分 is the whole minutes trained, not the nearest.
  */
-fun historySubtitle(sessions: Int, totalActiveMs: Long, routineName: String? = null): String {
+fun historySubtitle(
+    sessions: Int,
+    totalActiveMs: Long,
+    strings: Strings,
+    routineName: String? = null,
+): String {
     if (routineName != null) {
-        return "「" + routineName + "」" + JapaneseDate.kanjiExtended(sessions) + "回"
+        return strings.gymRecords.historyForRoutine(routineName, strings.fmt.times(sessions))
     }
     val minutes = (if (totalActiveMs <= 0L) 0L else totalActiveMs / 60_000L).toInt()
-    return JapaneseDate.kanjiExtended(sessions) + "回 ・ " + JapaneseDate.kanjiExtended(minutes) + "分"
+    return strings.fmt.times(sessions) + strings.fmt.separator + strings.fmt.minutes(minutes)
 }
 
 // ─── The streak block (`GYM.RECORDS.INDEX`) ─────────────────────────────────────────────────────
@@ -344,15 +367,17 @@ const val MONOTONY_MIN_HISTORY_DAYS: Int = 14
  *   than *a low number*. Only a value above [MONOTONY_NUDGE_ABOVE] with at least
  *   [MONOTONY_MIN_HISTORY_DAYS] of history says anything.
  */
-fun streakCopy(streak: Streak, monotony7d: Double? = null, historyDays: Int = 0): StreakCopy {
+fun streakCopy(
+    streak: Streak,
+    strings: Strings,
+    monotony7d: Double? = null,
+    historyDays: Int = 0,
+): StreakCopy {
+    val copy = strings.gymRecords
     val broken = streak.days <= 0
-    val line = if (broken) {
-        "連続は とぎれています"
-    } else {
-        JapaneseDate.kanjiExtended(streak.days) + "日 連続"
-    }
+    val line = if (broken) copy.streakBroken else copy.streakDays(strings.fmt.days(streak.days))
     val forgiveness = if (streak.forgivenThisMonth > 0) {
-        "ゆるし " + JapaneseDate.kanjiExtended(streak.forgivenThisMonth) + "回 使いました"
+        copy.forgivenessUsed(strings.fmt.times(streak.forgivenThisMonth))
     } else {
         null
     }
@@ -361,7 +386,7 @@ fun streakCopy(streak: Streak, monotony7d: Double? = null, historyDays: Int = 0)
         monotony7d > MONOTONY_NUDGE_ABOVE &&
         historyDays >= MONOTONY_MIN_HISTORY_DAYS
     ) {
-        "同じ調子が続いています"
+        copy.monotonyNudge
     } else {
         null
     }
@@ -370,7 +395,7 @@ fun streakCopy(streak: Streak, monotony7d: Double? = null, historyDays: Int = 0)
         broken = broken,
         forgiveness = forgiveness,
         monotony = monotony,
-        semantics = listOfNotNull(line, forgiveness, monotony).joinToString("、"),
+        semantics = listOfNotNull(line, forgiveness, monotony).joinToString(strings.fmt.listSeparator),
     )
 }
 
@@ -462,13 +487,13 @@ data class BestRowCopy(
  * The date is 六月十七日 and not the history row's bare 十七日: this list is not grouped by month, so
  * the month is not repeated noise here — it is the only thing saying *when*.
  */
-fun bestValueCopy(best: RoutineBest): BestRowCopy? {
-    val metricLabel = bestMetricLabel(best.metric) ?: return null
-    val value = bestValueLabel(best.metric, best.value)
-    val meta = metricLabel + " ・ " + best.engine.label
-    val date = JapaneseDate.monthDay(best.localDate.atStartOfDay())
-    val count = JapaneseDate.kanjiExtended(best.timesDone) + "回"
-    val note = if (best.structureChanged) "中身が変わっています" else null
+fun bestValueCopy(best: RoutineBest, strings: Strings): BestRowCopy? {
+    val metricLabel = bestMetricLabel(best.metric, strings) ?: return null
+    val value = bestValueLabel(best.metric, best.value, strings)
+    val meta = metricLabel + strings.fmt.separator + best.engine.label(strings)
+    val date = strings.fmt.monthDay(best.localDate.atStartOfDay())
+    val count = strings.fmt.times(best.timesDone)
+    val note = if (best.structureChanged) strings.gymRecords.structureChanged else null
     return BestRowCopy(
         name = best.routineName,
         value = value,
@@ -480,13 +505,13 @@ fun bestValueCopy(best: RoutineBest): BestRowCopy? {
         semantics = listOfNotNull(
             best.routineName,
             metricLabel + " " + value,
-            best.engine.label,
+            best.engine.label(strings),
             date,
             count,
             note,
             // Announced last, and announced at all: a row that is still tappable while its routine is
             // gone has to say so, or the 型を見る it offers lands somewhere the user cannot explain.
-            if (best.routineArchived) "削除済み" else null,
-        ).joinToString("、"),
+            if (best.routineArchived) strings.gymRecords.archived else null,
+        ).joinToString(strings.fmt.listSeparator),
     )
 }

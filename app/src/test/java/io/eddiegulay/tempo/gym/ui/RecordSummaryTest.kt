@@ -7,6 +7,8 @@ import io.eddiegulay.tempo.gym.PrChip
 import io.eddiegulay.tempo.gym.Rating
 import io.eddiegulay.tempo.gym.SegmentResult
 import io.eddiegulay.tempo.gym.SessionSummary
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import io.eddiegulay.tempo.ui.ENSO_SWEEP_DEGREES
 import io.eddiegulay.tempo.ui.gym.ENSO_CLOSED_DEGREES
 import io.eddiegulay.tempo.ui.gym.RecordMode
@@ -57,18 +59,18 @@ class RecordSummaryTest {
     fun `the hero label is 活動時間, and 到達 only for a fail-out`() {
         // `03` §A COMPLETE's mock and its `FailedOut` state. The label changes because the number
         // means something different: a デス・バイ's clock is how far you got, not what you spent.
-        assertEquals("活動時間", recordHeroLabel(failedOut = false))
-        assertEquals("到達", recordHeroLabel(failedOut = true))
+        assertEquals("活動時間", recordHeroLabel(failedOut = false, strings = StringsJa))
+        assertEquals("到達", recordHeroLabel(failedOut = true, strings = StringsJa))
     }
 
     @Test
     fun `a fail-out chip states when the ladder ran out`() {
-        assertEquals("十七分で 力尽きた", failedOutChip(17 * 60_000L))
+        assertEquals("十七分で 力尽きた", failedOutChip(17 * 60_000L, StringsJa))
     }
 
     @Test
     fun `a complete session carries no chip at all`() {
-        assertNull(recordHeaderChip(data()))
+        assertNull(recordHeaderChip(data(), StringsJa))
     }
 
     @Test
@@ -79,6 +81,7 @@ class RecordSummaryTest {
             "途中まで ・ 二十種目中 八",
             recordHeaderChip(
                 data(summary = session(complete = false, stationsPlanned = 20, stationsCompleted = 8)),
+                StringsJa,
             ),
         )
     }
@@ -90,7 +93,10 @@ class RecordSummaryTest {
         // ended rather than merely that it did.
         assertEquals(
             "十七分で 力尽きた",
-            recordHeaderChip(data(summary = session(complete = false, activeMs = 17 * 60_000L), failedOut = true)),
+            recordHeaderChip(
+                data(summary = session(complete = false, activeMs = 17 * 60_000L), failedOut = true),
+                StringsJa,
+            ),
         )
     }
 
@@ -104,7 +110,7 @@ class RecordSummaryTest {
                 RecordTile("五巡", "巡"),
                 RecordTile("三百二十回", "回"),
             ),
-            recordTiles(session(stationsCompleted = 20, roundsCompleted = 5, totalReps = 320)),
+            recordTiles(session(stationsCompleted = 20, roundsCompleted = 5, totalReps = 320), StringsJa),
         )
     }
 
@@ -112,7 +118,7 @@ class RecordSummaryTest {
     fun `the 種目 tile counts what was done, not what was planned`() {
         // Otherwise a partial session's tile (二十種目) contradicts its own chip (二十種目中 八) on the
         // same screen, and the honest one is what you did.
-        val tiles = recordTiles(session(complete = false, stationsPlanned = 20, stationsCompleted = 8))
+        val tiles = recordTiles(session(complete = false, stationsPlanned = 20, stationsCompleted = 8), StringsJa)
         assertEquals("八種目", tiles[0].value)
     }
 
@@ -121,7 +127,7 @@ class RecordSummaryTest {
         // COMPLETE edge case 4 states it for reps — zero there is an inapplicability, not a result —
         // and `sessionRowLines` already omits a zero 巡 for the same reason. A fixed three-column row
         // cannot omit a column without unaligning the labels, so the slot takes the app's empty value.
-        val tiles = recordTiles(session(stationsCompleted = 0, roundsCompleted = 0, totalReps = 0))
+        val tiles = recordTiles(session(stationsCompleted = 0, roundsCompleted = 0, totalReps = 0), StringsJa)
         assertEquals(listOf("—", "—", "—"), tiles.map { it.value })
     }
 
@@ -149,21 +155,21 @@ class RecordSummaryTest {
         // means walking the whole history for one line. The component drops it rather than trusting the
         // caller to pass null — a rule the caller can forget is not a rule.
         val d = data(streakDays = 4)
-        assertEquals("四日 連続", recordAccolades(RecordMode.Live, d).streak)
-        assertNull(recordAccolades(RecordMode.Historical, d).streak)
+        assertEquals("四日 連続", recordAccolades(RecordMode.Live, d, StringsJa).streak)
+        assertNull(recordAccolades(RecordMode.Historical, d, StringsJa).streak)
     }
 
     @Test
     fun `an unknown streak omits the line rather than drawing a dash`() {
         // COMPLETE edge case 7, and `04` §6's "never 〇日 連続".
-        assertNull(streakLine(null))
-        assertNull(streakLine(0))
-        assertEquals("四日 連続", streakLine(4))
+        assertNull(streakLine(null, StringsJa))
+        assertNull(streakLine(0, StringsJa))
+        assertEquals("四日 連続", streakLine(4, StringsJa))
     }
 
     @Test
     fun `a first session says so, and is not compared`() {
-        val accolades = recordAccolades(RecordMode.Live, data(previous = null))
+        val accolades = recordAccolades(RecordMode.Live, data(previous = null), StringsJa)
         assertTrue(accolades.firstEver)
         assertNull(accolades.comparison)
     }
@@ -175,6 +181,7 @@ class RecordSummaryTest {
         val accolades = recordAccolades(
             RecordMode.Live,
             data(summary = session(complete = false), previous = null),
+            StringsJa,
         )
         assertFalse(accolades.firstEver)
     }
@@ -184,6 +191,7 @@ class RecordSummaryTest {
         val accolades = recordAccolades(
             RecordMode.Live,
             data(summary = session(activeMs = 374_000, personalBest = true), previous = session(activeMs = 396_000)),
+            StringsJa,
         )
         assertEquals("前回より 二十二秒 速い", accolades.comparison)
         assertEquals(PrChip.CURRENT, accolades.chip)
@@ -195,6 +203,7 @@ class RecordSummaryTest {
         val accolades = recordAccolades(
             RecordMode.Historical,
             data(summary = session(personalBest = true), isStillBest = false),
+            StringsJa,
         )
         assertEquals(PrChip.FORMER, accolades.chip)
     }
@@ -208,7 +217,7 @@ class RecordSummaryTest {
             previous = session(activeMs = 396_000),
         )
         for (mode in RecordMode.entries) {
-            val accolades = recordAccolades(mode, d)
+            val accolades = recordAccolades(mode, d, StringsJa)
             assertNull(accolades.chip)
             assertNull(accolades.comparison)
         }
@@ -218,9 +227,13 @@ class RecordSummaryTest {
     fun `a block with nothing in it is never inserted`() {
         // An accolade section that appears, animates and says nothing is worse than one that never
         // appears — and a `liveRegion` announcing an empty node is worse still.
-        val accolades = recordAccolades(RecordMode.Live, data(summary = session(complete = false), previous = null))
+        val accolades = recordAccolades(
+            RecordMode.Live,
+            data(summary = session(complete = false), previous = null),
+            StringsJa,
+        )
         assertTrue(accolades.isEmpty)
-        assertNull(accoladeSemantics(accolades))
+        assertNull(accoladeSemantics(accolades, StringsJa))
     }
 
     // ─── the ring ───────────────────────────────────────────────────────────────────────────────
@@ -272,7 +285,9 @@ class RecordSummaryTest {
                 result(ordinal = 2, phase = Phase.REST, exerciseId = null),
                 result(ordinal = 3, phase = Phase.REPS, exerciseId = "squat", actualReps = 18, prescribedReps = 20),
             ),
-        ) { id -> if (id == "pushup") "腕立て伏せ" else "スクワット" }
+            strings = StringsJa,
+            exerciseName = { id -> if (id == "pushup") "腕立て伏せ" else "スクワット" },
+        )
 
         assertEquals(listOf("腕立て伏せ", "スクワット"), rows.map { it.name })
         assertEquals("0:41", rows[0].duration)
@@ -281,7 +296,7 @@ class RecordSummaryTest {
 
     @Test
     fun `a station the catalogue no longer knows is named, not blanked`() {
-        val rows = breakdownRows(listOf(result(exerciseId = "gone"))) { null }
+        val rows = breakdownRows(listOf(result(exerciseId = "gone")), { null }, StringsJa)
         assertEquals("不明な種目", rows.single().name)
     }
 
@@ -305,13 +320,13 @@ class RecordSummaryTest {
 
     @Test
     fun `the rating group says whether it has been answered`() {
-        assertEquals("未評価", ratingGroupState(null))
-        assertEquals("ちょうど を選択", ratingGroupState(Rating.JUST_RIGHT))
+        assertEquals("未評価", ratingGroupState(null, StringsJa))
+        assertEquals("ちょうど を選択", ratingGroupState(Rating.JUST_RIGHT, StringsJa))
     }
 
     @Test
     fun `each rating says what tapping it records`() {
-        assertEquals("きついとして記録する", ratingOptionLabel(Rating.HARD))
+        assertEquals("きついとして記録する", ratingOptionLabel(Rating.HARD, StringsJa))
     }
 
     @Test
@@ -332,6 +347,7 @@ class RecordSummaryTest {
             "七分間、活動時間 六分十四秒、途中まで ・ 二十種目中 八",
             recordHeroSemantics(
                 data(summary = session(complete = false, stationsPlanned = 20, stationsCompleted = 8)),
+                StringsJa,
             ),
         )
     }
@@ -342,7 +358,10 @@ class RecordSummaryTest {
         // value already carries its unit — 「種目 二十種目」 says it twice.
         assertEquals(
             "二十種目、五巡、三百二十回",
-            recordTilesSemantics(recordTiles(session(stationsCompleted = 20, roundsCompleted = 5, totalReps = 320))),
+            recordTilesSemantics(
+                recordTiles(session(stationsCompleted = 20, roundsCompleted = 5, totalReps = 320), StringsJa),
+                StringsJa,
+            ),
         )
     }
 
@@ -355,19 +374,59 @@ class RecordSummaryTest {
                 previous = session(activeMs = 396_000),
                 streakDays = 4,
             ),
+            StringsJa,
         )
-        assertEquals("前回より 二十二秒 速い、四日 連続、自己最高", accoladeSemantics(accolades))
+        assertEquals("前回より 二十二秒 速い、四日 連続、自己最高", accoladeSemantics(accolades, StringsJa))
     }
 
     @Test
     fun `a first session announces the words it renders`() {
-        assertEquals("はじめての記録", accoladeSemantics(recordAccolades(RecordMode.Live, data(previous = null))))
+        assertEquals(
+            "はじめての記録",
+            accoladeSemantics(recordAccolades(RecordMode.Live, data(previous = null), StringsJa), StringsJa),
+        )
     }
 
     @Test
     fun `a skipped station reads as skipped and nothing else`() {
-        val rows = breakdownRows(listOf(result(exerciseId = "burpee", skipped = true))) { "バーピー" }
-        assertEquals("バーピー、とばした", breakdownSemantics(rows.single()))
+        val rows = breakdownRows(listOf(result(exerciseId = "burpee", skipped = true)), { "バーピー" }, StringsJa)
+        assertEquals("バーピー、とばした", breakdownSemantics(rows.single(), StringsJa))
+    }
+
+    // ─── English ────────────────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `the hero label still changes for a fail-out in English`() {
+        // 到達 against 活動時間 is not a translation difference, it is a difference of what the number
+        // *means*: a デス・バイ's clock is how far up the ladder you got, not what you spent.
+        assertEquals("Active time", recordHeroLabel(failedOut = false, strings = StringsEn))
+        assertEquals("Reached", recordHeroLabel(failedOut = true, strings = StringsEn))
+        assertEquals("Gave out at 17m", failedOutChip(17 * 60_000L, StringsEn))
+    }
+
+    @Test
+    fun `the tiles carry their unit in the value in English too`() {
+        // The Japanese is identically redundant — 二十種目 over 種目 — and that redundancy is what lets
+        // `recordTilesSemantics` read the values alone without three orphan numbers.
+        val tiles = recordTiles(session(stationsCompleted = 20, roundsCompleted = 5, totalReps = 320), StringsEn)
+        assertEquals(listOf("20 stations", "5 rounds", "320 reps"), tiles.map { it.value })
+        assertEquals(listOf("Stations", "Rounds", "Reps"), tiles.map { it.label })
+        assertEquals("20 stations, 5 rounds, 320 reps", recordTilesSemantics(tiles, StringsEn))
+    }
+
+    @Test
+    fun `a zero tile is the em dash in both languages`() {
+        // `fmt.noValue` is an em dash either way — never 〇, never blank, and never "0 reps", which in
+        // a 20.sp numeral reads as a score.
+        val tiles = recordTiles(session(stationsCompleted = 0, roundsCompleted = 0, totalReps = 0), StringsEn)
+        assertEquals(listOf("—", "—", "—"), tiles.map { it.value })
+    }
+
+    @Test
+    fun `the rating chips ask and answer in English`() {
+        assertEquals("Not rated", ratingGroupState(null, StringsEn))
+        assertEquals("Just right selected", ratingGroupState(Rating.JUST_RIGHT, StringsEn))
+        assertEquals("Record as Hard", ratingOptionLabel(Rating.HARD, StringsEn))
     }
 }
 

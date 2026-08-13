@@ -19,6 +19,7 @@ import io.eddiegulay.tempo.data.BlockadeRepository
 import io.eddiegulay.tempo.data.TempoTheme
 import io.eddiegulay.tempo.data.ThemeRepository
 import io.eddiegulay.tempo.i18n.Lang
+import io.eddiegulay.tempo.i18n.stringsFor
 import io.eddiegulay.tempo.notification.NotificationGroup
 import io.eddiegulay.tempo.notification.NotificationRepository
 import io.eddiegulay.tempo.notification.TempoNotification
@@ -289,11 +290,12 @@ class LauncherViewModel(
         app: AppInfo,
         sourceBounds: android.graphics.Rect? = null,
         opts: android.os.Bundle? = null,
-    ) = appRepository.launch(context, app, sourceBounds, opts)
+    ) = appRepository.launch(context, app, stringsFor(lang.value), sourceBounds, opts)
 
     fun openAppInfo(context: Context, app: AppInfo) = appRepository.openAppInfo(context, app)
 
-    fun requestUninstall(context: Context, app: AppInfo) = appRepository.requestUninstall(context, app)
+    fun requestUninstall(context: Context, app: AppInfo) =
+        appRepository.requestUninstall(context, app, stringsFor(lang.value))
 
     fun setDefaultLauncher(isDefault: Boolean) {
         _isDefaultLauncher.value = isDefault

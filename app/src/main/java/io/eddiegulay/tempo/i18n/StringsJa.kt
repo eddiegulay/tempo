@@ -72,6 +72,25 @@ object StringsJa : Strings {
         override val modeGymSubtitle = "体を動かす"
         override val dismiss = "やめる"
 
+
+        override val eventCreate = object : WriteConfirmStrings {
+            override val heading = "予定を加えますか"
+            override val confirm = "加える"
+            override val consequence = "ほかの端末のカレンダーにも表示されます。"
+        }
+
+        override val eventUpdate = object : WriteConfirmStrings {
+            override val heading = "予定を変えますか"
+            override val confirm = "変える"
+            override val consequence = "変更はほかの端末のカレンダーにも反映されます。"
+        }
+
+        override val eventDelete = object : WriteConfirmStrings {
+            override val heading = "予定を削除しますか"
+            override val confirm = "削除する"
+            override val consequence = "ほかの端末のカレンダーからも消えます。元に戻せません。"
+        }
+
         override val languageTitle = "言語"
     }
 

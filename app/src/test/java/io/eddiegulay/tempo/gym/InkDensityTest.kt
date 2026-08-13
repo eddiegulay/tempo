@@ -1,6 +1,8 @@
 package io.eddiegulay.tempo.gym
 
 import io.eddiegulay.tempo.gym.data.loadScaleOf
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import java.time.LocalDate
 import java.time.YearMonth
 import org.junit.Assert.assertEquals
@@ -171,7 +173,7 @@ class InkDensityTest {
 
     @Test
     fun `the caption counts the days you trained`() {
-        assertEquals("三日 ・ 六月", monthCaption(YearMonth.of(2026, 6), trainedMonth()))
+        assertEquals("三日 ・ 六月", monthCaption(YearMonth.of(2026, 6), trainedMonth(), StringsJa))
     }
 
     @Test
@@ -179,8 +181,8 @@ class InkDensityTest {
         // §4 says so outright: the grid still renders, the pager still works, and the page says
         // 記録はありません to nobody. A month you did not train is a fact about June; an empty store is
         // a fact about the app, and the two must never share a composable.
-        assertEquals("この月は 〇日", monthCaption(YearMonth.of(2026, 6), emptyMap()))
-        assertEquals("六月、この月は 〇日", gridSemantics(YearMonth.of(2026, 6), emptyMap()))
+        assertEquals("この月は 〇日", monthCaption(YearMonth.of(2026, 6), emptyMap(), StringsJa))
+        assertEquals("六月、この月は 〇日", gridSemantics(YearMonth.of(2026, 6), emptyMap(), StringsJa))
     }
 
     @Test
@@ -189,7 +191,7 @@ class InkDensityTest {
         // real nodes. This is the deliberate answer to "how does a blind user read a heatmap".
         assertEquals(
             "六月、三日 鍛錬しました、いちばん多かったのは 六月十七日",
-            gridSemantics(YearMonth.of(2026, 6), trainedMonth()),
+            gridSemantics(YearMonth.of(2026, 6), trainedMonth(), StringsJa),
         )
     }
 
@@ -207,10 +209,10 @@ class InkDensityTest {
         )
 
         assertEquals(INK_LEVEL_NONE, inkLevel(0L, loadScaleOf(listOf(20L * 60_000L))))
-        assertEquals("一日 ・ 六月", monthCaption(YearMonth.of(2026, 6), zeroDuration))
+        assertEquals("一日 ・ 六月", monthCaption(YearMonth.of(2026, 6), zeroDuration, StringsJa))
         assertEquals(
             "六月、一日 鍛錬しました、いちばん多かったのは 六月四日",
-            gridSemantics(YearMonth.of(2026, 6), zeroDuration),
+            gridSemantics(YearMonth.of(2026, 6), zeroDuration, StringsJa),
         )
     }
 
@@ -219,8 +221,20 @@ class InkDensityTest {
         // The other end of the same predicate: nothing is inked, so the caption must not claim a day.
         val onlyZero = mapOf(LocalDate.of(2026, 6, 5) to day(activeMs = 0L, sessions = 1))
 
-        assertEquals("この月は 〇日", monthCaption(YearMonth.of(2026, 6), onlyZero))
-        assertEquals("六月、この月は 〇日", gridSemantics(YearMonth.of(2026, 6), onlyZero))
+        assertEquals("この月は 〇日", monthCaption(YearMonth.of(2026, 6), onlyZero, StringsJa))
+        assertEquals("六月、この月は 〇日", gridSemantics(YearMonth.of(2026, 6), onlyZero, StringsJa))
+    }
+
+    @Test
+    fun `the caption names the month and never counts months`() {
+        // `fmt.monthName`, not `fmt.months`. Japanese spells both 六月 so the mistake is invisible
+        // there; in English the wrong one renders "6 months" under a calendar of June.
+        assertEquals("3 days · June", monthCaption(YearMonth.of(2026, 6), trainedMonth(), StringsEn))
+        assertEquals(
+            "June, Trained 3 days, Busiest day 17 June",
+            gridSemantics(YearMonth.of(2026, 6), trainedMonth(), StringsEn),
+        )
+        assertEquals("0 days this month", monthCaption(YearMonth.of(2026, 6), emptyMap(), StringsEn))
     }
 
     @Test
@@ -233,7 +247,7 @@ class InkDensityTest {
         )
         assertEquals(
             "六月、二日 鍛錬しました、いちばん多かったのは 六月四日",
-            gridSemantics(YearMonth.of(2026, 6), tied),
+            gridSemantics(YearMonth.of(2026, 6), tied, StringsJa),
         )
     }
 }

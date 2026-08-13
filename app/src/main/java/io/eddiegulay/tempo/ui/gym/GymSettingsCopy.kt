@@ -1,11 +1,13 @@
 package io.eddiegulay.tempo.ui.gym
 
-import io.eddiegulay.tempo.data.JapaneseDate
 import io.eddiegulay.tempo.gym.GymPreferences
 import io.eddiegulay.tempo.gym.SpeechAvailability
 import io.eddiegulay.tempo.gym.Units
 import io.eddiegulay.tempo.gym.WheelOption
 import io.eddiegulay.tempo.gym.clampPrepareSeconds
+import io.eddiegulay.tempo.i18n.Lang
+import io.eddiegulay.tempo.i18n.Strings
+import io.eddiegulay.tempo.i18n.stringsFor
 
 /*
  * Everything `GYM.SETTINGS` decides, decided without a composable — `01-shell.md` §B's "Pure logic to
@@ -26,6 +28,12 @@ import io.eddiegulay.tempo.gym.clampPrepareSeconds
  * The reason any of this is a file rather than a `when` inside the page is `00-plan.md` §4.1: a
  * decision made inside a composable can only be checked by launching an emulator, and the decisions
  * below include which row is disabled and why — which is exactly the class of thing that ships wrong.
+ *
+ * **Every word this page draws now comes from `strings.gymSettings`, and every function that needs one
+ * takes the table as a parameter** (`.planning/i18n/DECISIONS.md` §L4). Not a global and not a
+ * composition local: this file is covered by plain JUnit with no Compose and no `Context`, and passing
+ * the table is what keeps it there. The shape below is the one the migration is aiming at everywhere —
+ * the `when` expressions *select* a member of the table, they never build a sentence out of one.
  */
 
 // ─── The rows ───────────────────────────────────────────────────────────────────────────────────
@@ -38,30 +46,55 @@ import io.eddiegulay.tempo.gym.clampPrepareSeconds
  * this is an enum on [SettingRow] rather than four hand-grouped lists in the composable.
  *
  * 安全のために has no section — it is a lone 64.dp card below the four, and it writes nothing.
+ *
+ * **The heading is not a constructor argument** (§L3's rule for all thirteen label-carrying enums): an
+ * argument is fixed at class-init and cannot be re-resolved when the language changes. See [heading].
  */
-enum class SettingSection(val heading: String) {
-    Cues("合図"),
-    Progress("進行"),
-    RestDefaults("休息の初期値"),
-    Display("表示"),
+enum class SettingSection {
+    Cues,
+    Progress,
+    RestDefaults,
+    Display,
+}
+
+/** The word §B's mock puts over this card. */
+fun SettingSection.heading(strings: Strings): String = when (this) {
+    SettingSection.Cues -> strings.gymSettings.sectionCues
+    SettingSection.Progress -> strings.gymSettings.sectionProgress
+    SettingSection.RestDefaults -> strings.gymSettings.sectionRestDefaults
+    SettingSection.Display -> strings.gymSettings.sectionDisplay
 }
 
 /**
- * Every switchable or dialable row, with the word §B's mock puts on it.
+ * Every switchable or dialable row.
  *
  * Declaration order is display order, which is also the focus order §B's accessibility paragraph asks
- * for ("focus order is visual order").
+ * for ("focus order is visual order"). [section] stays a constructor argument because it is structure
+ * rather than copy; the word is [label].
  */
-enum class SettingRow(val label: String, val section: SettingSection) {
-    Haptics("振動", SettingSection.Cues),
-    Tones("音", SettingSection.Cues),
-    Speech("音声", SettingSection.Cues),
-    AutoAdvanceReps("目安で自動的に進む", SettingSection.Progress),
-    PrepareSeconds("支度の長さ", SettingSection.Progress),
-    StationRest("種目の間", SettingSection.RestDefaults),
-    RoundRest("巡の間", SettingSection.RestDefaults),
-    KeepScreenOn("画面を消さない", SettingSection.Display),
-    Units("単位", SettingSection.Display),
+enum class SettingRow(val section: SettingSection) {
+    Haptics(SettingSection.Cues),
+    Tones(SettingSection.Cues),
+    Speech(SettingSection.Cues),
+    AutoAdvanceReps(SettingSection.Progress),
+    PrepareSeconds(SettingSection.Progress),
+    StationRest(SettingSection.RestDefaults),
+    RoundRest(SettingSection.RestDefaults),
+    KeepScreenOn(SettingSection.Display),
+    Units(SettingSection.Display),
+}
+
+/** The word §B's mock puts on this row. */
+fun SettingRow.label(strings: Strings): String = when (this) {
+    SettingRow.Haptics -> strings.gymSettings.rowHaptics
+    SettingRow.Tones -> strings.gymSettings.rowTones
+    SettingRow.Speech -> strings.gymSettings.rowSpeech
+    SettingRow.AutoAdvanceReps -> strings.gymSettings.rowAutoAdvanceReps
+    SettingRow.PrepareSeconds -> strings.gymSettings.rowPrepareSeconds
+    SettingRow.StationRest -> strings.gymSettings.rowStationRest
+    SettingRow.RoundRest -> strings.gymSettings.rowRoundRest
+    SettingRow.KeepScreenOn -> strings.gymSettings.rowKeepScreenOn
+    SettingRow.Units -> strings.gymSettings.rowUnits
 }
 
 /**
@@ -72,23 +105,6 @@ enum class SettingRow(val label: String, val section: SettingSection) {
  * user to stop reading the ones that mean something.
  */
 data class RowState(val enabled: Boolean, val subtitle: String?)
-
-// §B's mock and its states table. Every string below appears in a spec table; none is composed here.
-private const val SUB_SPEECH = "種目の名前を読み上げる"
-private const val SUB_NO_JAPANESE_VOICE = "日本語の音声が入っていません"
-private const val SUB_NO_TTS_ENGINE = "読み上げ機能がありません"
-private const val SUB_AUTO_ADVANCE = "回数の種目でも時間が来たら次へ"
-private const val SUB_KEEP_SCREEN_ON = "運動中だけ"
-private const val SUB_SILENT_MODE = "マナーモードでも鳴ります"
-
-/** §B's `SessionLive` state: the rest defaults and 支度 do not retro-apply to a compiled timeline. */
-private const val SUB_NOT_THIS_SESSION = "いまの鍛錬には反映されません"
-
-/** 「これから作る型に使われます」 — a footnote under the 休息の初期値 card, not a row inside it. */
-const val REST_DEFAULTS_FOOTNOTE = "これから作る型に使われます"
-
-/** §B's `Error` state, and `DECISIONS.md` §Q6's `Rejected` copy. One line, under the card that failed. */
-const val WRITE_FAILED_LINE = "保存できませんでした"
 
 /**
  * Every row's enablement and sub-line, from the three facts that decide them.
@@ -104,6 +120,7 @@ const val WRITE_FAILED_LINE = "保存できませんでした"
  * call site, the 入/切 word. A toggle showing the effective value would appear to switch itself on when
  * TalkBack came up, and switching it off again would do nothing the user could see.
  *
+ * @param strings the active table. A parameter rather than a lookup, so this stays a JVM test (§L4).
  * @param sessionLive `GymViewModel.activeSession != null`. §B's `SessionLive` state footnotes 支度 and
  *   the two rests; 合図 and 表示 deliberately take effect mid-session, which is the main reason this
  *   page is reachable at all.
@@ -115,27 +132,30 @@ const val WRITE_FAILED_LINE = "保存できませんでした"
  * @param touchExplorationEnabled `gym.cue.isTouchExplorationEnabled`, read for the sub-line only.
  */
 fun settingsRowStates(
+    strings: Strings,
     prefs: GymPreferences,
     speech: SpeechAvailability?,
     sessionLive: Boolean,
     tonesJustEnabled: Boolean = false,
     touchExplorationEnabled: Boolean = false,
 ): Map<SettingRow, RowState> = buildMap {
+    val copy = strings.gymSettings
     put(SettingRow.Haptics, RowState(enabled = true, subtitle = null))
     put(
         SettingRow.Tones,
-        RowState(enabled = true, subtitle = if (tonesJustEnabled) SUB_SILENT_MODE else null),
+        RowState(enabled = true, subtitle = if (tonesJustEnabled) copy.subSilentMode else null),
     )
-    put(SettingRow.Speech, speechRowState(prefs, speech, touchExplorationEnabled))
-    put(SettingRow.AutoAdvanceReps, RowState(enabled = true, subtitle = SUB_AUTO_ADVANCE))
-    put(SettingRow.PrepareSeconds, RowState(enabled = true, subtitle = sessionNotice(sessionLive)))
-    put(SettingRow.StationRest, RowState(enabled = true, subtitle = sessionNotice(sessionLive)))
-    put(SettingRow.RoundRest, RowState(enabled = true, subtitle = sessionNotice(sessionLive)))
-    put(SettingRow.KeepScreenOn, RowState(enabled = true, subtitle = SUB_KEEP_SCREEN_ON))
+    put(SettingRow.Speech, speechRowState(strings, prefs, speech, touchExplorationEnabled))
+    put(SettingRow.AutoAdvanceReps, RowState(enabled = true, subtitle = copy.subAutoAdvance))
+    put(SettingRow.PrepareSeconds, RowState(enabled = true, subtitle = sessionNotice(strings, sessionLive)))
+    put(SettingRow.StationRest, RowState(enabled = true, subtitle = sessionNotice(strings, sessionLive)))
+    put(SettingRow.RoundRest, RowState(enabled = true, subtitle = sessionNotice(strings, sessionLive)))
+    put(SettingRow.KeepScreenOn, RowState(enabled = true, subtitle = copy.subKeepScreenOn))
     put(SettingRow.Units, RowState(enabled = true, subtitle = null))
 }
 
-private fun sessionNotice(sessionLive: Boolean): String? = if (sessionLive) SUB_NOT_THIS_SESSION else null
+private fun sessionNotice(strings: Strings, sessionLive: Boolean): String? =
+    if (sessionLive) strings.gymSettings.subNotThisSession else null
 
 /**
  * 音声, which is the only row with four different things to say.
@@ -145,26 +165,36 @@ private fun sessionNotice(sessionLive: Boolean): String? = if (sessionLive) SUB_
  * the hardware being unable to honour it. `armCues` disarms the channel meanwhile and the player falls
  * back to tones silently.
  *
- * **The TalkBack-override sub-line is `SUB_SPEECH`, and that is a documented gap, not a choice.**
+ * **The TalkBack-override sub-line is `subSpeech`, and that is a documented gap, not a choice.**
  * `DECISIONS.md` §Q2 requires "a subtitle explaining the override when touch exploration is on" and
  * **no spec table contains that sentence** — not §B's mock, not §B's states table, not `03-player.md`
  * §D.6. `00-plan.md` §4.1 forbids inventing copy, so the row keeps the one sub-line the mock does give
- * it and the gap is reported rather than filled with prose of my own. When the string lands, it belongs
- * on the [touchExplorationEnabled] branch below and nowhere else.
+ * it and the gap is reported rather than filled with prose of my own. Translating the page does not
+ * close it: an English sentence in that position would be an invention in a second language rather
+ * than a translation of anything. When the string lands, it belongs on the [touchExplorationEnabled]
+ * branch below and nowhere else.
+ *
+ * **`NoVoiceForLanguage`'s sub-line no longer names a language.** The probe asks for a voice in whatever
+ * language the app is speaking, so the English says only that no voice is installed; the Japanese is
+ * transcribed as it ships and still names 日本語, which is what a Japanese UI probing for Japanese
+ * correctly reports. See `GymSettingsStrings.subNoVoice`.
  */
 private fun speechRowState(
+    strings: Strings,
     prefs: GymPreferences,
     speech: SpeechAvailability?,
     touchExplorationEnabled: Boolean,
 ): RowState = when (speech) {
-    SpeechAvailability.NoJapaneseVoice -> RowState(enabled = false, subtitle = SUB_NO_JAPANESE_VOICE)
-    SpeechAvailability.NoEngine -> RowState(enabled = false, subtitle = SUB_NO_TTS_ENGINE)
+    SpeechAvailability.NoVoiceForLanguage ->
+        RowState(enabled = false, subtitle = strings.gymSettings.subNoVoice)
+    SpeechAvailability.NoEngine ->
+        RowState(enabled = false, subtitle = strings.gymSettings.subNoTtsEngine)
     // Available, or not yet probed. Both are live rows; see the KDoc on `settingsRowStates`.
     SpeechAvailability.Available, null -> RowState(
         enabled = true,
         // Shown while the row needs explaining: before it has been switched on at all, and while
         // TalkBack is speaking for it (`DECISIONS.md` §Q2 — the string gap above).
-        subtitle = if (!prefs.speech || touchExplorationEnabled) SUB_SPEECH else null,
+        subtitle = if (!prefs.speech || touchExplorationEnabled) strings.gymSettings.subSpeech else null,
     )
 }
 
@@ -178,7 +208,8 @@ private fun speechRowState(
  * `stateDescription`, from one function, because §B's accessibility line requires that "the visible
  * word and the state description must always agree" — two literals is how they stop agreeing.
  */
-fun toggleWord(on: Boolean): String = if (on) "入" else "切"
+fun toggleWord(strings: Strings, on: Boolean): String =
+    if (on) strings.gymSettings.toggleOn else strings.gymSettings.toggleOff
 
 /** 単位 cycles on tap: two options do not deserve a picker (§B's value-rows note). */
 fun nextUnits(current: Units): Units =
@@ -197,7 +228,7 @@ fun wheelSteps(range: IntRange, step: Int): List<Int> =
     if (step <= 0) emptyList() else (range.first..range.last step step).toList()
 
 /**
- * A duration the user **chose**, in bare seconds — `DECISIONS.md` §Q10, and なし at zero.
+ * A duration the user **chose** — bare seconds in Japanese, and なし at zero.
  *
  * §Q10's rule stated once: a duration the user chose renders as the value they chose, and a duration
  * the app measured renders through `durationKanji`. Sixty is 六十秒 on this page, on the builder's
@@ -210,14 +241,27 @@ fun wheelSteps(range: IntRange, step: Int): List<Int> =
  * than reaching a page. **If they are ever unified, unify them onto §Q10's sentence and never onto
  * `durationKanji`.**
  *
+ * **In English the twins collapse, and that is a deletion rather than a translation** (§L7). §Q10's
+ * distinction is carried by *orthography* — two ways of spelling the same sixty — and English has only
+ * one, so there is nowhere for it to go. The English arm therefore renders through the same
+ * `fmt.duration` a measured value uses: sixty is `1m` here exactly as it is on a results line, and the
+ * two halves of §Q10 say the same thing. Keeping `fmt.seconds` for this arm would have preserved the
+ * *shape* of a rule whose content is gone, and would have printed `300s` on a rest wheel.
+ *
+ * The Japanese arm is untouched, which is the point of branching on [Strings.lang] rather than picking
+ * one rule for both: §Q10 remains binding for `Ja` and `GymSettingsCopyTest` still pins 六十秒.
+ *
  * **Named for this page rather than `chosenSecondsLabel`**, which the player already owns: that one
  * takes *milliseconds* off a running clock and has no zero case, because a segment of zero length is
  * not a thing the player draws. Here zero is a real, selectable row and it reads なし — §6 :1141's own
  * word for no rest, where 〇秒 would be a prescription of nothing. Two functions one autocomplete apart
  * that differ in their units *and* at their boundary should not share a name.
  */
-fun settingsSecondsLabel(seconds: Int): String =
-    if (seconds <= 0) "なし" else JapaneseDate.kanjiExtended(seconds) + "秒"
+fun settingsSecondsLabel(strings: Strings, seconds: Int): String = when {
+    seconds <= 0 -> strings.gymSettings.secondsNone
+    strings.lang == Lang.Ja -> strings.fmt.seconds(seconds)
+    else -> strings.fmt.duration(seconds)
+}
 
 /**
  * 支度の長さ's wheel: every second from なし to 十五秒.
@@ -232,14 +276,19 @@ fun settingsSecondsLabel(seconds: Int): String =
  * The rest wheels' steps are `04-library-records.md` §3's and are reused verbatim through
  * `restOptions` — this page builds no parallel list for them.
  *
- * Built once. This page recomposes on every toggle and rebuilding sixteen kanji strings per frame is
- * waste that shows up as a dropped frame on a spin rather than as a number anybody measures.
+ * **Built once per language, not once per frame.** This page recomposes on every toggle and rebuilding
+ * sixteen labels per frame is waste that shows up as a dropped frame on a spin rather than as a number
+ * anybody measures. There are two languages and the lists are immutable, so both are built at class-init
+ * and the switch is a map lookup — the alternative, caching the last one, would rebuild on every flip
+ * of the language and is more code for less.
  */
-fun prepareOptions(): List<WheelOption> = PREPARE_OPTIONS
+fun prepareOptions(strings: Strings): List<WheelOption> = PREPARE_OPTIONS.getValue(strings.lang)
 
-private val PREPARE_OPTIONS: List<WheelOption> =
+private val PREPARE_OPTIONS: Map<Lang, List<WheelOption>> = Lang.entries.associateWith { lang ->
+    val strings = stringsFor(lang)
     wheelSteps(clampPrepareSeconds(0)..clampPrepareSeconds(Int.MAX_VALUE), 1)
-        .map { WheelOption(it, settingsSecondsLabel(it)) }
+        .map { WheelOption(it, settingsSecondsLabel(strings, it)) }
+}
 
 // ─── What TalkBack hears ────────────────────────────────────────────────────────────────────────
 
@@ -250,6 +299,13 @@ private val PREPARE_OPTIONS: List<WheelOption> =
  * gains a sub-line gains it in the announcement too: §B folds the explanation into the description for
  * the disabled 音声 case (`"音声、切、日本語の音声が入っていません"`), and the same shape reads correctly
  * for every other row that carries one.
+ *
+ * The separator is `fmt.listSeparator` rather than a literal 「、」: an ideographic comma is punctuation
+ * in one language and a mojibake-looking glyph in the other, and it is the formatter's to choose.
  */
-fun settingsRowDescription(label: String, value: String, subtitle: String? = null): String =
-    listOfNotNull(label, value, subtitle).joinToString("、")
+fun settingsRowDescription(
+    strings: Strings,
+    label: String,
+    value: String,
+    subtitle: String? = null,
+): String = listOfNotNull(label, value, subtitle).joinToString(strings.fmt.listSeparator)

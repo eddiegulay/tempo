@@ -1,5 +1,8 @@
 package io.eddiegulay.tempo.gym
 
+import io.eddiegulay.tempo.i18n.Strings
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -15,18 +18,26 @@ import org.junit.Test
  * zero, it is *nonexistent*. Each of those is one `if` away from being quietly re-decided by someone
  * simplifying the function, and each produces a page of rows that are not wrong so much as not about
  * anything.
+ *
+ * The rows are asked for in **Japanese** almost throughout, and go on asserting the same literals they
+ * always did — they are testing which rows an engine earns and what each says, not that a table was
+ * transcribed correctly. [ja] is where the words now come from. The few English cases at the end are
+ * the ones where the two languages genuinely differ in shape rather than in spelling.
  */
 class EngineRowsTest {
+
+    private val ja: Strings = StringsJa
+    private val en: Strings = StringsEn
 
     @Test
     fun `a circuit states both rests and its round count`() {
         assertEquals(
             listOf(
-                EngineRow("種目の間の休息", "十秒"),
-                EngineRow("巡の間の休息", "六十秒"),
-                EngineRow("巡数", "三巡"),
+                EngineRow(EngineRowKind.REST_BETWEEN_STATIONS, "種目の間の休息", "十秒"),
+                EngineRow(EngineRowKind.REST_BETWEEN_ROUNDS, "巡の間の休息", "六十秒"),
+                EngineRow(EngineRowKind.ROUNDS, "巡数", "三巡"),
             ),
-            engineRows(Engine.INTERVAL_CIRCUIT, rounds = 3, timeCapSeconds = null, 10, 60),
+            engineRows(Engine.INTERVAL_CIRCUIT, rounds = 3, timeCapSeconds = null, 10, 60, ja),
         )
     }
 
@@ -36,11 +47,11 @@ class EngineRowsTest {
         // many rounds" is genuinely "as many as fit", and §6 gives that exact phrase for this slot.
         assertEquals(
             listOf(
-                EngineRow("制限時間", "二十分"),
-                EngineRow("種目の間の休息", "なし"),
-                EngineRow("巡数", "時間内で"),
+                EngineRow(EngineRowKind.TIME_CAP, "制限時間", "二十分"),
+                EngineRow(EngineRowKind.REST_BETWEEN_STATIONS, "種目の間の休息", "なし"),
+                EngineRow(EngineRowKind.ROUNDS, "巡数", "時間内で"),
             ),
-            engineRows(Engine.AMRAP, rounds = null, timeCapSeconds = 1200, 0, 0),
+            engineRows(Engine.AMRAP, rounds = null, timeCapSeconds = 1200, 0, 0, ja),
         )
     }
 
@@ -48,7 +59,7 @@ class EngineRowsTest {
     fun `a for-time routine states nothing structural at all`() {
         // §3 edge case 4: FOR_TIME has no meaningful 巡数 — and マーフ prescribes no rest either. An
         // empty list is the honest answer; a 巡数 一巡 row would be information-shaped noise.
-        assertTrue(engineRows(Engine.FOR_TIME, rounds = 1, timeCapSeconds = null, 0, 0).isEmpty())
+        assertTrue(engineRows(Engine.FOR_TIME, rounds = 1, timeCapSeconds = null, 0, 0, ja).isEmpty())
     }
 
     @Test
@@ -56,8 +67,11 @@ class EngineRowsTest {
         // バーバラ's three minutes are *mandated* — the player disables ＋二十秒 and とばす on them
         // (`00-plan.md` §4) — so a page that omitted the row would be hiding the prescription.
         assertEquals(
-            listOf(EngineRow("巡の間の休息", "百八十秒"), EngineRow("巡数", "五巡")),
-            engineRows(Engine.FOR_TIME_WITH_REST, rounds = 5, timeCapSeconds = null, 0, 180),
+            listOf(
+                EngineRow(EngineRowKind.REST_BETWEEN_ROUNDS, "巡の間の休息", "百八十秒"),
+                EngineRow(EngineRowKind.ROUNDS, "巡数", "五巡"),
+            ),
+            engineRows(Engine.FOR_TIME_WITH_REST, rounds = 5, timeCapSeconds = null, 0, 180, ja),
         )
     }
 
@@ -66,30 +80,33 @@ class EngineRowsTest {
         // §3 edge case 5's own migration notice says it: 毎分では種目の間の休息はありません. Rendering
         // 種目の間の休息 / なし would describe a rest that the engine does not have a place for.
         assertEquals(
-            listOf(EngineRow("巡数", "三十巡")),
-            engineRows(Engine.EMOM, rounds = 30, timeCapSeconds = null, 0, 0),
+            listOf(EngineRow(EngineRowKind.ROUNDS, "巡数", "三十巡")),
+            engineRows(Engine.EMOM, rounds = 30, timeCapSeconds = null, 0, 0, ja),
         )
     }
 
     @Test
     fun `an ascending EMOM states nothing, because it runs until failure`() {
-        assertTrue(engineRows(Engine.EMOM_ASCENDING, rounds = null, timeCapSeconds = null, 0, 0).isEmpty())
+        assertTrue(engineRows(Engine.EMOM_ASCENDING, rounds = null, timeCapSeconds = null, 0, 0, ja).isEmpty())
     }
 
     @Test
     fun `a stepped routine states its sets and the rest between them`() {
         // 段階 uses one station by construction, so between-station rest cannot exist; 巡 is the set.
         assertEquals(
-            listOf(EngineRow("巡の間の休息", "九十秒"), EngineRow("巡数", "五巡")),
-            engineRows(Engine.FIXED_SETS, rounds = 5, timeCapSeconds = null, 0, 90),
+            listOf(
+                EngineRow(EngineRowKind.REST_BETWEEN_ROUNDS, "巡の間の休息", "九十秒"),
+                EngineRow(EngineRowKind.ROUNDS, "巡数", "五巡"),
+            ),
+            engineRows(Engine.FIXED_SETS, rounds = 5, timeCapSeconds = null, 0, 90, ja),
         )
     }
 
     @Test
     fun `a zero rest keeps its row and reads なし`() {
         // "No rest" is a prescription; a missing row is a question. §6 gives なし as the word for it.
-        val rows = engineRows(Engine.INTERVAL_CIRCUIT, rounds = 1, timeCapSeconds = null, 0, 0)
-        assertEquals(EngineRow("種目の間の休息", "なし"), rows.first())
+        val rows = engineRows(Engine.INTERVAL_CIRCUIT, rounds = 1, timeCapSeconds = null, 0, 0, ja)
+        assertEquals(EngineRow(EngineRowKind.REST_BETWEEN_STATIONS, "種目の間の休息", "なし"), rows.first())
     }
 
     @Test
@@ -97,10 +114,10 @@ class EngineRowsTest {
         // `DECISIONS.md` §Q10. The builder wheel (`04` :350) and the settings row (`01` :735) both
         // spell sixty seconds 六十秒; a detail page that echoed it back as 一分 would be reporting a
         // value the user never chose. `durationKanji` belongs to durations the app *measured*.
-        val sixty = engineRows(Engine.FIXED_SETS, rounds = 5, timeCapSeconds = null, 0, 60)
-        assertEquals(EngineRow("巡の間の休息", "六十秒"), sixty.first())
-        val ninety = engineRows(Engine.FIXED_SETS, rounds = 5, timeCapSeconds = null, 0, 90)
-        assertEquals(EngineRow("巡の間の休息", "九十秒"), ninety.first())
+        val sixty = engineRows(Engine.FIXED_SETS, rounds = 5, timeCapSeconds = null, 0, 60, ja)
+        assertEquals(EngineRow(EngineRowKind.REST_BETWEEN_ROUNDS, "巡の間の休息", "六十秒"), sixty.first())
+        val ninety = engineRows(Engine.FIXED_SETS, rounds = 5, timeCapSeconds = null, 0, 90, ja)
+        assertEquals(EngineRow(EngineRowKind.REST_BETWEEN_ROUNDS, "巡の間の休息", "九十秒"), ninety.first())
     }
 
     @Test
@@ -108,22 +125,22 @@ class EngineRowsTest {
         // The other half of §Q10's rule, pinned so the fix above does not spread: §3's mock prints a
         // twenty-minute cap as 二十分, and 千二百秒 would be nobody's idea of a cap.
         assertEquals(
-            EngineRow("制限時間", "二十分"),
-            engineRows(Engine.AMRAP, rounds = null, timeCapSeconds = 1200, 0, 0).first(),
+            EngineRow(EngineRowKind.TIME_CAP, "制限時間", "二十分"),
+            engineRows(Engine.AMRAP, rounds = null, timeCapSeconds = 1200, 0, 0, ja).first(),
         )
     }
 
     @Test
     fun `a routine with no round count omits the row rather than guessing one`() {
-        val rows = engineRows(Engine.INTERVAL_CIRCUIT, rounds = null, timeCapSeconds = null, 10, 60)
+        val rows = engineRows(Engine.INTERVAL_CIRCUIT, rounds = null, timeCapSeconds = null, 10, 60, ja)
         assertTrue(rows.none { it.label == "巡数" })
     }
 
     @Test
     fun `the snapshot overload reads the same rows as the parts`() {
         assertEquals(
-            engineRows(Engine.AMRAP, rounds = null, timeCapSeconds = 1200, 0, 0),
-            engineRows(snapshot(engine = Engine.AMRAP, timeCapSeconds = 1200)),
+            engineRows(Engine.AMRAP, rounds = null, timeCapSeconds = 1200, 0, 0, ja),
+            engineRows(snapshot(engine = Engine.AMRAP, timeCapSeconds = 1200), ja),
         )
     }
 
@@ -136,6 +153,7 @@ class EngineRowsTest {
             Engine.AMRAP,
             listOf(best(BestMetric.MOST_ROUNDS, 17.0), best(BestMetric.MOST_REPS, 304.0)),
             timesDone = 6,
+            strings = ja,
         )
         assertEquals(
             listOf(
@@ -149,7 +167,8 @@ class EngineRowsTest {
 
     @Test
     fun `a for-time routine's best is a duration`() {
-        val tiles = bestTilesFor(Engine.FOR_TIME, listOf(best(BestMetric.BEST_TIME, 374_000.0)), timesDone = 2)
+        val tiles =
+            bestTilesFor(Engine.FOR_TIME, listOf(best(BestMetric.BEST_TIME, 374_000.0)), timesDone = 2, strings = ja)
         assertEquals(BestTile("最速", "六分十四秒"), tiles.first())
     }
 
@@ -157,7 +176,8 @@ class EngineRowsTest {
     fun `a circuit's best is weighted volume, and it is unitless`() {
         // §4 edge case 7: 最高負荷 is never shown as a rep count, because it is not one — duration
         // stations enter it through an approximation and two of them must not look addable.
-        val tiles = bestTilesFor(Engine.INTERVAL_CIRCUIT, listOf(best(BestMetric.MOST_VOLUME, 286.4)), timesDone = 14)
+        val tiles =
+            bestTilesFor(Engine.INTERVAL_CIRCUIT, listOf(best(BestMetric.MOST_VOLUME, 286.4)), timesDone = 14, strings = ja)
         assertEquals(BestTile("最高負荷", "二百八十六"), tiles.first())
         assertEquals(BestTile("やった回数", "十四回"), tiles.last())
     }
@@ -167,7 +187,7 @@ class EngineRowsTest {
         // The NoAttempts state: 最高 tiles absent, これまで replaced by まだ やっていません. A row of 〇
         // is a scolding, which the records page's empty state says in as many words. Nothing done and
         // nothing stored is the *only* condition for it (`DECISIONS.md` §Q9).
-        assertTrue(bestTilesFor(Engine.AMRAP, emptyList(), timesDone = 0).isEmpty())
+        assertTrue(bestTilesFor(Engine.AMRAP, emptyList(), timesDone = 0, strings = ja).isEmpty())
     }
 
     @Test
@@ -176,7 +196,7 @@ class EngineRowsTest {
         // be labelling a rep count as a load. Dropping やった回数 with it is the §Q9 failure: the count
         // is engine-independent and always sourced, and a user with four sessions must not be shown
         // the page a user with none is shown.
-        val tiles = bestTilesFor(Engine.INTERVAL_CIRCUIT, listOf(best(BestMetric.MOST_REPS, 300.0)), 4)
+        val tiles = bestTilesFor(Engine.INTERVAL_CIRCUIT, listOf(best(BestMetric.MOST_REPS, 300.0)), 4, ja)
         assertEquals(listOf(BestTile("やった回数", "四回")), tiles)
     }
 
@@ -184,7 +204,7 @@ class EngineRowsTest {
     fun `an unlabelled metric costs its own tile and nothing else`() {
         // §Q9's own case, and the one that shipped リーコン・ロン's 最高 block empty forever: a stored
         // HIGHEST_STEP has no documented Japanese and is skipped — the count beside it is not.
-        val tiles = bestTilesFor(Engine.FIXED_SETS, listOf(best(BestMetric.HIGHEST_STEP, 7.0)), timesDone = 6)
+        val tiles = bestTilesFor(Engine.FIXED_SETS, listOf(best(BestMetric.HIGHEST_STEP, 7.0)), timesDone = 6, strings = ja)
         assertEquals(listOf(BestTile("やった回数", "六回")), tiles)
         assertTrue(tiles.isNotEmpty())
     }
@@ -195,7 +215,7 @@ class EngineRowsTest {
         // FIXED_SETS → 最高負荷 and §6's tile list has no step tile at all, so §F.5 was the outlier.
         assertEquals(
             listOf(BestTile("最高負荷", "六十"), BestTile("やった回数", "六回")),
-            bestTilesFor(Engine.FIXED_SETS, listOf(best(BestMetric.MOST_VOLUME, 60.0)), timesDone = 6),
+            bestTilesFor(Engine.FIXED_SETS, listOf(best(BestMetric.MOST_VOLUME, 60.0)), timesDone = 6, strings = ja),
         )
     }
 
@@ -203,8 +223,8 @@ class EngineRowsTest {
     fun `the one metric with no documented label gets no label`() {
         // HIGHEST_STEP has no Japanese anywhere in the specs. Four labels sourced and a fifth invented
         // is precisely the failure the string discipline exists to prevent.
-        assertNull(bestMetricLabel(BestMetric.HIGHEST_STEP))
-        assertEquals("最速", bestMetricLabel(BestMetric.BEST_TIME))
+        assertNull(bestMetricLabel(BestMetric.HIGHEST_STEP, ja))
+        assertEquals("最速", bestMetricLabel(BestMetric.BEST_TIME, ja))
     }
 
     // ─── 段階 ───────────────────────────────────────────────────────────────────────────────────
@@ -215,6 +235,7 @@ class EngineRowsTest {
         // of five numbers is a reference table; the page is answering "what am I doing today".
         val copy = stepFor(
             progression(stepIndex = 7, stepCount = 18, reps = listOf(7, 6, 5, 4, 4)),
+            ja,
         )
         assertEquals("第七段 ・ 七 六 五 四 四", copy?.line)
         assertEquals("十八段のうち", copy?.caption)
@@ -222,7 +243,7 @@ class EngineRowsTest {
 
     @Test
     fun `a routine with no history stands on the first step`() {
-        val copy = stepFor(progression(stepIndex = 1, stepCount = 18, reps = listOf(10, 6, 4, 3, 3)))
+        val copy = stepFor(progression(stepIndex = 1, stepCount = 18, reps = listOf(10, 6, 4, 3, 3)), ja)
         assertEquals("第一段 ・ 十 六 四 三 三", copy?.line)
     }
 
@@ -230,7 +251,7 @@ class EngineRowsTest {
     fun `a step whose sets are not numbers keeps its title and drops the run`() {
         // Armstrong's max-effort and pyramid days (§F.3), none of which is seeded in Phase 1. 限界まで
         // is the measure chip's word and borrowing it into a numeral run would be inventing copy.
-        val copy = stepFor(progression(stepIndex = 2, stepCount = 5, reps = listOf(null, null)))
+        val copy = stepFor(progression(stepIndex = 2, stepCount = 5, reps = listOf(null, null)), ja)
         assertEquals("第二段", copy?.line)
         assertEquals("五段のうち", copy?.caption)
     }
@@ -240,7 +261,7 @@ class EngineRowsTest {
         // A pyramid whose last set is to failure. Printing 第二段 ・ 十 八 would state a two-set
         // prescription for a three-set step — a truncated run misstates the prescription rather than
         // abbreviating it, and there is no per-set copy for the third one.
-        val copy = stepFor(progression(stepIndex = 2, stepCount = 5, reps = listOf(10, 8, null)))
+        val copy = stepFor(progression(stepIndex = 2, stepCount = 5, reps = listOf(10, 8, null)), ja)
         assertEquals("第二段", copy?.line)
     }
 
@@ -257,6 +278,7 @@ class EngineRowsTest {
                 stepUnit = StepUnit.DAY,
                 labelJa = "第三日",
             ),
+            ja,
         )
         assertEquals("第三日", copy?.line)
         assertEquals("五日のうち", copy?.caption)
@@ -266,14 +288,47 @@ class EngineRowsTest {
     fun `a day-based step with no stored label is still counted in days`() {
         // Both words are the seeds' own; taking 段 for the title and 日 for the caption would be this
         // function disagreeing with itself inside one block.
-        val copy = stepFor(progression(stepIndex = 3, stepCount = 5, reps = listOf(null), stepUnit = StepUnit.DAY))
+        val copy = stepFor(progression(stepIndex = 3, stepCount = 5, reps = listOf(null), stepUnit = StepUnit.DAY), ja)
         assertEquals("第三日", copy?.line)
         assertEquals("五日のうち", copy?.caption)
     }
 
     @Test
     fun `a routine with no progression shows no step line`() {
-        assertNull(stepFor(null))
+        assertNull(stepFor(null, ja))
+    }
+
+    // ─── English, where the shape differs and not merely the spelling ───────────────────────────
+
+    @Test
+    fun `the same routine earns the same rows in English`() {
+        // Which rows exist is arithmetic over the engine and must not move with the language. Only the
+        // words do — and the rest row still reads a word rather than a zero.
+        val rows = engineRows(Engine.AMRAP, rounds = null, timeCapSeconds = 1200, 0, 0, en)
+        assertEquals(
+            listOf(EngineRowKind.TIME_CAP, EngineRowKind.REST_BETWEEN_STATIONS, EngineRowKind.ROUNDS),
+            rows.map { it.kind },
+        )
+        assertEquals(EngineRow(EngineRowKind.TIME_CAP, "Time cap", "20m"), rows[0])
+        assertEquals(EngineRow(EngineRowKind.REST_BETWEEN_STATIONS, "Rest between stations", "None"), rows[1])
+        assertEquals(EngineRow(EngineRowKind.ROUNDS, "Rounds", "As many as fit"), rows[2])
+    }
+
+    @Test
+    fun `a step title is a circumfix in Japanese and a prefix in English`() {
+        // 第七段 wraps the numeral; "Step 7" leads with the unit word. Two orders, one member on the
+        // table, because a call site that glued a prefix to a numeral could only ever produce one.
+        val progression = progression(stepIndex = 7, stepCount = 18, reps = listOf(7, 6, 5, 4, 4))
+        assertEquals("第七段 ・ 七 六 五 四 四", stepFor(progression, ja)?.line)
+        assertEquals("Step 7 · 7 6 5 4 4", stepFor(progression, en)?.line)
+        assertEquals("of 18 steps", stepFor(progression, en)?.caption)
+    }
+
+    @Test
+    fun `a day-based programme counts days in English too`() {
+        val day = progression(stepIndex = 3, stepCount = 5, reps = listOf(null), stepUnit = StepUnit.DAY)
+        assertEquals("Day 3", stepFor(day, en)?.line)
+        assertEquals("of 5 days", stepFor(day, en)?.caption)
     }
 }
 

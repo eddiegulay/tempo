@@ -1,5 +1,7 @@
 package io.eddiegulay.tempo.gym
 
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -94,6 +96,22 @@ class LibraryFiltersTest {
     @Test
     fun `a zero-length routine still has a bucket`() {
         assertEquals(DurationBucket.UNDER_FIVE, durationBucket(0))
+    }
+
+    @Test
+    fun `each duration chip is its own string, not one wave dash moved around`() {
+        // 〜五分 / 五〜十五分 / 十五分〜 carry the whole range on one character used leading, medially
+        // and trailingly. English needs a different word in each position, so the three are three
+        // members of the table — interpolating an endpoint into a shared 「〜{n}分」 would have
+        // translated the typography and left `Under`, `to` and `over` with nowhere to live.
+        assertEquals(
+            listOf("〜五分", "五〜十五分", "十五分〜"),
+            DurationBucket.entries.map { it.label(StringsJa) },
+        )
+        assertEquals(
+            listOf("Under 5 min", "5–15 min", "15 min+"),
+            DurationBucket.entries.map { it.label(StringsEn) },
+        )
     }
 
     // ─── filters ────────────────────────────────────────────────────────────────────────────────
@@ -223,22 +241,22 @@ class LibraryFiltersTest {
     fun `the first copy is の写し and the second is の写し二`() {
         // §3 edge case 7. The counter starts at 二 because the first copy is unnumbered — の写し一
         // would be an off-by-one the user reads as "copy one" of a copy that does not exist.
-        assertEquals("七分間 の写し", uniqueName("七分間", emptySet()))
-        assertEquals("七分間 の写し二", uniqueName("七分間", setOf("七分間 の写し")))
+        assertEquals("七分間 の写し", uniqueName("七分間", emptySet(), StringsJa))
+        assertEquals("七分間 の写し二", uniqueName("七分間", setOf("七分間 の写し"), StringsJa))
         assertEquals(
             "七分間 の写し三",
-            uniqueName("七分間", setOf("七分間 の写し", "七分間 の写し二")),
+            uniqueName("七分間", setOf("七分間 の写し", "七分間 の写し二"), StringsJa),
         )
     }
 
     @Test
     fun `a gap in the numbering is filled rather than skipped past`() {
-        assertEquals("七分間 の写し二", uniqueName("七分間", setOf("七分間 の写し", "七分間 の写し三")))
+        assertEquals("七分間 の写し二", uniqueName("七分間", setOf("七分間 の写し", "七分間 の写し三"), StringsJa))
     }
 
     @Test
     fun `an unrelated name never blocks a copy`() {
-        assertEquals("七分間 の写し", uniqueName("七分間", setOf("タバタ の写し", "七分間")))
+        assertEquals("七分間 の写し", uniqueName("七分間", setOf("タバタ の写し", "七分間"), StringsJa))
     }
 }
 

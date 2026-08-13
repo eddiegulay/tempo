@@ -6,6 +6,8 @@ import io.eddiegulay.tempo.gym.Exercise
 import io.eddiegulay.tempo.gym.MovementBest
 import io.eddiegulay.tempo.gym.Pattern
 import io.eddiegulay.tempo.gym.RoutineSummary
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -47,16 +49,22 @@ class ExerciseCatalogueCopyTest {
     )
 
     private val pushup = exercise("pushup", "腕立て伏せ", "Push-up", cue = "体は一直線に", ladderId = "push")
-    private val kneePushup = exercise("knee_pushup", "膝つき腕立て", difficulty = 0.5, ladderId = "push")
-    private val wallPushup = exercise("wall_pushup", "壁腕立て", difficulty = 0.2, ladderId = "push")
-    private val oneArm = exercise("one_arm_pushup", "片手腕立て", difficulty = 2.5, ladderId = "push")
+    private val kneePushup =
+        exercise("knee_pushup", "膝つき腕立て", "Knee push-up", difficulty = 0.5, ladderId = "push")
+    private val wallPushup =
+        exercise("wall_pushup", "壁腕立て", "Wall push-up", difficulty = 0.2, ladderId = "push")
+    private val oneArm =
+        exercise("one_arm_pushup", "片手腕立て", "One-arm push-up", difficulty = 2.5, ladderId = "push")
     private val plank = exercise(
-        "plank", "プランク", pattern = Pattern.CORE, secondsPerRep = 10.0, isometric = true, cue = "肘は肩の真下に",
+        "plank", "プランク", "Plank",
+        pattern = Pattern.CORE, secondsPerRep = 10.0, isometric = true, cue = "肘は肩の真下に",
     )
     private val run = exercise(
-        "run", "走る", pattern = Pattern.LOCOMOTION, secondsPerRep = 10.0, isometric = true,
+        "run", "走る", "Run", pattern = Pattern.LOCOMOTION, secondsPerRep = 10.0, isometric = true,
     )
-    private val pullup = exercise("pullup", "懸垂", pattern = Pattern.V_PULL, secondsPerRep = 3.0, difficulty = 2.0)
+    private val pullup = exercise(
+        "pullup", "懸垂", "Pull-up", pattern = Pattern.V_PULL, secondsPerRep = 3.0, difficulty = 2.0,
+    )
 
     private val ladder = listOf(wallPushup, kneePushup, pushup, oneArm)
 
@@ -116,13 +124,14 @@ class ExerciseCatalogueCopyTest {
 
     @Test
     fun `the subtitle counts the catalogue in kanji`() {
-        assertEquals("十六の動き", exerciseIndexSubtitle(16))
-        assertEquals("二十三の動き", exerciseIndexSubtitle(23))
+        assertEquals("十六の動き", exerciseIndexSubtitle(16, StringsJa))
+        assertEquals("二十三の動き", exerciseIndexSubtitle(23, StringsJa))
+        assertEquals("23 movements", exerciseIndexSubtitle(23, StringsEn))
     }
 
     @Test
     fun `a card carries name, coefficient, cue and pattern with its pace`() {
-        val copy = exerciseCardCopy(pushup, singleSetReps = null)
+        val copy = exerciseCardCopy(pushup, singleSetReps = null, StringsJa)
 
         assertEquals("腕立て伏せ", copy.name)
         assertEquals("一.〇", copy.coefficient)
@@ -131,13 +140,28 @@ class ExerciseCatalogueCopyTest {
     }
 
     @Test
+    fun `the card reads the row's own English column, which the app has never drawn`() {
+        // `name_en` has been NOT NULL and correctly seeded for all twenty-three movements since schema
+        // v1 and was read into `Exercise` without ever reaching a `Text`. The cue comes from the
+        // catalogue table rather than the row, because there is no `cue_en` column to read.
+        val copy = exerciseCardCopy(pushup, singleSetReps = 32, StringsEn)
+
+        assertEquals("Push-up", copy.name)
+        assertEquals("1.0", copy.coefficient)
+        assertEquals("Body in a straight line", copy.cue)
+        assertEquals("Push · 2.0s/rep", copy.meta)
+        assertEquals("Best 32 reps", copy.best)
+        assertEquals("Push-up, Push, Difficulty 1.0, Best 32 reps", copy.description)
+    }
+
+    @Test
     fun `edge case 3 - a movement with no cue omits the line rather than blanking it`() {
-        assertNull(exerciseCardCopy(run, singleSetReps = null).cue)
+        assertNull(exerciseCardCopy(run, singleSetReps = null, StringsJa).cue)
     }
 
     @Test
     fun `edge case 4 - no history means no 最高 fragment, never 最高 dash`() {
-        val copy = exerciseCardCopy(pushup, singleSetReps = null)
+        val copy = exerciseCardCopy(pushup, singleSetReps = null, StringsJa)
 
         assertNull(copy.best)
         assertTrue("最高 must not appear at all", "最高" !in copy.description)
@@ -145,14 +169,14 @@ class ExerciseCatalogueCopyTest {
 
     @Test
     fun `a recorded best renders as 最高 三十二回`() {
-        assertEquals("最高 三十二回", exerciseCardCopy(pushup, singleSetReps = 32).best)
+        assertEquals("最高 三十二回", exerciseCardCopy(pushup, singleSetReps = 32, StringsJa).best)
         // A zero is the store having nothing to attribute, not a record of zero.
-        assertNull(bestRepsLabel(0))
+        assertNull(bestRepsLabel(0, StringsJa))
     }
 
     @Test
     fun `edge case 5 - 走る renders no coefficient and no pace`() {
-        val copy = exerciseCardCopy(run, singleSetReps = null)
+        val copy = exerciseCardCopy(run, singleSetReps = null, StringsJa)
 
         assertEquals("—", copy.coefficient)
         assertEquals("移動", copy.meta)
@@ -160,27 +184,40 @@ class ExerciseCatalogueCopyTest {
     }
 
     @Test
+    fun `edge case 5 - the em dash is a documented hole and English does not fill it`() {
+        // 走る has no rep semantics, so its coefficient is deliberately absent rather than 1.0. An
+        // English number here would say the run can be counted, which is the fact the null prevents.
+        val copy = exerciseCardCopy(run, singleSetReps = null, StringsEn)
+
+        assertEquals("—", copy.coefficient)
+        assertEquals("Travel", copy.meta)
+        assertEquals("Run, Travel, Difficulty —", copy.description)
+        assertNull("§F.1 writes 走る's cue as none, in both languages", copy.cue)
+    }
+
+    @Test
     fun `an isometric that is not 走る keeps its coefficient and loses only the pace`() {
         // プランク's 一.〇 is what volume_units multiplies by; its ten seconds are a volume conversion
         // and not a pace, so 十.〇秒/回 would be the one wrong fact of the two.
-        val copy = exerciseCardCopy(plank, singleSetReps = null)
+        val copy = exerciseCardCopy(plank, singleSetReps = null, StringsJa)
 
         assertEquals("一.〇", copy.coefficient)
         assertEquals("体幹", copy.meta)
-        assertNull(paceLabel(plank))
+        assertNull(paceLabel(plank, StringsJa))
+        assertNull(paceLabel(plank, StringsEn))
     }
 
     @Test
     fun `the card description is the station picker's sentence, plus the best`() {
         assertEquals(
             "腕立て伏せ、押す、難度 一.〇、最高 三十二回",
-            exerciseCardCopy(pushup, singleSetReps = 32).description,
+            exerciseCardCopy(pushup, singleSetReps = 32, StringsJa).description,
         )
     }
 
     @Test
     fun `edge case 1 - within a pattern, rows climb by difficulty and tie by name`() {
-        val sections = exerciseSections(listOf(pushup, oneArm, wallPushup, kneePushup), query = "")
+        val sections = exerciseSections(listOf(pushup, oneArm, wallPushup, kneePushup), "", StringsJa)
 
         assertEquals(1, sections.size)
         assertEquals(
@@ -193,31 +230,60 @@ class ExerciseCatalogueCopyTest {
     fun `edge case 1 - a difficulty tie breaks by name, not by insertion order`() {
         val zeta = exercise("z", "ゼータ", difficulty = 1.0)
         val alpha = exercise("a", "アルファ", difficulty = 1.0)
-        val sections = exerciseSections(listOf(zeta, alpha), query = "")
+        val sections = exerciseSections(listOf(zeta, alpha), "", StringsJa)
 
         assertEquals(listOf("アルファ", "ゼータ"), sections.single().exercises.map { it.nameJa })
     }
 
     @Test
+    fun `edge case 1 - the tiebreak is the displayed name, so an English list reads in order`() {
+        // **A deliberate behaviour change.** The tie used to break on `nameJa` in every language, which
+        // under an English UI is a codepoint sort — by kanji block — and produces an order no reader of
+        // the labels can see. 空気椅子 precedes 踏み台昇降 and "Step-up" precedes "Wall sit", so those
+        // two genuinely swap. Only within-section order moves; the sections are still `Pattern`'s
+        // declaration order.
+        //
+        // `ExerciseCatalogSource.ladder` breaks its tie on `id` instead, and that is right there for
+        // the opposite reason: a ladder's order IS its meaning and must not reshuffle when the user
+        // flips the toggle. This list's order is a reading aid for the names beside it.
+        val wallSit = exercise("wall_sit", "空気椅子", "Wall sit", pattern = Pattern.SQUAT, difficulty = 0.8)
+        val stepUp = exercise("step_up", "踏み台昇降", "Step-up", pattern = Pattern.SQUAT, difficulty = 0.8)
+
+        assertEquals(
+            listOf("空気椅子", "踏み台昇降"),
+            exerciseSections(listOf(stepUp, wallSit), "", StringsJa).single().exercises.map { it.nameJa },
+        )
+        assertEquals(
+            listOf("Step-up", "Wall sit"),
+            exerciseSections(listOf(wallSit, stepUp), "", StringsEn).single().exercises.map { it.nameEn },
+        )
+    }
+
+    @Test
     fun `edge case 2 - pattern order is the declaration order, not alphabetical or by count`() {
-        val sections = exerciseSections(listOf(run, plank, pullup, pushup, kneePushup), query = "")
+        val sections = exerciseSections(listOf(run, plank, pullup, pushup, kneePushup), "", StringsJa)
 
         assertEquals(
             listOf(Pattern.H_PUSH, Pattern.V_PULL, Pattern.CORE, Pattern.LOCOMOTION),
             sections.map { it.pattern },
         )
+        // The English list is the same sequence of sections: only the within-section tiebreak moved.
+        assertEquals(
+            sections.map { it.pattern },
+            exerciseSections(listOf(run, plank, pullup, pushup, kneePushup), "", StringsEn).map { it.pattern },
+        )
     }
 
     @Test
     fun `an empty pattern gets no heading`() {
-        val sections = exerciseSections(listOf(pushup), query = "")
+        val sections = exerciseSections(listOf(pushup), "", StringsJa)
 
         assertEquals(listOf(Pattern.H_PUSH), sections.map { it.pattern })
     }
 
     @Test
     fun `a query collapses the headings into one flat list in the same order`() {
-        val sections = exerciseSections(listOf(run, pullup, pushup, kneePushup), query = "腕立")
+        val sections = exerciseSections(listOf(run, pullup, pushup, kneePushup), "腕立", StringsJa)
 
         assertEquals(1, sections.size)
         assertNull("a searched list has no pattern heading", sections.single().pattern)
@@ -225,15 +291,27 @@ class ExerciseCatalogueCopyTest {
     }
 
     @Test
+    fun `an English query matches the English column, which the fold has always searched`() {
+        // `matchExercise` folds both names, so routine and movement search keeps working in either
+        // language whichever the UI is in — the fold tables are code and are not translated (§L10).
+        val sections = exerciseSections(listOf(run, pullup, pushup, kneePushup), "push", StringsEn)
+
+        assertEquals(
+            listOf("Knee push-up", "Push-up"),
+            sections.single().exercises.map { it.nameEn },
+        )
+    }
+
+    @Test
     fun `a blank query is not a search and keeps the headings`() {
-        val sections = exerciseSections(listOf(pushup, pullup), query = "   ")
+        val sections = exerciseSections(listOf(pushup, pullup), "   ", StringsJa)
 
         assertEquals(listOf(Pattern.H_PUSH, Pattern.V_PULL), sections.map { it.pattern })
     }
 
     @Test
     fun `a query that matches nothing returns no sections`() {
-        assertEquals(emptyList<ExerciseSection>(), exerciseSections(listOf(pushup), query = "けんすい"))
+        assertEquals(emptyList<ExerciseSection>(), exerciseSections(listOf(pushup), "けんすい", StringsJa))
     }
 
     @Test
@@ -261,8 +339,10 @@ class ExerciseCatalogueCopyTest {
 
     @Test
     fun `the subtitle is the pattern and the difficulty`() {
-        assertEquals("押す ・ 難度 一.〇", exerciseDetailSubtitle(pushup))
-        assertEquals("移動 ・ 難度 —", exerciseDetailSubtitle(run))
+        assertEquals("押す ・ 難度 一.〇", exerciseDetailSubtitle(pushup, StringsJa))
+        assertEquals("移動 ・ 難度 —", exerciseDetailSubtitle(run, StringsJa))
+        assertEquals("Push · Difficulty 1.0", exerciseDetailSubtitle(pushup, StringsEn))
+        assertEquals("Travel · Difficulty —", exerciseDetailSubtitle(run, StringsEn))
     }
 
     @Test
@@ -320,40 +400,57 @@ class ExerciseCatalogueCopyTest {
     fun `a rung reads as いまここ or まだ, and nothing else`() {
         val rungs = ladderRungs(ladder, pushup)
 
-        assertEquals("腕立て伏せ、難度 一.〇、いまここ", rungSemantics(rungs.single { it.current }))
-        assertEquals("壁腕立て、難度 〇.二、まだ", rungSemantics(rungs.first()))
+        assertEquals("腕立て伏せ、難度 一.〇、いまここ", rungSemantics(rungs.single { it.current }, StringsJa))
+        assertEquals("壁腕立て、難度 〇.二、まだ", rungSemantics(rungs.first(), StringsJa))
         // A climbed-past rung is まだ too: there is no third documented word.
-        assertEquals("膝つき腕立て、難度 〇.五、まだ", rungSemantics(rungs[1]))
+        assertEquals("膝つき腕立て、難度 〇.五、まだ", rungSemantics(rungs[1], StringsJa))
+        // Still exactly two forms in English, and still no third word for "climbed past".
+        assertEquals(
+            "Push-up, Difficulty 1.0, you are here",
+            rungSemantics(rungs.single { it.current }, StringsEn),
+        )
+        assertEquals("Wall push-up, Difficulty 0.2, not yet", rungSemantics(rungs.first(), StringsEn))
     }
 
     @Test
     fun `the three tiles are 一度に, のべ回数 and 最後, in that order`() {
-        val tiles = movementTiles(
-            best("pushup", ladderId = "push", singleSetReps = 32, lifetimeReps = 400, lastDate = LocalDate.of(2026, 6, 10)),
-        )!!
+        val row = best(
+            "pushup", ladderId = "push", singleSetReps = 32, lifetimeReps = 400,
+            lastDate = LocalDate.of(2026, 6, 10),
+        )
 
+        val tiles = movementTiles(row, StringsJa)!!
         assertEquals(listOf("一度に", "のべ回数", "最後"), tiles.map { it.label })
         assertEquals(listOf("三十二回", "四百回", "六月十日"), tiles.map { it.value })
+
+        val english = movementTiles(row, StringsEn)!!
+        assertEquals(listOf("In one set", "Lifetime", "Last"), english.map { it.label })
+        assertEquals(listOf("32 reps", "400 reps", "10 June"), english.map { it.value })
     }
 
     @Test
     fun `no history means no tiles at all, which is what まだ やっていません is drawn from`() {
-        assertNull(movementTiles(null))
+        assertNull(movementTiles(null, StringsJa))
     }
 
     @Test
     fun `edge case 5 - のべ回数 falls back to arabic above 9999`() {
-        val tiles = movementTiles(best("pushup", singleSetReps = 32, lifetimeReps = 12_500))!!
+        val tiles = movementTiles(best("pushup", singleSetReps = 32, lifetimeReps = 12_500), StringsJa)!!
 
-        assertEquals("九千九百九十九回", movementTiles(best("p", singleSetReps = 1, lifetimeReps = 9_999))!![1].value)
+        assertEquals(
+            "九千九百九十九回",
+            movementTiles(best("p", singleSetReps = 1, lifetimeReps = 9_999), StringsJa)!![1].value,
+        )
         assertEquals("12500回", tiles[1].value)
     }
 
     @Test
     fun `a missing column renders a dash rather than a zero or a fabricated day`() {
-        val tiles = movementTiles(best("pushup", singleSetReps = 0, lifetimeReps = 0, lastDate = null))!!
+        val row = best("pushup", singleSetReps = 0, lifetimeReps = 0, lastDate = null)
 
-        assertEquals(listOf("—", "—", "—"), tiles.map { it.value })
+        assertEquals(listOf("—", "—", "—"), movementTiles(row, StringsJa)!!.map { it.value })
+        // The em dash is not Japanese and is not copy (§L10); it is the same character in both.
+        assertEquals(listOf("—", "—", "—"), movementTiles(row, StringsEn)!!.map { it.value })
     }
 
     @Test
@@ -365,9 +462,15 @@ class ExerciseCatalogueCopyTest {
 
         // The shipped failure: 朝の五分 often, 七分間 rarely. 腕立て伏せ used to render まだ やっていません
         // because the family's row was named 膝つき腕立て; it must now render its own two numbers…
-        assertEquals(listOf("三十二回", "百二十回"), movementTiles(exerciseBestFor(pushup, bests))!!.take(2).map { it.value })
+        assertEquals(
+            listOf("三十二回", "百二十回"),
+            movementTiles(exerciseBestFor(pushup, bests), StringsJa)!!.take(2).map { it.value },
+        )
         // …and 膝つき腕立て must render its own, never the family's 七百二十.
-        assertEquals(listOf("四十回", "六百回"), movementTiles(exerciseBestFor(kneePushup, bests))!!.take(2).map { it.value })
+        assertEquals(
+            listOf("四十回", "六百回"),
+            movementTiles(exerciseBestFor(kneePushup, bests), StringsJa)!!.take(2).map { it.value },
+        )
         // 壁腕立て genuinely has no record, so まだ やっていません is true rather than a false silence.
         assertNull(exerciseBestFor(wallPushup, bests))
         // The 段階 block beside all three still knows how far the family has climbed.
@@ -405,7 +508,22 @@ class ExerciseCatalogueCopyTest {
 
     @Test
     fun `the used-by count is kanji and carries 件`() {
-        assertEquals("四件", usedByCount(4))
-        assertEquals("一件", usedByCount(1))
+        assertEquals("四件", usedByCount(4, StringsJa))
+        assertEquals("一件", usedByCount(1, StringsJa))
+        // 件 is the generic counter and `fmt.items` is where the migration routes it. Reported: the
+        // thing counted here is routines, and a `routines(n)` formatter would read better than "items".
+        assertEquals("4 items", usedByCount(4, StringsEn))
+        assertEquals("1 item", usedByCount(1, StringsEn))
+    }
+
+    @Test
+    fun `the three notices keep their sentences, which the structure test only counts`() {
+        // `ExerciseScreenStructureTest` pins how many branches can reach each notice; the sentences
+        // themselves live here, so a wrong word in the table is a failure with a diff rather than a
+        // page that still draws exactly one of the wrong thing.
+        assertEquals("読み込み中", StringsJa.gymExercise.loading)
+        assertEquals("まだ やっていません", StringsJa.gymExercise.noHistory)
+        assertEquals("どの型にも入っていません", StringsJa.gymExercise.noRoutines)
+        assertEquals("該当する種目はありません", StringsJa.gymExercise.noMatch)
     }
 }

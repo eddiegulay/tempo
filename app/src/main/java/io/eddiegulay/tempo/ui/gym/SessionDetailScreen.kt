@@ -1,7 +1,6 @@
 package io.eddiegulay.tempo.ui.gym
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,7 +34,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.calendar.Loadable
 import io.eddiegulay.tempo.data.GymFault
-import io.eddiegulay.tempo.data.JapaneseDate
 import io.eddiegulay.tempo.data.TempoFault
 import io.eddiegulay.tempo.gym.ExerciseCatalog
 import io.eddiegulay.tempo.gym.GymRoute
@@ -44,12 +42,17 @@ import io.eddiegulay.tempo.gym.GymWrite
 import io.eddiegulay.tempo.gym.Rating
 import io.eddiegulay.tempo.gym.RoutineSnapshot
 import io.eddiegulay.tempo.gym.SessionDetail
+import io.eddiegulay.tempo.gym.displayName
+import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.i18n.Strings
 import io.eddiegulay.tempo.ui.FaultPanel
 import io.eddiegulay.tempo.ui.FaultStrip
 import io.eddiegulay.tempo.ui.HeaderAction
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 import kotlinx.coroutines.launch
 
 /*
@@ -122,6 +125,11 @@ fun historicalData(detail: SessionDetail): RecordSummaryData = RecordSummaryData
  *
  * Null snapshot returns an empty map, and the caller then falls back to the live catalogue — which is
  * §4 edge case 4's own instruction for a record that predates the pin.
+ *
+ * **The pinned names are not translated, and that is correct** (§L10). A snapshot is what the session
+ * actually prescribed, in the words it prescribed it in; resolving it against today's catalogue would
+ * be the live routine wearing the pin's clothes, which is the confusion the pin exists to prevent. The
+ * live catalogue is the *fallback*, and only there does the reader's language apply.
  */
 fun pinnedExerciseNames(snapshot: RoutineSnapshot?): Map<String, String> =
     snapshot?.stations.orEmpty()
@@ -141,8 +149,8 @@ fun pinnedExerciseNames(snapshot: RoutineSnapshot?): Map<String, String> =
  * whose shape has moved would tell a user their record's contents are gone when they are pinned and
  * intact, on the one page whose purpose is being honest about a record.
  */
-fun missingSnapshotCopy(snapshot: RoutineSnapshot?): String? =
-    if (snapshot == null) "当時の内容は残っていません" else null
+fun missingSnapshotCopy(snapshot: RoutineSnapshot?, strings: Strings): String? =
+    if (snapshot == null) strings.gymRecords.missingSnapshot else null
 
 /**
  * `令和八年 ・ 六月十七日` — when this record was made.
@@ -158,9 +166,9 @@ fun missingSnapshotCopy(snapshot: RoutineSnapshot?): String? =
  * the whole feature: a session that crosses midnight belongs to the day it started, in the grid, in the
  * streak, in the history grouping, and therefore here.
  */
-fun recordDateLine(detail: SessionDetail): String {
+fun recordDateLine(detail: SessionDetail, strings: Strings): String {
     val at = detail.summary.localDate.atStartOfDay()
-    return JapaneseDate.era(at) + " ・ " + JapaneseDate.monthDay(at)
+    return strings.fmt.era(at) + strings.fmt.separator + strings.fmt.monthDay(at)
 }
 
 /**
@@ -172,9 +180,15 @@ fun recordDateLine(detail: SessionDetail): String {
  * unsourced string on the page. `00-plan.md` §4's page table names the same two actions for this page
  * (もう一度 · 型を見る · 記録を削除).
  */
-enum class RecordFooterAction(val label: String) {
-    OpenRoutine("型を見る"),
-    Delete("記録を削除"),
+enum class RecordFooterAction {
+    OpenRoutine,
+    Delete,
+}
+
+/** 型を見る / 記録を削除 — from the table rather than a constructor argument (§L3). */
+fun RecordFooterAction.label(strings: Strings): String = when (this) {
+    RecordFooterAction.OpenRoutine -> strings.gymRecords.openRoutine
+    RecordFooterAction.Delete -> strings.gymRecords.deleteRecord
 }
 
 /**
@@ -234,8 +248,6 @@ internal fun settledEdit(edit: RatingEdit?, stored: Rating?): RatingEdit? =
 // The page
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-private const val PAGE_TITLE = "記録の中身"
-
 /**
  * 記録の中身 — one finished session, reopened, honest about how it looks *now*.
  *
@@ -258,6 +270,7 @@ fun SessionDetailScreen(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val scope = rememberCoroutineScope()
     val sessionId = remember(sessionKey) { sessionKey.toLongOrNull() }
 
@@ -321,8 +334,8 @@ fun SessionDetailScreen(
 
     Column(modifier.fillMaxSize()) {
         RecordHeader(
-            subtitle = (outcome as? Loadable.Ready)?.value?.let(::recordDateLine),
-            note = (outcome as? Loadable.Ready)?.value?.let { missingSnapshotCopy(it.snapshot) },
+            subtitle = (outcome as? Loadable.Ready)?.value?.let { recordDateLine(it, s) },
+            note = (outcome as? Loadable.Ready)?.value?.let { missingSnapshotCopy(it.snapshot, s) },
             onClose = { if (gym.stack.value.size > 1) gym.onBack() },
         )
 
@@ -371,8 +384,11 @@ fun SessionDetailScreen(
                         onRepeat = { gym.go(GymRoute.RoutineDetail(detail.summary.routineId)) },
                         // The pinned version first, the live catalogue only as the fallback §4 edge
                         // case 4 prescribes for a record that predates the pin.
+                        // The pinned version first — frozen, and never retranslated (§L10) — and the
+                        // live catalogue, in the reader's language, only as the fallback §4 edge case 4
+                        // prescribes for a record that predates the pin.
                         exerciseName = { id ->
-                            id?.let { pinned[it] ?: ExerciseCatalog.byId(it)?.nameJa }
+                            id?.let { pinned[it] ?: ExerciseCatalog.byId(it)?.displayName(s) }
                         },
                         footer = {
                             RecordFooter(
@@ -409,7 +425,7 @@ fun SessionDetailScreen(
     }
 
     if (confirmingDelete && sessionId != null) {
-        val copy = sessionDeleteCopy()
+        val copy = sessionDeleteCopy(s)
         AlertDialog(
             onDismissRequest = { confirmingDelete = false },
             containerColor = c.bgSolid,
@@ -461,6 +477,7 @@ fun SessionDetailScreen(
 @Composable
 private fun RecordHeader(subtitle: String?, note: String?, onClose: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Column(Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -471,7 +488,7 @@ private fun RecordHeader(subtitle: String?, note: String?, onClose: () -> Unit) 
         ) {
             Column(Modifier.weight(1f, fill = true)) {
                 Text(
-                    text = PAGE_TITLE,
+                    text = s.gymRecords.detailTitle,
                     modifier = Modifier.semantics { heading() },
                     style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
                 )
@@ -503,7 +520,12 @@ private fun RecordHeader(subtitle: String?, note: String?, onClose: () -> Unit) 
                     )
                 }
             }
-            HeaderAction(label = "とじる", description = "とじる", color = c.inkFaint, onClick = onClose)
+            HeaderAction(
+                label = s.gymRecords.close,
+                description = s.gymRecords.close,
+                color = c.inkFaint,
+                onClick = onClose,
+            )
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.hair))
     }
@@ -527,17 +549,18 @@ private fun RecordFooter(onAction: (RecordFooterAction) -> Unit) {
 @Composable
 private fun FooterAction(action: RecordFooterAction, onClick: () -> Unit) {
     val c = LocalTempoColors.current
+    val label = LocalStrings.current.let { action.label(it) }
     Box(
         Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 48.dp)
-            .clickable(onClick = onClick)
-            .semantics { role = Role.Button; contentDescription = action.label }
+            .pressable(TempoShapes.Word, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label }
             .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = action.label,
+            text = label,
             style = TextStyle(
                 fontFamily = Mincho,
                 fontSize = 14.sp,
@@ -560,7 +583,7 @@ private fun RecordLoading() {
     val c = LocalTempoColors.current
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
-            text = "読み込み中",
+            text = LocalStrings.current.gymRecords.loading,
             style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
         )
     }

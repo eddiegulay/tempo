@@ -44,14 +44,51 @@ class PlayerWiringTest {
         // TalkBack: at t=0 the remainder is 20_000, which fell into the >10s arm. Passing the segment's
         // own length is the whole fix, and the page is where it lives — a page that passed
         // `state.remainingMs` twice would satisfy `PlayerCopyTest` and go on lying.
+        //
+        // **Stated against the arguments rather than against their number.** It used to assert
+        // `args.size == 2` and read `args[1]`, which broke the day the i18n migration prepended a
+        // `strings` parameter — and would have been "fixed" by bumping two to three and one to two,
+        // which is a test tracking a signature rather than a claim. The claim is that *the plan is
+        // passed at all* and that *the remainder is not passed twice*, and neither depends on arity.
         val call = Regex("countdownAnnouncement\\(([^)]*)\\)").find(source("ui/gym/session/WorkPage.kt"))
         assertNotNull("WorkPage must announce the countdown at all", call)
 
-        val args = call!!.groupValues[1].split(",").map { it.trim() }
-        assertEquals("countdownAnnouncement takes the remainder and the plan: $args", 2, args.size)
+        val args = call!!.groupValues[1].split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        val clockArgs = args.filter { it.contains("remainingMs") || it.contains("effectiveMs") }
+        assertEquals("the announcement takes exactly two clock arguments: $args", 2, clockArgs.size)
         assertTrue(
-            "the second argument must be the segment's own length, not the remainder again: $args",
-            args[1].contains("effectiveMs"),
+            "one of them must be the segment's own length, not the remainder again: $args",
+            clockArgs.any { it.contains("effectiveMs") } && clockArgs.any { it.contains("remainingMs") },
+        )
+    }
+
+    @Test
+    fun `the cue engine is handed the app's language rather than its Japanese default`() {
+        // `CueEngine(context, strings = StringsJa)` defaults so that the migration compiled at every
+        // step, and a call site that took the default would speak Japanese under an English UI and
+        // never fail to build — the silent fallback `DECISIONS.md` §L2 rejected string resources to
+        // avoid, arriving through the back door.
+        //
+        // **A negative assertion here would be vacuous**: "the host does not name StringsJa" is true
+        // of a host that never constructs an engine at all, and was true before the parameter existed.
+        // So this reads the construction itself and requires the table in it.
+        val construction = Regex("CueEngine\\(([^)]*)\\)").find(host)
+        assertNotNull("the host must construct the engine", construction)
+        val args = construction!!.groupValues[1].split(",").map { it.trim() }
+        assertTrue(
+            "the engine must be given the table, not left on its default: $args",
+            args.any { it == "strings" || it.endsWith("strings") },
+        )
+
+        // And a change while a session is running has to reach it, because the words and the bound
+        // voice move together or not at all.
+        assertTrue(
+            "a language change must reach the running engine: $host",
+            host.contains("controller.onLanguage(strings)"),
+        )
+        assertTrue(
+            "…through setLanguage, which re-probes the voice as well as swapping the phrases",
+            body(host, "fun onLanguage(").contains("cues.setLanguage(strings)"),
         )
     }
 

@@ -1,6 +1,5 @@
 package io.eddiegulay.tempo.ui.gym.session
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -24,9 +23,13 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.eddiegulay.tempo.gym.displayCue
+import io.eddiegulay.tempo.gym.displayName
 import io.eddiegulay.tempo.gym.session.RestKind
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
 
 /**
  * 休息 — recovery, with the next movement already promoted to hero
@@ -58,22 +61,29 @@ import io.eddiegulay.tempo.ui.theme.Mincho
 @Composable
 fun RestPage(state: SessionUiState, actions: SessionActions, modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val kind = state.restKind
     val next = state.next
     val exercise = state.nextExercise
-    val prescription = prescriptionLabel(next)
-    val added = extendedSuffix(state.addedMs)
+    val prescription = prescriptionLabel(s, next)
+    val added = extendedSuffix(s, state.addedMs)
+    val nextName = exercise?.displayName(s)
+    val nextCue = exercise?.displayCue(s)
 
     // One announcement on entry, and the form cue rides along with it: it is one clause and it is the
     // useful part, because a rest is the only moment the user is not yet moving and can still act on
     // it (§A REST, accessibility).
-    val announcement = remember(state.ordinal, exercise?.nameJa) {
+    //
+    // Keyed on the language too: a switch mid-rest has to move the spoken sentence with the drawn one,
+    // and `remember(ordinal, name)` alone would hold the previous language's until the next segment.
+    val announcement = remember(state.ordinal, nextName, s.lang) {
         restAnnouncement(
+            strings = s,
             kind = kind,
             restMs = state.segment.effectiveMs,
-            nextExerciseName = exercise?.nameJa,
+            nextExerciseName = nextName,
             prescription = prescription,
-            cue = exercise?.cue,
+            cue = nextCue,
         )
     }
 
@@ -89,7 +99,7 @@ fun RestPage(state: SessionUiState, actions: SessionActions, modifier: Modifier 
         ringContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = restLabel(kind),
+                    text = restLabel(s, kind),
                     style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = 6.sp, color = c.inkFaint),
                 )
                 // The added time is visible in the ring's own label, because it has to be visible in
@@ -104,7 +114,7 @@ fun RestPage(state: SessionUiState, actions: SessionActions, modifier: Modifier 
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                text = formatCountdown(state.remainingMs),
+                text = formatCountdown(s, state.remainingMs),
                 softWrap = false,
                 maxLines = 1,
                 modifier = Modifier.clearAndSetSemantics { },
@@ -116,7 +126,7 @@ fun RestPage(state: SessionUiState, actions: SessionActions, modifier: Modifier 
                 ),
             )
             Text(
-                text = "つぎ",
+                text = s.gymSession.restNext,
                 style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 4.sp, color = c.inkFaint),
             )
         },
@@ -126,14 +136,13 @@ fun RestPage(state: SessionUiState, actions: SessionActions, modifier: Modifier 
             // ring says the same thing without flickering between n and n+1.
             if (kind == RestKind.ROUND) Spacer(Modifier.height(ROUND_INDICATOR_SLOT)) else RoundIndicator(state)
             Spacer(Modifier.height(10.dp))
+            val upcoming = listOfNotNull(nextName, prescription, nextCue)
+                .joinToString(s.fmt.listSeparator)
             UpcomingBlock(
-                name = exercise?.nameJa,
+                name = nextName,
                 prescription = prescription,
-                cue = exercise?.cue,
-                modifier = Modifier.clearAndSetSemantics {
-                    contentDescription = listOfNotNull(exercise?.nameJa, prescription, exercise?.cue)
-                        .joinToString("、")
-                },
+                cue = nextCue,
+                modifier = Modifier.clearAndSetSemantics { contentDescription = upcoming },
             )
             Spacer(Modifier.height(10.dp))
             InlineRestControls(state, actions)
@@ -155,28 +164,29 @@ private fun InlineRestControls(state: SessionUiState, actions: SessionActions) {
         Spacer(Modifier.height(48.dp))
         return
     }
+    val s = LocalStrings.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         InlineControl(
-            label = EXTEND_REST_LABEL,
-            description = extendRestDescription(),
+            label = extendRestLabel(s),
+            description = extendRestDescription(s),
             enabled = state.canExtendRest,
             // 「四十秒 追加済み」 — the control reports what it has already done, so a user who has
             // tapped it three times is not left counting taps.
-            state = addedStateDescription(state.addedMs),
-            disabledReason = extendDisabledDescription(state.restKind),
+            state = addedStateDescription(s, state.addedMs),
+            disabledReason = extendDisabledDescription(s, state.restKind),
             onClick = actions::onExtendRest,
         )
         Spacer(Modifier.width(40.dp))
         InlineControl(
-            label = SKIP_REST_LABEL,
-            description = "とばす",
+            label = skipRestLabel(s),
+            description = s.gymSession.controlsForward,
             enabled = state.canSkipForward,
             state = null,
-            disabledReason = skipDisabledDescription(state.restKind),
+            disabledReason = skipDisabledDescription(s, state.restKind),
             onClick = actions::onSkipForward,
         )
     }
@@ -195,7 +205,10 @@ private fun InlineControl(
     Box(
         modifier = Modifier
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .clickable(enabled = enabled, onClick = onClick)
+            // A bare accent word with no fill and no border, so it takes the lozenge — and here the
+            // pill is doing real work: 十秒 追加 and とばす sit 40.dp apart on a screen read at arm's
+            // length, and a rounded wash under one of them says which one the thumb found.
+            .playerPressable(TempoShapes.Word, enabled = enabled, onClick = onClick)
             .clearAndSetSemantics {
                 // A disabled control states **why**, never a silent no-op (§A REST, accessibility).
                 contentDescription = if (enabled) description else (disabledReason ?: description)

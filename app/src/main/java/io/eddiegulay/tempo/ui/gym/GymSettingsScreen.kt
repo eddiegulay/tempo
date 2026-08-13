@@ -9,7 +9,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -62,11 +60,16 @@ import io.eddiegulay.tempo.gym.RestSlot
 import io.eddiegulay.tempo.gym.SpeechAvailability
 import io.eddiegulay.tempo.gym.WheelOption
 import io.eddiegulay.tempo.gym.cue.isTouchExplorationEnabled
+import io.eddiegulay.tempo.gym.label
 import io.eddiegulay.tempo.gym.restOptions
+import io.eddiegulay.tempo.i18n.Lang
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.TempoValueWheel
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 import java.util.Locale
 
 /*
@@ -100,6 +103,7 @@ import java.util.Locale
  */
 @Composable
 fun GymSettingsScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
+    val s = LocalStrings.current
     val stored by gym.prefs.collectAsStateWithLifecycle()
     val session by gym.activeSession.collectAsStateWithLifecycle()
 
@@ -121,6 +125,7 @@ fun GymSettingsScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
     BackHandler(enabled = openWheel != null) { openWheel = null }
 
     val rows = settingsRowStates(
+        strings = s,
         prefs = prefs,
         speech = speech,
         sessionLive = session != null,
@@ -130,8 +135,8 @@ fun GymSettingsScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
 
     Column(modifier.fillMaxSize()) {
         GymBackHeader(
-            title = "設定",
-            subtitle = "鍛錬のふるまい",
+            title = s.gymSettings.title,
+            subtitle = s.gymSettings.subtitle,
             onBack = { if (gym.stack.value.size > 1) gym.onBack() },
         )
 
@@ -171,7 +176,7 @@ fun GymSettingsScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
                 WheelRow(
                     row = SettingRow.PrepareSeconds,
                     value = prefs.prepareSeconds,
-                    options = prepareOptions(),
+                    options = prepareOptions(s),
                     states = rows,
                     open = openWheel == SettingRow.PrepareSeconds,
                     onOpen = { openWheel = if (openWheel == SettingRow.PrepareSeconds) null else SettingRow.PrepareSeconds },
@@ -190,7 +195,7 @@ fun GymSettingsScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
                     // §Q10 and the builder's own wheel, reused rather than restated: the value the user
                     // dials here is the value a new routine's 種目の間 row opens on, and two lists is
                     // how one of them ends up offering a step the other cannot show.
-                    options = restOptions(RestSlot.BETWEEN_STATIONS),
+                    options = restOptions(RestSlot.BETWEEN_STATIONS, s),
                     states = rows,
                     open = openWheel == SettingRow.StationRest,
                     onOpen = { openWheel = if (openWheel == SettingRow.StationRest) null else SettingRow.StationRest },
@@ -204,7 +209,7 @@ fun GymSettingsScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
                 WheelRow(
                     row = SettingRow.RoundRest,
                     value = prefs.defaultRoundRest,
-                    options = restOptions(RestSlot.BETWEEN_ROUNDS),
+                    options = restOptions(RestSlot.BETWEEN_ROUNDS, s),
                     states = rows,
                     open = openWheel == SettingRow.RoundRest,
                     onOpen = { openWheel = if (openWheel == SettingRow.RoundRest) null else SettingRow.RoundRest },
@@ -219,7 +224,7 @@ fun GymSettingsScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
             // 「これから作る型に使われます」 — §B edge case 6's whole purpose. "Default rest" is the most
             // commonly misread setting in every logging app, and changing it must never rewrite an
             // existing routine's stored rests. A footnote, not a card row.
-            Footnote(REST_DEFAULTS_FOOTNOTE)
+            Footnote(s.gymSettings.restDefaultsFootnote)
 
             SettingsCard(SettingSection.Display, writer.failedSection) {
                 ToggleRow(SettingRow.KeepScreenOn, prefs.keepScreenOn, rows) {
@@ -231,7 +236,7 @@ fun GymSettingsScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
                 // 単位 cycles on tap: two options do not deserve a sheet (§B's value-rows note).
                 ValueRow(
                     row = SettingRow.Units,
-                    value = prefs.units.label,
+                    value = prefs.units.label(s),
                     states = rows,
                     onClick = {
                         val next = nextUnits(prefs.units)
@@ -266,6 +271,7 @@ fun GymSettingsScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
 @Composable
 internal fun GymBackHeader(title: String, subtitle: String?, onBack: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Column {
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 22.dp, top = 24.dp, bottom = 10.dp),
@@ -274,8 +280,8 @@ internal fun GymBackHeader(title: String, subtitle: String?, onBack: () -> Unit)
             Box(
                 modifier = Modifier
                     .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                    .clickable(onClick = onBack)
-                    .semantics { role = Role.Button; contentDescription = "とじる" },
+                    .pressable(TempoShapes.Glyph, role = Role.Button, onClick = onBack)
+                    .semantics { contentDescription = s.gymSettings.backAction },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -318,16 +324,17 @@ private fun SettingsCard(
     content: @Composable () -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp)) {
         Text(
-            text = section.heading,
+            text = section.heading(s),
             modifier = Modifier.padding(start = 18.dp, top = 22.dp, bottom = 6.dp).semantics { heading() },
             style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
         )
         Column(
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
+                .clip(TempoShapes.Card)
                 .background(c.card)
                 .animateContentSize(tween(220, easing = LinearOutSlowInEasing)),
         ) {
@@ -335,7 +342,7 @@ private fun SettingsCard(
         }
         if (failedSection == section) {
             Text(
-                text = WRITE_FAILED_LINE,
+                text = s.gymSettings.writeFailed,
                 // Polite, and this is the one live region on the page. §B's rule bans them for *ticking*
                 // values, because a per-second announcement is unusable and steals the TTS engine the
                 // cues need; a row that just reverted under the user's thumb is the opposite case — it
@@ -420,8 +427,9 @@ private fun ToggleRow(
     onToggle: (Boolean) -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val state = states[row] ?: RowState(enabled = true, subtitle = null)
-    val word = toggleWord(on)
+    val word = toggleWord(s, on)
     val wordColour by animateColorAsState(
         targetValue = when {
             !state.enabled -> c.inkFaint
@@ -436,12 +444,15 @@ private fun ToggleRow(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 56.dp)
-            .clickable(enabled = state.enabled) { onToggle(!on) }
+            // Left as a click rather than converted to `toggleable`: the row's whole announcement is
+            // hand-built below (`Role.Switch` plus a `stateDescription` that must be the same word the
+            // row draws), and `toggleable` would supply a second, differently-worded state on top.
+            .pressable(TempoShapes.Row, enabled = state.enabled) { onToggle(!on) }
             .clearAndSetSemantics {
                 role = Role.Switch
                 toggleableState = if (on) ToggleableState.On else ToggleableState.Off
                 stateDescription = word
-                contentDescription = settingsRowDescription(row.label, word, state.subtitle)
+                contentDescription = settingsRowDescription(s, row.label(s), word, state.subtitle)
                 if (!state.enabled) disabled()
             }
             .padding(horizontal = 18.dp, vertical = 12.dp),
@@ -453,7 +464,7 @@ private fun ToggleRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = row.label,
+                text = row.label(s),
                 style = TextStyle(
                     fontFamily = Mincho,
                     fontSize = 16.sp,
@@ -479,15 +490,16 @@ private fun ValueRow(
     onClick: () -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val state = states[row] ?: RowState(enabled = true, subtitle = null)
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 56.dp)
-            .clickable(enabled = state.enabled, onClick = onClick)
+            .pressable(TempoShapes.Row, enabled = state.enabled, onClick = onClick)
             .clearAndSetSemantics {
                 role = Role.Button
-                contentDescription = settingsRowDescription(row.label, value, state.subtitle)
+                contentDescription = settingsRowDescription(s, row.label(s), value, state.subtitle)
                 if (!state.enabled) disabled()
             }
             .padding(horizontal = 18.dp, vertical = 12.dp),
@@ -499,7 +511,7 @@ private fun ValueRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = row.label,
+                text = row.label(s),
                 style = TextStyle(fontFamily = Mincho, fontSize = 16.sp, color = c.ink),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -546,9 +558,10 @@ private fun WheelRow(
     onOpen: () -> Unit,
     onSelect: (Int) -> Unit,
 ) {
+    val s = LocalStrings.current
     val state = states[row] ?: RowState(enabled = true, subtitle = null)
-    val label = remember(options, value) {
-        options.firstOrNull { it.value == value }?.label ?: settingsSecondsLabel(value)
+    val label = remember(options, value, s) {
+        options.firstOrNull { it.value == value }?.label ?: settingsSecondsLabel(s, value)
     }
 
     Column(Modifier.fillMaxWidth()) {
@@ -563,8 +576,8 @@ private fun WheelRow(
                 // from the row above, which has already changed.
                 modifier = Modifier
                     .padding(horizontal = 18.dp)
-                    .semantics { contentDescription = row.label },
-                label = { picked -> options.firstOrNull { it.value == picked }?.label ?: settingsSecondsLabel(picked) },
+                    .semantics { contentDescription = row.label(s) },
+                label = { picked -> options.firstOrNull { it.value == picked }?.label ?: settingsSecondsLabel(s, picked) },
             )
         }
     }
@@ -584,21 +597,21 @@ private fun RowSubtitle(text: String) {
 @Composable
 private fun SafetyRow(onClick: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 22.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(c.card)
+            .background(c.card, TempoShapes.Card)
             .sizeIn(minHeight = 64.dp)
-            .clickable(onClick = onClick)
-            .clearAndSetSemantics { role = Role.Button; contentDescription = "安全のために" }
+            .pressable(TempoShapes.Card, onClick = onClick)
+            .clearAndSetSemantics { role = Role.Button; contentDescription = s.gymSettings.safetyTitle }
             .padding(horizontal = 18.dp, vertical = 18.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "安全のために",
+            text = s.gymSettings.safetyTitle,
             style = TextStyle(fontFamily = Mincho, fontSize = 16.sp, color = c.ink),
         )
         Text(
@@ -704,7 +717,8 @@ private fun rememberSettingsWriter(gym: GymViewModel, stored: GymPreferences): S
 // ─── Probing the platform ───────────────────────────────────────────────────────────────────────
 
 /**
- * Whether a Japanese voice exists — §B's `speechAvailability()`, as a composable so it can be re-probed.
+ * Whether a voice exists for the language the app is speaking — §B's `speechAvailability()`, as a
+ * composable so it can be re-probed.
  *
  * **Null means "not answered yet" and is not a negative answer.** That distinction is the whole reason
  * this is not `GymSpeech.availability`: that field starts at `NoEngine` and its `onAvailabilityChanged`
@@ -724,9 +738,12 @@ private fun rememberSettingsWriter(gym: GymViewModel, stored: GymPreferences): S
 private fun rememberSpeechAvailability(): SpeechAvailability? {
     val context = LocalContext.current.applicationContext
     val owner = LocalLifecycleOwner.current
+    val lang = LocalStrings.current.lang
     var availability by remember { mutableStateOf<SpeechAvailability?>(null) }
 
-    DisposableEffect(owner, context) {
+    // Keyed on the language too: switching it makes the previous answer stale, and a page that kept it
+    // would grey 音声 for a voice the device has, or offer one it does not.
+    DisposableEffect(owner, context, lang) {
         val main = Handler(Looper.getMainLooper())
         var engine: TextToSpeech? = null
 
@@ -742,7 +759,7 @@ private fun rememberSpeechAvailability(): SpeechAvailability? {
             created = TextToSpeech(context) { status ->
                 // The callback can arrive on a binder thread, and `created` is assigned on this one.
                 // Hopping to the main thread orders both, exactly as `GymSpeech` does.
-                main.post { availability = probeResult(status, created) }
+                main.post { availability = probeResult(status, created, lang) }
             }
             engine = created
         }
@@ -766,16 +783,26 @@ private fun rememberSpeechAvailability(): SpeechAvailability? {
 }
 
 /**
- * The three answers `TextToSpeech` can give, mapped exactly as `GymSpeech.onEngineReady` maps them —
- * including the `runCatching`, because `setLanguage` throws on some engines rather than returning a
- * code, and an engine that throws is one that cannot speak Japanese.
+ * The three answers `TextToSpeech` can give, mapped as `GymSpeech.onEngineReady` maps them — including
+ * the `runCatching`, because `setLanguage` throws on some engines rather than returning a code, and an
+ * engine that throws is one that cannot speak.
+ *
+ * **It asks about [lang], not about Japanese.** The row this gates says a voice is missing, and until
+ * the app spoke two languages the two questions were the same one. They are not any more: probing for
+ * Japanese under an English UI would grey 音声 on a device with a perfectly good English voice, and the
+ * sub-line would report an absence nobody asked about.
+ *
+ * **This is not the only probe.** `gym/cue/GymSpeech` runs its own for the player, and the two must
+ * answer the same question or this page advertises a capability the cue engine does not have. Both go
+ * through `ttsLocale(lang)` for exactly that reason — note it resolves to a bare language rather than
+ * a country-qualified tag, so an en-GB voice counts as an English voice.
  */
-private fun probeResult(status: Int, engine: TextToSpeech?): SpeechAvailability {
+private fun probeResult(status: Int, engine: TextToSpeech?, lang: Lang): SpeechAvailability {
     if (status != TextToSpeech.SUCCESS || engine == null) return SpeechAvailability.NoEngine
-    val result = runCatching { engine.setLanguage(Locale.JAPANESE) }
+    val result = runCatching { engine.setLanguage(Locale.forLanguageTag(lang.tag)) }
         .getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
     return when (result) {
-        TextToSpeech.LANG_MISSING_DATA, TextToSpeech.LANG_NOT_SUPPORTED -> SpeechAvailability.NoJapaneseVoice
+        TextToSpeech.LANG_MISSING_DATA, TextToSpeech.LANG_NOT_SUPPORTED -> SpeechAvailability.NoVoiceForLanguage
         else -> SpeechAvailability.Available
     }
 }

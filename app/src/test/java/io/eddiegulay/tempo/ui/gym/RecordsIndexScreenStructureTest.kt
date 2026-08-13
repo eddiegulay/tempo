@@ -35,12 +35,14 @@ class RecordsIndexScreenStructureTest {
         // them the list) depends on this node being the thing that opens the list.
         val body = declarationBody("private fun InkGrid(")
 
-        assertTrue("the grid must carry gridSemantics' summary", body.contains("gridSemantics(month, days)"))
+        assertTrue("the grid must carry gridSemantics' summary", body.contains("gridSemantics(month, days, s)"))
         assertTrue("the summary must be the node's description", body.contains("contentDescription = summary"))
         assertTrue("the node is a button", body.contains("role = Role.Button"))
         assertTrue(
             "§4's own click label must be on the node",
-            body.contains("onClickLabel = \"記録の一覧をひらく\""),
+            // The sentence itself lives in `GymRecordsStrings`; what this pins is that the *node* is
+            // the thing carrying it, which is the fact a screen-reader user depends on.
+            body.contains("onClickLabel = s.gymRecords.gridA11y"),
         )
     }
 
@@ -92,11 +94,17 @@ class RecordsIndexScreenStructureTest {
         // `acknowledgeHistoryLoss` had existed since Phase 1 with no call site anywhere in the app.
         val body = declarationBody("private fun HistoryLossPanel(")
 
-        assertTrue("とじる is the action", body.contains("とじる"))
-        assertTrue("もう一度 must not appear on the quarantine panel", !body.contains("もう一度"))
+        assertTrue("とじる is the action", body.contains("s.gymRecords.close"))
+        assertTrue(
+            "もう一度 must not appear on the quarantine panel — acknowledging is not retrying",
+            !body.contains("もう一度") && !body.contains("fault.retry"),
+        )
         assertTrue(
             "the message must come from faultCopy, not a second literal",
-            body.contains("faultCopy(GymFault.StoreCorrupt)"),
+            // Matched without the closing paren: `faultCopy` now takes the string table as a second
+            // argument, and pinning the *whole* call would make this assertion break on a change to
+            // how the table is reached rather than on the thing it guards — a second literal.
+            body.contains("faultCopy(GymFault.StoreCorrupt,"),
         )
 
         val page = declarationBody("fun RecordsIndexScreen(")
@@ -116,23 +124,27 @@ class RecordsIndexScreenStructureTest {
         // three look nearly identical on screen and mean entirely different things; one shared
         // composable is all it takes for the next branch added to it to make an unreadable store say
         // まだ 記録はありません.
+        // The sentences live in `GymRecordsStrings` now, so what is counted is the *key*: one key,
+        // one call site. A second reference is a second state that could say it, which is the failure
+        // this rule exists to stop — the literal moving to a table changed where it lives, not that.
         assertTrue(
             "まだ 記録はありません belongs to RecordsEmpty alone",
-            declarationBody("private fun RecordsEmpty(").contains("まだ 記録はありません"),
+            declarationBody("private fun RecordsEmpty(").contains("gymRecords.recordsEmpty"),
         )
         assertEquals(
-            "まだ 記録はありません must be drawn from exactly one place in the file",
+            "the records-empty sentence must be drawn from exactly one place in the file",
             1,
-            Regex("\"まだ 記録はありません\"").findAll(source).count(),
+            Regex(Regex.escape("gymRecords.recordsEmpty")).findAll(source).count(),
         )
         assertTrue(
             "the loading state says only 読み込み中",
-            declarationBody("private fun RecordsLoading(").contains("読み込み中") &&
-                !declarationBody("private fun RecordsLoading(").contains("ありません"),
+            declarationBody("private fun RecordsLoading(").contains("gymRecords.loading") &&
+                !declarationBody("private fun RecordsLoading(").contains("Empty"),
         )
         assertTrue(
             "the quarantine panel must not contain an ありません-as-emptiness sentence",
-            !declarationBody("private fun HistoryLossPanel(").contains("ありません"),
+            !declarationBody("private fun HistoryLossPanel(").contains("ありません") &&
+                !declarationBody("private fun HistoryLossPanel(").contains("Empty"),
         )
     }
 
@@ -149,7 +161,7 @@ class RecordsIndexScreenStructureTest {
         assertTrue("the loading arm must come before the grid", loading in 0 until ready)
         assertTrue(
             "the loading arm draws a word, not a grid",
-            body.substring(loading, ready).contains("読み込み中") &&
+            body.substring(loading, ready).contains("gymRecords.loading") &&
                 !body.substring(loading, ready).contains("InkGrid("),
         )
     }
@@ -232,7 +244,7 @@ class RecordsIndexScreenStructureTest {
         assertEquals(
             "…and each is given the current month",
             3,
-            Regex(Regex.escape("currentMonth)")).findAll(pager).count(),
+            Regex(Regex.escape("currentMonth, s)")).findAll(pager).count(),
         )
         assertTrue(
             "the page hands MonthPager the clock's month",

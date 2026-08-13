@@ -4,6 +4,8 @@ import io.eddiegulay.tempo.gym.BestMetric
 import io.eddiegulay.tempo.gym.Engine
 import io.eddiegulay.tempo.gym.MovementBest
 import io.eddiegulay.tempo.gym.RoutineBest
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -32,6 +34,7 @@ class RecordsPrCopyTest {
                 best(metric = BestMetric.MOST_ROUNDS, value = 17.0, achievedAt = 200L),
                 best(metric = BestMetric.MOST_REPS, value = 510.0, achievedAt = 300L),
             ),
+            StringsJa,
         )
 
         assertEquals(1, rows.size)
@@ -47,6 +50,7 @@ class RecordsPrCopyTest {
         // to say is 中身が変わっています, not to hide it.
         val rows = prRoutineRows(
             listOf(best(engine = Engine.INTERVAL_CIRCUIT, metric = BestMetric.MOST_ROUNDS, value = 9.0)),
+            StringsJa,
         )
 
         assertEquals(1, rows.size)
@@ -57,7 +61,7 @@ class RecordsPrCopyTest {
     fun `a HIGHEST_STEP record is dropped rather than printed with an invented label`() {
         // `DECISIONS.md` §Q9: no Japanese label exists for it anywhere in the specs and none is to be
         // invented. Nothing seeds it in v1, so this is the restored-backup case.
-        assertTrue(prRoutineRows(listOf(best(metric = BestMetric.HIGHEST_STEP, value = 9.0))).isEmpty())
+        assertTrue(prRoutineRows(listOf(best(metric = BestMetric.HIGHEST_STEP, value = 9.0)), StringsJa).isEmpty())
     }
 
     @Test
@@ -69,6 +73,7 @@ class RecordsPrCopyTest {
                 best(engine = Engine.FOR_TIME, metric = BestMetric.HIGHEST_STEP, value = 9.0, achievedAt = 900L),
                 best(engine = Engine.FOR_TIME, metric = BestMetric.MOST_VOLUME, value = 420.0, achievedAt = 100L),
             ),
+            StringsJa,
         )
 
         assertEquals(1, rows.size)
@@ -85,6 +90,7 @@ class RecordsPrCopyTest {
                 best(routineId = "r_old", name = "七分間", achievedAt = 100L),
                 best(routineId = "r_new", name = "タバタ", achievedAt = 900L),
             ),
+            StringsJa,
         )
 
         assertEquals(listOf("タバタ", "七分間"), rows.map { it.copy.name })
@@ -99,6 +105,7 @@ class RecordsPrCopyTest {
                 best(routineId = "r_cindy", name = "シンディ", achievedAt = 200L),
                 best(routineId = "r_cindy_easy", name = "シンディ（やさしい）", achievedAt = 100L),
             ),
+            StringsJa,
         )
 
         assertEquals(listOf("シンディ", "シンディ（やさしい）"), rows.map { it.copy.name })
@@ -106,7 +113,7 @@ class RecordsPrCopyTest {
 
     @Test
     fun `an edited routine says its structure changed and stays on the page`() {
-        val row = prRoutineRows(listOf(best(structureChanged = true))).single()
+        val row = prRoutineRows(listOf(best(structureChanged = true)), StringsJa).single()
         assertEquals("中身が変わっています", row.copy.note)
     }
 
@@ -114,7 +121,7 @@ class RecordsPrCopyTest {
     fun `an archived routine keeps its row, its chip and its taps`() {
         // §4's `ArchivedRoutineBest`: 削除済み chip, still tappable — `04` §1 rule 3 keeps the detail
         // page reachable from a record.
-        val row = prRoutineRows(listOf(best(archived = true))).single()
+        val row = prRoutineRows(listOf(best(archived = true)), StringsJa).single()
 
         assertTrue(row.copy.archived)
         assertEquals("r_cindy", row.routineId)
@@ -123,7 +130,7 @@ class RecordsPrCopyTest {
 
     @Test
     fun `the row carries the ids its three destinations need`() {
-        val row = prRoutineRows(listOf(best(sessionId = 42L))).single()
+        val row = prRoutineRows(listOf(best(sessionId = 42L)), StringsJa).single()
 
         assertEquals("r_cindy", row.routineId)
         assertEquals(42L, row.sessionId)
@@ -132,7 +139,7 @@ class RecordsPrCopyTest {
     @Test
     fun `the spoken row is one sentence in the order the card is read`() {
         // §4's accessibility line, verbatim: 「シンディ、最高巡数 十七巡、時間内、六月十七日、六回」.
-        val row = prRoutineRows(listOf(best(sessionId = 42L))).single()
+        val row = prRoutineRows(listOf(best(sessionId = 42L)), StringsJa).single()
         assertEquals("シンディ、最高巡数 十七巡、時間内、六月十七日、六回", row.copy.semantics)
     }
 
@@ -141,7 +148,7 @@ class RecordsPrCopyTest {
     @Test
     fun `a movement row reads its best single set over the lifetime total`() {
         // §4's mock: 腕立て伏せ / 三十二回, then 一度に ・ のべ 四百回.
-        val row = prMovementRow(movement())!!
+        val row = prMovementRow(movement(), StringsJa)!!
 
         assertEquals("腕立て伏せ", row.name)
         assertEquals("三十二回", row.value)
@@ -154,20 +161,20 @@ class RecordsPrCopyTest {
         // §4 edge case 6: the row rolls up the whole ladder. `hardestReachedExerciseName` is null
         // exactly when the hardest rung *is* the row's own movement, so the fragment is absent then
         // rather than repeating the name back at the user.
-        assertEquals("いちばん上 足上げ腕立て", prMovementRow(movement())!!.hardest)
-        assertNull(prMovementRow(movement(hardestName = null))!!.hardest)
+        assertEquals("いちばん上 足上げ腕立て", prMovementRow(movement(), StringsJa)!!.hardest)
+        assertNull(prMovementRow(movement(hardestName = null), StringsJa)!!.hardest)
     }
 
     @Test
     fun `a movement with no counted set is omitted rather than shown as zero`() {
         // 一度に counts only sets with a recorded `actual_reps` (§4 edge case 5). 〇回 as a personal
         // best is a scolding dressed as a record.
-        assertNull(prMovementRow(movement(singleSet = 0)))
+        assertNull(prMovementRow(movement(singleSet = 0), StringsJa))
     }
 
     @Test
     fun `a movement with no recorded date omits the line rather than printing a dash`() {
-        val row = prMovementRow(movement(date = null))!!
+        val row = prMovementRow(movement(date = null), StringsJa)!!
         assertNull(row.date)
     }
 
@@ -175,7 +182,7 @@ class RecordsPrCopyTest {
     fun `the spoken movement row puts each label before its number`() {
         assertEquals(
             "腕立て伏せ、一度に 三十二回、のべ 四百回、六月十日、いちばん上 足上げ腕立て",
-            prMovementRow(movement())!!.semantics,
+            prMovementRow(movement(), StringsJa)!!.semantics,
         )
     }
 
@@ -187,6 +194,7 @@ class RecordsPrCopyTest {
                 movement(id = "e_pushup", name = "腕立て伏せ", lastAt = 100L),
                 movement(id = "e_squat", name = "スクワット", lastAt = 900L),
             ),
+            StringsJa,
         )
 
         assertEquals(listOf("スクワット", "腕立て伏せ", "腹筋"), rows.map { it.name })
@@ -196,8 +204,30 @@ class RecordsPrCopyTest {
 
     @Test
     fun `the tabs are the two words §6 gives them, in the order the mock draws`() {
-        assertEquals(listOf("型ごと", "動きごと"), PrTab.entries.map { it.label })
+        assertEquals(listOf("型ごと", "動きごと"), PrTab.entries.map { it.label(StringsJa) })
+        assertEquals(listOf("By routine", "By movement"), PrTab.entries.map { it.label(StringsEn) })
         assertEquals(PrTab.Routines, PrTab.Default)
+    }
+
+    // ─── English ────────────────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `a movement row splits its two facts differently when drawn and when spoken`() {
+        // 「一度に ・ のべ 四百回」 visible against 「一度に 三十二回、のべ 四百回」 spoken, and the same
+        // split in English. The label alone and the label-with-value are two members for that reason.
+        //
+        // The names fall back to the frozen `exerciseName` here — the fixture's `e_pushup` is not a
+        // catalogue id (the seeds are bare: `pushup`, `burpee`), so this exercises exactly the path a
+        // record for a movement the catalogue has forgotten takes. A live id resolves through
+        // `Exercise.displayName`, which is the fix for `MovementBest`'s frozen Japanese name.
+        val row = prMovementRow(movement(), StringsEn)!!
+        assertEquals("32 reps", row.value)
+        assertEquals("In one set · 400 reps in total", row.meta)
+        assertEquals("Highest reached 足上げ腕立て", row.hardest)
+        assertEquals(
+            "腕立て伏せ, 32 reps in one set, 400 reps in total, 10 June, Highest reached 足上げ腕立て",
+            row.semantics,
+        )
     }
 
     // ─── Fixtures ───────────────────────────────────────────────────────────────────────────────

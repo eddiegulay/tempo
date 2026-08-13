@@ -89,7 +89,7 @@ class RecordAnnouncerTest {
         assertTrue(
             "the announcer must be empty before the reveal and the accolade sentence after it",
             flat.contains(
-                "if (revealed && !accolades.isEmpty) accoladeSemantics(accolades).orEmpty() else \"\"",
+                "if (revealed && !accolades.isEmpty) accoladeSemantics(accolades, s).orEmpty() else \"\"",
             ),
         )
         assertTrue(

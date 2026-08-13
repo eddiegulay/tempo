@@ -1,11 +1,12 @@
 package io.eddiegulay.tempo.ui.gym.session
 
-import io.eddiegulay.tempo.data.JapaneseDate
 import io.eddiegulay.tempo.gym.Phase
-import io.eddiegulay.tempo.gym.clockDuration
-import io.eddiegulay.tempo.gym.durationKanjiFromMs
+import io.eddiegulay.tempo.gym.session.REST_EXTENSION_MS
+import io.eddiegulay.tempo.gym.session.RESUME_PREPARE_MS
 import io.eddiegulay.tempo.gym.session.RestKind
 import io.eddiegulay.tempo.gym.session.Segment
+import io.eddiegulay.tempo.i18n.Lang
+import io.eddiegulay.tempo.i18n.Strings
 import kotlin.math.roundToInt
 
 /*
@@ -16,29 +17,29 @@ import kotlin.math.roundToInt
  * shared across pages and the layouts are not.** 「三巡目 ・ 四種目中 三」 sits on WORK, REPS and REST at
  * the same pixel, and a page that formatted its own would be the page that disagreed about 最後の巡.
  *
- * Two rules run through the whole file.
+ * **Not one Japanese literal is left here.** Every word comes from `strings.gymSession`, every number
+ * from `strings.fmt`, every movement name from `Exercise.displayName`. What stayed is the *dispatch* —
+ * which of the table's messages a given `RestKind`, `Phase`, `Segment` shape or numeric window selects,
+ * and which of them selects **nothing**. That split is the whole design: a `when` that selects a
+ * message translates by replacing the table, and a `when` that builds a sentence does not.
  *
- * 1. **Every string here is transcribed from a spec table.** Where the spec gives a shape
- *    (「次 ・ 休息 十五秒 → プランク」) the function composes the same shape from its own documented
- *    fragments; where it gives nothing, the function returns **null** and the page renders the slot
- *    empty. Nothing is invented — see [repDoneDescription] and [nextUpLabel] for the two places that
- *    bit.
- * 2. **`DECISIONS.md` §Q4's numeral split, applied without exception.** A *ticking* value is arabic —
- *    the countdown, the pacer, the ＋0:07 overrun — because a kanji column changing under a shaking
- *    hand is unreadable. Everything that has stopped moving is kanji. `DECISIONS.md` §Q10 then splits
- *    the kanji half again: a duration the user **chose** (a rest length, a station's 三十秒) renders as
- *    bare seconds through [chosenSecondsLabel]; a duration the app **measured** (活動時間) renders
- *    through `durationKanjiFromMs`. Setting and reading are different acts.
+ * Three rules run through the file.
+ *
+ * 1. **The table arrives as `strings: Strings`, the first parameter, and is never read from a global**
+ *    (`.planning/i18n/DECISIONS.md` §L4). `PlayerCopyTest` runs on plain JUnit with no Compose and no
+ *    `Context`, and passing the table is what keeps it there. [prepareNumeral] is the one function
+ *    without it, and that absence is a claim — see its KDoc.
+ * 2. **Nine of these return null, and the null is the specification.** Where §A gives no words, the
+ *    page draws an empty fixed slot rather than a sentence this file invented — see [repDoneDescription]
+ *    and [nextUpLabel] for the two places that bit. An English string in one of those positions
+ *    re-introduces exactly the bug the null prevents.
+ * 3. **`DECISIONS.md` §Q4 and §Q10 are still applied without exception in Japanese, and are deleted in
+ *    English** (§L7). A *ticking* value is arabic — the countdown, the pacer, the ＋0:07 overrun —
+ *    because a kanji column changing under a shaking hand is unreadable; anything that has stopped
+ *    moving is kanji, and §Q10 splits that half again between a duration the user **chose**
+ *    ([chosenSecondsLabel]) and one the app **measured** (`fmt.durationFromMs`). English has one
+ *    orthography and therefore carries neither distinction. Both rules now live in [Strings.fmt].
  */
-
-/** Announced once on crossing the pacing estimate, then silent — §A REPS, accessibility. */
-const val OVERRUN_ANNOUNCEMENT: String = "目安を過ぎました"
-
-/** §A REST, accessibility. The button says ＋二十秒; TalkBack says what it does. */
-const val EXTEND_REST_LABEL: String = "＋二十秒"
-
-/** §A REST's inline "I'm ready, go" — the semantic skip, beside the bar's structural one. */
-const val SKIP_REST_LABEL: String = "とばす ▷"
 
 /**
  * Seconds, always rounded **up**.
@@ -53,11 +54,13 @@ private fun ceilSeconds(ms: Long): Long = if (ms <= 0L) 0L else (ms + 999L) / 10
 /**
  * The player's countdown — `0:23`, arabic, `03-player.md` shared vocabulary and `DECISIONS.md` §Q4.
  *
- * Shaped by `Numerals.clockDuration` rather than by a second `%d:%02d` here: the breakdown's 0:41 and
- * this numeral have to be the same form, and two format strings are two forms the day one of them
- * grows a zero-padded minute.
+ * `fmt.clock` rather than a second `%d:%02d` here: the breakdown's 0:41 and this numeral have to be the
+ * same form, and two format strings are two forms the day one of them grows a zero-padded minute. It is
+ * **identical in both languages** — a clock is the one numeral English and Japanese already agree on —
+ * which is why this is the half of §Q4 that survives translation by accident rather than by design.
  */
-fun formatCountdown(remainingMs: Long): String = clockDuration(ceilSeconds(remainingMs) * 1000L)
+fun formatCountdown(strings: Strings, remainingMs: Long): String =
+    strings.fmt.clock(ceilSeconds(remainingMs) * 1000L)
 
 /**
  * 支度's numeral: a **bare integer**, not `0:03` (§A PREPARE's mock says so explicitly).
@@ -65,12 +68,28 @@ fun formatCountdown(remainingMs: Long): String = clockDuration(ceilSeconds(remai
  * Five seconds is not a duration you read off a clock face, it is a count you say out loud, and the
  * colon form would make the last five seconds of every session look like the last five seconds of a
  * plank.
+ *
+ * Takes no [Strings] and must not: this is a *ticking* value, so §Q4 keeps it arabic in Japanese too,
+ * and `fmt.count` — which spells kanji — would be the wrong formatter in both languages.
  */
 fun prepareNumeral(remainingMs: Long): String = ceilSeconds(remainingMs).toString()
 
-/** A duration the user **set**, in bare kanji seconds — `DECISIONS.md` §Q10. 六十秒, never 一分. */
-fun chosenSecondsLabel(ms: Long): String =
-    JapaneseDate.kanjiExtended(ceilSeconds(ms).toInt()) + "秒"
+/**
+ * A duration the user **set** — `DECISIONS.md` §Q10, and §L7's ruling on what happens to it.
+ *
+ * Japanese renders bare kanji seconds: 六十秒, never 一分. That is §Q10's "chosen" half and it is
+ * unchanged. **English deletes the rule**, because the distinction was carried by orthography and
+ * English has one — so a chosen duration reads the same way a measured one does.
+ *
+ * The shape is `ui/gym/GymSettingsCopy.kt`'s `settingsSecondsLabel`, which made this collapse first.
+ * The two are deliberately not one function: that one takes seconds off a wheel and has a zero row
+ * reading なし, this one takes milliseconds off a running clock and has no zero case, because a segment
+ * of zero length is not something the player draws.
+ */
+fun chosenSecondsLabel(strings: Strings, ms: Long): String {
+    val seconds = ceilSeconds(ms).toInt()
+    return if (strings.lang == Lang.Ja) strings.fmt.seconds(seconds) else strings.fmt.duration(seconds)
+}
 
 /**
  * 「三巡目 ・ 四種目中 三」, and 「最後の巡 ・ 四種目中 三」 on the final round's first effort (§A WORK
@@ -88,25 +107,32 @@ fun chosenSecondsLabel(ms: Long): String =
  *   line above the ensō flicker at every transition, which is the layout jump §3.1 forbids.
  *
  * Returns null when neither clause applies, and the page then draws nothing rather than a stray ・.
+ *
+ * The two clauses being independently droppable is why the join stays here and the *phrasing* moved:
+ * one message string cannot express "either half may be absent", and `GymSessionStrings.counterStation`
+ * cannot express `四種目中 三` in English word order. Each side does the part it can.
  */
 fun counterLabel(
+    strings: Strings,
     round: Int,
     totalRounds: Int,
     station: Int?,
     stationsPerRound: Int,
     lastRound: Boolean,
 ): String? {
+    val s = strings.gymSession
     val rounds = when {
         totalRounds <= 1 -> null
-        lastRound -> "最後の巡"
-        else -> JapaneseDate.kanjiExtended(round) + "巡目"
+        lastRound -> s.counterLastRound
+        else -> s.counterRound(round)
     }
     val stations = if (station != null && stationsPerRound > 0) {
-        JapaneseDate.kanjiExtended(stationsPerRound) + "種目中 " + JapaneseDate.kanjiExtended(station + 1)
+        s.counterStation(station + 1, stationsPerRound)
     } else {
         null
     }
-    return listOfNotNull(rounds, stations).takeIf { it.isNotEmpty() }?.joinToString(" ・ ")
+    return listOfNotNull(rounds, stations).takeIf { it.isNotEmpty() }
+        ?.joinToString(strings.fmt.separator)
 }
 
 /**
@@ -116,12 +142,12 @@ fun counterLabel(
  * The predicate is `cycleDotsOverflow`'s and lives with the component; the counter word is copy and
  * lives here, which is the split `CycleDots` documents at length.
  */
-fun roundsOverflowLabel(round: Int, totalRounds: Int): String =
-    JapaneseDate.kanjiExtended(round) + "巡目 / " + JapaneseDate.kanjiExtended(totalRounds) + "巡"
+fun roundsOverflowLabel(strings: Strings, round: Int, totalRounds: Int): String =
+    strings.gymSession.roundsOverflow(round, totalRounds)
 
 /** The dots' one merged node — §A WORK, accessibility. */
-fun cycleDotsLabel(round: Int, totalRounds: Int): String =
-    JapaneseDate.kanjiExtended(round) + "巡目、" + JapaneseDate.kanjiExtended(totalRounds) + "巡中"
+fun cycleDotsLabel(strings: Strings, round: Int, totalRounds: Int): String =
+    strings.gymSession.cycleDots(round, totalRounds)
 
 /**
  * 「全体 四十パーセント」 — the session hairline's description, which is the only thing that reads it.
@@ -129,9 +155,9 @@ fun cycleDotsLabel(round: Int, totalRounds: Int): String =
  * Rounded to a whole percent because that is the form §A WORK's accessibility note writes, and because
  * a hairline announced to a tenth of a percent would be a number nobody can act on.
  */
-fun progressLabel(fraction: Float): String {
+fun progressLabel(strings: Strings, fraction: Float): String {
     val percent = if (fraction.isNaN()) 0 else (fraction * 100f).roundToInt().coerceIn(0, 100)
-    return "全体 " + JapaneseDate.kanjiExtended(percent) + "パーセント"
+    return strings.gymSession.progress(percent)
 }
 
 /**
@@ -142,30 +168,32 @@ fun progressLabel(fraction: Float): String {
  * inventing 「次 ・ 種目」 would be inventing copy, so the slot is left blank and the chrome does not
  * move — the same fixed-slot bargain §A REST edge case 5 strikes for a missing form cue.
  */
-fun nextUpLabel(next: Segment?, nextExerciseName: String?): String? = when {
-    next == null -> "次 ・ 完了"
-    next.phase == Phase.REST -> {
-        val rest = "次 ・ 休息 " + chosenSecondsLabel(next.effectiveMs)
-        if (nextExerciseName == null) rest else "$rest → $nextExerciseName"
-    }
+fun nextUpLabel(strings: Strings, next: Segment?, nextExerciseName: String?): String? {
+    val s = strings.gymSession
+    return when {
+        next == null -> s.nextComplete
+        next.phase == Phase.REST ->
+            s.nextRest(chosenSecondsLabel(strings, next.effectiveMs), nextExerciseName)
 
-    nextExerciseName != null -> "次 ・ $nextExerciseName"
-    else -> null
+        nextExerciseName != null -> s.nextExercise(nextExerciseName)
+        else -> null
+    }
 }
 
 /**
  * The same line for TalkBack, with 「そのあと」 spelled out — 「→」 reads as nothing (§A WORK,
  * accessibility).
  */
-fun nextUpDescription(next: Segment?, nextExerciseName: String?): String? = when {
-    next == null -> "次、完了"
-    next.phase == Phase.REST -> {
-        val rest = "次、休息 " + chosenSecondsLabel(next.effectiveMs)
-        if (nextExerciseName == null) rest else "$rest、そのあと $nextExerciseName"
-    }
+fun nextUpDescription(strings: Strings, next: Segment?, nextExerciseName: String?): String? {
+    val s = strings.gymSession
+    return when {
+        next == null -> s.nextCompleteSpoken
+        next.phase == Phase.REST ->
+            s.nextRestSpoken(chosenSecondsLabel(strings, next.effectiveMs), nextExerciseName)
 
-    nextExerciseName != null -> "次、$nextExerciseName"
-    else -> null
+        nextExerciseName != null -> s.nextExerciseSpoken(nextExerciseName)
+        else -> null
+    }
 }
 
 /**
@@ -195,12 +223,12 @@ fun nextUpDescription(next: Segment?, nextExerciseName: String?): String? = when
  *
  * @param plannedMs the segment's own length — `Segment.effectiveMs`, so ＋二十秒 counts.
  */
-fun countdownAnnouncement(remainingMs: Long, plannedMs: Long): String? = when {
+fun countdownAnnouncement(strings: Strings, remainingMs: Long, plannedMs: Long): String? = when {
     remainingMs in 10_001L..30_000L && plannedMs > 30_000L ->
-        "残り " + JapaneseDate.kanjiExtended(30) + "秒"
+        strings.gymSession.countdownRemaining(30)
 
     remainingMs in 1L..10_000L && plannedMs > 10_000L ->
-        "残り " + JapaneseDate.kanjiExtended(10) + "秒"
+        strings.gymSession.countdownRemaining(10)
 
     else -> null
 }
@@ -212,21 +240,25 @@ fun countdownAnnouncement(remainingMs: Long, plannedMs: Long): String? = when {
  * stations — the fixed box is the protocol's pacing, and the number the user works to is the count.
  * An open segment with no count is 限界まで (§A REPS state 3), and its estimate is never printed here:
  * `DEFAULT_MAX_EFFORT_ESTIMATE_MS` is a pacer and would read as a prescription.
+ *
+ * 限界まで is `Measure.MAX_EFFORT`'s own word and is read from `gymShared` rather than restated: this
+ * line shows the prescription the builder set, and two keys for one prescription is how the two pages
+ * end up calling it different things.
  */
-fun prescriptionLabel(segment: Segment?): String? {
+fun prescriptionLabel(strings: Strings, segment: Segment?): String? {
     if (segment == null) return null
     val reps = segment.prescribedReps
     return when {
-        reps != null -> JapaneseDate.kanjiExtended(reps) + "回"
-        segment.open -> "限界まで"
-        segment.plannedMs > 0L -> chosenSecondsLabel(segment.plannedMs)
+        reps != null -> strings.fmt.reps(reps)
+        segment.open -> strings.gymShared.measureMaxEffort
+        segment.plannedMs > 0L -> chosenSecondsLabel(strings, segment.plannedMs)
         else -> null
     }
 }
 
 /** REPS' hero: 「二十回」 in kanji, or 「限界まで」 (§A REPS states 1 and 3). */
-fun repHero(prescribedReps: Int?): String =
-    prescribedReps?.let { JapaneseDate.kanjiExtended(it) + "回" } ?: "限界まで"
+fun repHero(strings: Strings, prescribedReps: Int?): String =
+    prescribedReps?.let { strings.fmt.reps(it) } ?: strings.gymShared.measureMaxEffort
 
 /**
  * 「済、二十回として記録」 — §A REPS, accessibility.
@@ -234,8 +266,9 @@ fun repHero(prescribedReps: Int?): String =
  * A 限界まで set gets the bare 「済」. 「限界までとして記録」 is not in any table and would be a sentence
  * this file made up about the one prescription that has no number.
  */
-fun repDoneDescription(prescribedReps: Int?): String =
-    prescribedReps?.let { "済、" + JapaneseDate.kanjiExtended(it) + "回として記録" } ?: "済"
+fun repDoneDescription(strings: Strings, prescribedReps: Int?): String =
+    prescribedReps?.let { strings.gymSession.repDone(strings.fmt.reps(it)) }
+        ?: strings.gymSession.repsDone
 
 /**
  * The line under the rep hero: 「目安 0:38」 pacing, 「＋0:07」 past it, 「残り 0:22」 inside an EMOM
@@ -246,15 +279,19 @@ fun repDoneDescription(prescribedReps: Int?): String =
  * has not happened. Null on 限界まで, whose state has no estimate line at all.
  */
 fun pacerLabel(
+    strings: Strings,
     prescribedReps: Int?,
     remainingMs: Long,
     overrunMs: Long,
     emomWindow: Boolean,
-): String? = when {
-    emomWindow -> "残り " + formatCountdown(remainingMs)
-    prescribedReps == null -> null
-    overrunMs > 0L -> "＋" + clockDuration(overrunMs)
-    else -> "目安 " + formatCountdown(remainingMs)
+): String? {
+    val s = strings.gymSession
+    return when {
+        emomWindow -> s.pacerRemaining(formatCountdown(strings, remainingMs))
+        prescribedReps == null -> null
+        overrunMs > 0L -> s.pacerOverrun(strings.fmt.clock(overrunMs))
+        else -> s.pacerEstimate(formatCountdown(strings, remainingMs))
+    }
 }
 
 /**
@@ -264,32 +301,52 @@ fun pacerLabel(
  * reason the controls beside it are dead; 残り says the grid is anchored and this is what is left of
  * the minute rather than a rest anybody granted.
  */
-fun restLabel(kind: RestKind?): String = when (kind) {
-    RestKind.ROUND -> "巡の間"
-    RestKind.MANDATED -> "決められた休息"
-    RestKind.EMOM_REMAINDER -> "残り"
-    RestKind.STATION, null -> "休息"
+fun restLabel(strings: Strings, kind: RestKind?): String = when (kind) {
+    RestKind.ROUND -> strings.gymSession.restRound
+    RestKind.MANDATED -> strings.gymSession.restMandated
+    RestKind.EMOM_REMAINDER -> strings.gymSession.restEmomRemainder
+    RestKind.STATION, null -> strings.gymSession.restStation
 }
 
+/** How long ＋二十秒 adds, in the unit the copy needs it. `SessionMachine` owns the number. */
+private val EXTENSION_SECONDS: Int = (REST_EXTENSION_MS / 1000L).toInt()
+
+/** 「＋二十秒」 — the inline control's visible label, and the amount it really adds. */
+fun extendRestLabel(strings: Strings): String =
+    strings.gymSession.restExtendLabel(EXTENSION_SECONDS)
+
+/** 「とばす ▷」 — §A REST's inline "I'm ready, go", beside the bar's structural skip. */
+fun skipRestLabel(strings: Strings): String = strings.gymSession.restSkipLabel
+
 /** 「＋0:20」, the accent suffix that makes added time visible in the record's mental model (state 2). */
-fun extendedSuffix(addedMs: Long): String? =
-    if (addedMs <= 0L) null else "＋" + clockDuration(addedMs)
+fun extendedSuffix(strings: Strings, addedMs: Long): String? =
+    if (addedMs <= 0L) null else strings.gymSession.restExtendedSuffix(strings.fmt.clock(addedMs))
 
 /** 「四十秒 追加済み」 — the ＋二十秒 control's `stateDescription` once it has been tapped. */
-fun addedStateDescription(addedMs: Long): String? =
-    if (addedMs <= 0L) null else JapaneseDate.kanjiExtended((addedMs / 1000L).toInt()) + "秒 追加済み"
+fun addedStateDescription(strings: Strings, addedMs: Long): String? =
+    if (addedMs <= 0L) null else strings.gymSession.restAddedState((addedMs / 1000L).toInt())
 
 /** 「二十秒 追加」 — what ＋二十秒 *does*, for TalkBack (§A REST, accessibility). */
-fun extendRestDescription(): String = JapaneseDate.kanjiExtended(20) + "秒 追加"
+fun extendRestDescription(strings: Strings): String =
+    strings.gymSession.restExtendAction(EXTENSION_SECONDS)
 
 /**
  * 「とばす、決められた休息のため使えません」 — a disabled control states its reason (§A REST, accessibility).
  *
  * Only MANDATED has one written, and only MANDATED renders disabled: an EMOM remainder **hides** its
  * controls instead (state 5), so there is nothing there to describe.
+ *
+ * Composed from the control's own name and the one reason clause, rather than transcribed whole. That
+ * is not a liberty: the sentence *is* とばす plus the clause, the clause is shared with
+ * [extendDisabledDescription] below, and one clause is what keeps the two controls from explaining
+ * themselves differently.
  */
-fun skipDisabledDescription(kind: RestKind?): String? =
-    if (kind == RestKind.MANDATED) "とばす、決められた休息のため使えません" else null
+fun skipDisabledDescription(strings: Strings, kind: RestKind?): String? =
+    if (kind == RestKind.MANDATED) {
+        strings.gymSession.restDisabledReason(strings.gymSession.controlsForward)
+    } else {
+        null
+    }
 
 /**
  * The same sentence for the other control §A REST state 4 disables — 「二十秒 追加、決められた休息のため
@@ -301,34 +358,51 @@ fun skipDisabledDescription(kind: RestKind?): String? =
  * are the string table's own. Inventing a second, differently worded reason for the neighbouring
  * button would be the actual divergence.
  */
-fun extendDisabledDescription(kind: RestKind?): String? =
-    if (kind == RestKind.MANDATED) extendRestDescription() + "、決められた休息のため使えません" else null
+fun extendDisabledDescription(strings: Strings, kind: RestKind?): String? =
+    if (kind == RestKind.MANDATED) {
+        strings.gymSession.restDisabledReason(extendRestDescription(strings))
+    } else {
+        null
+    }
 
 /** 「六分十四秒 経過」 — session **active** time, so 支度 is already excluded (§A PAUSED). */
-fun elapsedLine(activeMs: Long): String = durationKanjiFromMs(activeMs) + " 経過"
+fun elapsedLine(strings: Strings, activeMs: Long): String =
+    strings.gymSession.pausedElapsed(strings.fmt.durationFromMs(activeMs))
 
 /** 「八種目 ・ 二巡 済」. Null before anything has accrued, which is `PausedDuringPrepare`'s hidden line. */
-fun accruedLine(stationsCompleted: Int, roundsCompleted: Int): String? {
+fun accruedLine(strings: Strings, stationsCompleted: Int, roundsCompleted: Int): String? {
     if (stationsCompleted <= 0 && roundsCompleted <= 0) return null
-    val stations = JapaneseDate.kanjiExtended(stationsCompleted) + "種目"
-    if (roundsCompleted <= 0) return "$stations 済"
-    return stations + " ・ " + JapaneseDate.kanjiExtended(roundsCompleted) + "巡 済"
+    return strings.gymSession.pausedAccrued(
+        stations = strings.fmt.stations(stationsCompleted),
+        rounds = if (roundsCompleted <= 0) null else strings.fmt.rounds(roundsCompleted),
+    )
 }
 
 /** 「休止中、六分十四秒 経過、八種目 済」 — announced once on entering 休止. */
-fun pausedAnnouncement(activeMs: Long, stationsCompleted: Int): String =
-    "休止中、" + durationKanjiFromMs(activeMs) + " 経過、" +
-        JapaneseDate.kanjiExtended(stationsCompleted) + "種目 済"
+fun pausedAnnouncement(strings: Strings, activeMs: Long, stationsCompleted: Int): String =
+    strings.gymSession.pausedAnnounce(
+        duration = strings.fmt.durationFromMs(activeMs),
+        stations = strings.fmt.stations(stationsCompleted),
+    )
 
-/** 「残り 二十三秒、休止中」 — the frozen numeral, which is **not** a live region. */
-fun pausedNumeralDescription(remainingMs: Long): String =
-    "残り " + JapaneseDate.kanjiExtended(ceilSeconds(remainingMs).toInt()) + "秒、休止中"
+/**
+ * 「残り 二十三秒、休止中」 — the frozen numeral, which is **not** a live region.
+ *
+ * §Q4's sharpest instance and §L7's clearest casualty. The same instant is *drawn* `0:23` by
+ * [formatCountdown] and *spoken* in kanji here, because it has stopped moving — one value, two numeral
+ * systems, on purpose. English has one, so the spoken form is the drawn form and the rule is gone
+ * rather than translated.
+ */
+fun pausedNumeralDescription(strings: Strings, remainingMs: Long): String =
+    strings.gymSession.pausedNumeral(ceilSeconds(remainingMs).toInt())
 
 /** 「支度、五秒後に ジャンピングジャック」 — one announcement on entry, and only one. */
-fun prepareAnnouncement(remainingMs: Long, exerciseName: String?): String {
-    val head = "支度、" + JapaneseDate.kanjiExtended(ceilSeconds(remainingMs).toInt()) + "秒後に"
-    return if (exerciseName == null) "支度" else "$head $exerciseName"
-}
+fun prepareAnnouncement(strings: Strings, remainingMs: Long, exerciseName: String?): String =
+    if (exerciseName == null) {
+        strings.gymSession.prepareTitle
+    } else {
+        strings.gymSession.prepareAnnounce(ceilSeconds(remainingMs).toInt(), exerciseName)
+    }
 
 /**
  * 「休息 十五秒、次は プランク、三十秒」 with the form cue appended — §A REST, accessibility.
@@ -337,38 +411,55 @@ fun prepareAnnouncement(remainingMs: Long, exerciseName: String?): String {
  * the only moment in the session when the user is not yet moving and can still act on it.
  */
 fun restAnnouncement(
+    strings: Strings,
     kind: RestKind?,
     restMs: Long,
     nextExerciseName: String?,
     prescription: String?,
     cue: String?,
 ): String = buildString {
-    append(restLabel(kind))
+    append(restLabel(strings, kind))
     append(" ")
-    append(chosenSecondsLabel(restMs))
+    append(chosenSecondsLabel(strings, restMs))
     if (nextExerciseName != null) {
-        append("、次は ")
-        append(nextExerciseName)
+        append(strings.gymSession.restAnnounceNext(nextExerciseName))
         if (prescription != null) {
-            append("、")
+            append(strings.fmt.listSeparator)
             append(prescription)
         }
     }
     if (cue != null) {
-        append("、")
+        append(strings.fmt.listSeparator)
         append(cue)
     }
 }
 
 /** 「腕立て伏せ、二十回」 — the REPS hero as one node (§A REPS, accessibility). */
-fun repHeroDescription(exerciseName: String?, prescribedReps: Int?): String =
-    listOfNotNull(exerciseName, repHero(prescribedReps)).joinToString("、")
+fun repHeroDescription(strings: Strings, exerciseName: String?, prescribedReps: Int?): String =
+    listOfNotNull(exerciseName, repHero(strings, prescribedReps))
+        .joinToString(strings.fmt.listSeparator)
 
 /** 「六分十四秒 ・ 二十種目中 八」 — the quit sheet's subtitle (§A QUIT_SHEET). */
-fun quitSummaryLine(activeMs: Long, stationsCompleted: Int, stationsPlanned: Int): String =
-    durationKanjiFromMs(activeMs) + " ・ " +
-        JapaneseDate.kanjiExtended(stationsPlanned) + "種目中 " +
-        JapaneseDate.kanjiExtended(stationsCompleted)
+fun quitSummaryLine(
+    strings: Strings,
+    activeMs: Long,
+    stationsCompleted: Int,
+    stationsPlanned: Int,
+): String = strings.gymSession.quitSummary(
+    duration = strings.fmt.durationFromMs(activeMs),
+    done = stationsCompleted,
+    planned = stationsPlanned,
+)
+
+/** 「三秒の支度から」 — the resume button's second line. `SessionMachine` owns the three seconds. */
+fun resumePrepareNote(strings: Strings): String =
+    strings.gymSession.pausedResumeNote(RESUME_PREPARE_SECONDS)
+
+/** Both of the resume button's lines as one node. */
+fun resumeLongDescription(strings: Strings): String =
+    strings.gymSession.pausedResumeLong(RESUME_PREPARE_SECONDS)
+
+private val RESUME_PREPARE_SECONDS: Int = (RESUME_PREPARE_MS / 1000L).toInt()
 
 /**
  * Which rows the quit sheet shows, and how hard it asks — §A QUIT_SHEET's `Standard` and
@@ -389,18 +480,18 @@ data class QuitSheetOptions(
     val subtitleIsWarning: Boolean,
 )
 
-fun quitOptions(resultsWritten: Int): QuitSheetOptions =
+fun quitOptions(strings: Strings, resultsWritten: Int): QuitSheetOptions =
     if (resultsWritten >= 1) {
         QuitSheetOptions(
             canRecord = true,
-            discardLabel = "記録せずに終える",
+            discardLabel = strings.gymSession.quitDiscard,
             confirmsDiscard = true,
             subtitleIsWarning = false,
         )
     } else {
         QuitSheetOptions(
             canRecord = false,
-            discardLabel = "終える",
+            discardLabel = strings.gymSession.quitDiscardNothing,
             confirmsDiscard = false,
             subtitleIsWarning = true,
         )

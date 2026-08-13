@@ -45,7 +45,14 @@ internal object ExerciseCatalogSource {
 
     /**
      * The progression family, easiest → hardest by difficulty so the ladder reads top-to-bottom as it
-     * should be climbed, ties by name.
+     * should be climbed, ties by id.
+     *
+     * **The tiebreak is the id and not the name**, because the name is now language-dependent and a
+     * ladder that reshuffled itself when the user changed language would be a visible reordering of a
+     * sequence whose whole meaning is its order. The id is ASCII, stable and the same in every
+     * language. This is inert for the catalogue as shipped — the seven push-up rungs carry seven
+     * distinct difficulties, so the tiebreak is never reached — which is exactly why it was worth
+     * closing before it was.
      *
      * Empty — not a list of one — for a movement that is its own ladder, which is what lets
      * `EXERCISE_DETAIL` omit the 段階 block entirely rather than drawing a ladder with a single rung.
@@ -53,7 +60,7 @@ internal object ExerciseCatalogSource {
     fun ladder(exerciseId: String): List<Exercise> {
         val ladderId = byId[exerciseId]?.ladderId ?: return emptyList()
         return live.filter { it.ladderId == ladderId }
-            .sortedWith(compareBy({ it.difficulty }, { it.nameJa }))
+            .sortedWith(compareBy({ it.difficulty }, { it.id }))
     }
 
     /**

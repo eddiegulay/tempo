@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -45,12 +46,16 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.eddiegulay.tempo.calendar.CalendarEvent
 import io.eddiegulay.tempo.calendar.toEpochMillis
-import io.eddiegulay.tempo.data.JapaneseDate
+import io.eddiegulay.tempo.i18n.Lang
+import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.i18n.Strings
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import java.time.LocalDateTime
@@ -59,9 +64,11 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.material3.Text
 
 /**
- * The home layer: a faint sumi-e ensō ring, the next calendar event in vertical kanji (top-right), a
- * large mincho clock with its spoken reading (lower-left), and the lone vermillion 静 ("stillness")
- * seal.
+ * The home layer: a faint sumi-e ensō ring, the next calendar event in the top-right corner, a large
+ * mincho clock with its spoken reading (lower-left), and the lone vermillion 静 ("stillness") seal.
+ *
+ * The corner is set 縦書き in Japanese and horizontally in English — see [CornerCluster]. Everything
+ * else on this screen is a number, a shape or a seal, and is the same in both languages.
  *
  * Positions mirror the prototype's absolute offsets within its 384-wide canvas; on taller screens
  * the extra space falls below the seal, which keeps the airy, unhurried feeling intact.
@@ -75,6 +82,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val now by rememberMinuteTime()
     val haptics = LocalHapticFeedback.current
 
@@ -122,11 +130,11 @@ fun HomeScreen(
                     )
                 }
                 .semantics {
-                    onLongClick(label = "モードを選ぶ") { onChooseMode(); true }
+                    onLongClick(label = s.home.chooseMode) { onChooseMode(); true }
                 },
         ) {
             Text(
-                text = JapaneseDate.time(now),
+                text = s.fmt.time(now),
                 style = TextStyle(
                     fontFamily = Mincho,
                     fontWeight = FontWeight.Medium,
@@ -138,7 +146,7 @@ fun HomeScreen(
             )
             Spacer(Modifier.height(18.dp))
             Text(
-                text = JapaneseDate.reading(now),
+                text = s.fmt.reading(now),
                 style = TextStyle(
                     fontFamily = Mincho,
                     fontSize = 15.sp,
@@ -159,12 +167,19 @@ fun HomeScreen(
 }
 
 /**
- * The top-right corner: the next calendar event in vertical kanji, falling back to today's date.
+ * The top-right corner: the next calendar event, falling back to today's date.
  *
  * The date is the *floor*, not a peer — stacking both would make six columns and turn a quiet corner
  * into a paragraph. So the corner shows the event when there is one and the date whenever there
  * isn't: no permission, no upcoming event, or the provider query still in flight. It is never empty
  * and it never nags. Either way it is the only way into the Calendar page.
+ *
+ * **Two layouts, one meaning** (`.planning/i18n/DECISIONS.md` §L9). Japanese is set 縦書き — upright
+ * columns flowing right-to-left with a ruled margin at the page edge — and that is left exactly as it
+ * shipped. English is set horizontally, because there is no Latin equivalent of vertical-rl: stacking
+ * `W/e/d/n/e/s/d/a/y` down nine cells is the ransom note `Tategaki.kt` names and rejects, and
+ * quarter-turning the line asks the reader to tilt their head at the one screen they glance at most.
+ * The pieces, the states and the spoken description are identical; only the axis turns.
  */
 @Composable
 private fun CornerCluster(
@@ -174,6 +189,7 @@ private fun CornerCluster(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
 
     var pressed by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
@@ -182,52 +198,69 @@ private fun CornerCluster(
         label = "cornerPress",
     )
 
-    val description = remember(event, now) {
+    // Spoken, not drawn — so it is a sentence in both languages even where the drawn corner is three
+    // wordless columns. The joins are `fmt.listSeparator`: 、 in Japanese, a comma in English.
+    val description = remember(event, now, s) {
         if (event == null) {
-            "${JapaneseDate.era(now)} ${JapaneseDate.monthDay(now)} ${JapaneseDate.dayOfWeek(now)}"
+            "${s.fmt.era(now)} ${s.fmt.monthDay(now)} ${s.fmt.dayOfWeek(now)}"
         } else {
-            val day = JapaneseDate.dayToken(event.date(), now.toLocalDate())
-            val time = if (event.allDay) "終日" else JapaneseDate.eventTime(event.startDateTime())
-            "次の予定、$day、$time、${event.title}"
+            val day = s.fmt.dayToken(event.date(), now.toLocalDate())
+            val time = if (event.allDay) s.home.allDay else s.fmt.eventTime(event.startDateTime())
+            val sep = s.fmt.listSeparator
+            s.home.nextEventPrefix + sep + day + sep + time + sep + event.title
         }
     }
 
+    val frame = modifier
+        .graphicsLayer { scaleX = scale; scaleY = scale }
+        // No ripple: a Material indication in this corner would be the loudest thing on Home.
+        .pointerInput(onOpen) {
+            detectTapGestures(
+                onPress = {
+                    pressed = true
+                    tryAwaitRelease()
+                    pressed = false
+                },
+                onTap = { onOpen() },
+            )
+        }
+        // One node, not a column of single-character nodes — a screen reader walking the glyphs
+        // one at a time is unusable.
+        .clearAndSetSemantics {
+            contentDescription = description
+            role = Role.Button
+            onClick(label = s.home.openSchedule) { onOpen(); true }
+        }
+        // Grow the hit rect inward, away from the screen edge, without moving the glyphs.
+        .padding(start = 14.dp, bottom = 14.dp)
+
+    if (s.lang == Lang.Ja) {
+        VerticalCorner(frame, now, event, c, s)
+    } else {
+        HorizontalCorner(frame, now, event, c, s)
+    }
+}
+
+/**
+ * 縦書き, unchanged: the event or the date as upright columns, with the ruled margin at the screen
+ * edge where a vertical rule belongs.
+ */
+@Composable
+private fun VerticalCorner(
+    modifier: Modifier,
+    now: LocalDateTime,
+    event: CalendarEvent?,
+    colors: TempoColors,
+    s: Strings,
+) {
     Row(
-        modifier = modifier
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            // No ripple: a Material indication in this corner would be the loudest thing on Home.
-            .pointerInput(onOpen) {
-                detectTapGestures(
-                    onPress = {
-                        pressed = true
-                        tryAwaitRelease()
-                        pressed = false
-                    },
-                    onTap = { onOpen() },
-                )
-            }
-            // One node, not a column of single-character nodes — a screen reader walking the glyphs
-            // one at a time is unusable.
-            .clearAndSetSemantics {
-                contentDescription = description
-                role = Role.Button
-                onClick(label = "予定") { onOpen(); true }
-            }
-            // Grow the hit rect inward, away from the screen edge, without moving the glyphs.
-            .padding(start = 14.dp, bottom = 14.dp),
+        modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(13.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        // Ambient information arriving, not a page turn — slower than the 260ms screen transition, so
-        // it reads like ink soaking into paper and the user only half-notices it.
-        AnimatedContent(
-            targetState = event,
-            transitionSpec = { fadeIn(tween(400)) togetherWith fadeOut(tween(240)) },
-            contentKey = { it?.key },
-            label = "corner",
-        ) { target ->
+        CornerContent(event) { target ->
             Row(horizontalArrangement = Arrangement.spacedBy(13.dp), verticalAlignment = Alignment.Top) {
-                if (target == null) VerticalDate(now, c) else EventColumns(target, now, c)
+                if (target == null) VerticalDate(now, colors, s) else EventColumns(target, now, colors, s)
             }
         }
 
@@ -237,10 +270,70 @@ private fun CornerCluster(
             Modifier
                 .padding(top = 2.dp)
                 .width(1.dp)
-                .height(96.dp)
-                .background(c.hair),
+                .height(RULE_LENGTH)
+                .background(colors.hair),
         )
     }
+}
+
+/**
+ * The same corner set horizontally for English: date over era, or day-and-time over the event title,
+ * right-aligned under the same ruled margin.
+ *
+ * The rule turns with the writing. In 縦書き the margin runs down the page edge, which is the edge the
+ * first column hugs; set horizontally the block hangs from the top edge instead, so the rule goes
+ * above it — same 96.dp of hairline, same "drawn in both states", and it does not shift when a
+ * one-line title becomes a two-line one.
+ */
+@Composable
+private fun HorizontalCorner(
+    modifier: Modifier,
+    now: LocalDateTime,
+    event: CalendarEvent?,
+    colors: TempoColors,
+    s: Strings,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        Box(
+            Modifier
+                .padding(end = 2.dp)
+                .width(RULE_LENGTH)
+                .height(1.dp)
+                .background(colors.hair),
+        )
+
+        CornerContent(event) { target ->
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                if (target == null) HorizontalDate(now, colors, s) else EventLines(target, now, colors, s)
+            }
+        }
+    }
+}
+
+/**
+ * The crossfade both corners share.
+ *
+ * Ambient information arriving, not a page turn — slower than the 260ms screen transition, so it
+ * reads like ink soaking into paper and the user only half-notices it.
+ */
+@Composable
+private fun CornerContent(
+    event: CalendarEvent?,
+    content: @Composable (CalendarEvent?) -> Unit,
+) {
+    AnimatedContent(
+        targetState = event,
+        transitionSpec = { fadeIn(tween(400)) togetherWith fadeOut(tween(240)) },
+        contentKey = { it?.key },
+        label = "corner",
+    ) { target -> content(target) }
 }
 
 /**
@@ -250,69 +343,155 @@ private fun CornerCluster(
  * toward the ensō, where there is room for it.
  */
 @Composable
-private fun EventColumns(event: CalendarEvent, now: LocalDateTime, colors: TempoColors) {
-    val time = if (event.allDay) "終日" else JapaneseDate.eventTime(event.startDateTime())
-    val day = JapaneseDate.dayToken(event.date(), now.toLocalDate())
-    // Within half an hour: the corner earns the second vermillion mark on Home. Static — Tempo does
-    // not pulse at you.
-    val imminent = !event.allDay &&
-        event.begin - now.toEpochMillis() in 0..IMMINENT_WINDOW_MS
+private fun EventColumns(event: CalendarEvent, now: LocalDateTime, colors: TempoColors, s: Strings) {
+    val time = if (event.allDay) s.home.allDay else s.fmt.eventTime(event.startDateTime())
+    val day = s.fmt.dayToken(event.date(), now.toLocalDate())
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        if (imminent) {
+        if (isImminent(event, now)) {
             Canvas(Modifier.padding(bottom = 6.dp).size(4.dp)) {
                 drawCircle(color = colors.accent)
             }
         }
         // The title is the only full-ink element in the cluster — it is the new information — and at
         // 19sp against a 104sp clock, Home's hierarchy is untouched.
-        TategakiText(
+        VerticalColumn(
             text = event.title,
-            style = TextStyle(
-                fontFamily = Mincho,
-                fontWeight = FontWeight.Medium,
-                fontSize = 19.sp,
-                color = colors.ink,
-            ),
+            color = colors.ink,
+            weight = FontWeight.Medium,
             overflowColor = colors.inkFaint,
-            // Bounded so a long Latin title ellipsises rather than running down into the clock.
-            modifier = Modifier.heightIn(max = 150.dp),
         )
     }
-    VerticalLine(time, colors.inkSoft, size = 17.sp)
-    VerticalLine(day, colors.inkFaint, size = 15.sp)
+    VerticalColumn(time, colors.inkSoft, size = 17.sp)
+    VerticalColumn(day, colors.inkFaint, size = 15.sp)
 }
+
+/** The same event as two horizontal lines: `Today 19:30` over `Design review`. */
+@Composable
+private fun EventLines(event: CalendarEvent, now: LocalDateTime, colors: TempoColors, s: Strings) {
+    val time = if (event.allDay) s.home.allDay else s.fmt.eventTime(event.startDateTime())
+    val day = s.fmt.dayToken(event.date(), now.toLocalDate())
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (isImminent(event, now)) {
+            Canvas(Modifier.size(4.dp)) { drawCircle(color = colors.accent) }
+        }
+        CornerLine("$day $time", colors.inkSoft, 13.sp)
+    }
+    // Two lines rather than one: an event title is the only string in this corner the app did not
+    // write, and clipping someone's meeting to `Design r…` is worse than spending a second line.
+    Text(
+        text = event.title,
+        style = TextStyle(
+            fontFamily = Mincho,
+            fontWeight = FontWeight.Medium,
+            fontSize = 16.sp,
+            color = colors.ink,
+            textAlign = TextAlign.End,
+        ),
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.widthIn(max = CORNER_MAX_WIDTH),
+    )
+}
+
+/**
+ * Within half an hour: the corner earns the second vermillion mark on Home. Static — Tempo does not
+ * pulse at you.
+ */
+private fun isImminent(event: CalendarEvent, now: LocalDateTime): Boolean =
+    !event.allDay && event.begin - now.toEpochMillis() in 0..IMMINENT_WINDOW_MS
 
 /** Within this many millis of starting, the next event is flagged with the accent dot. */
 private const val IMMINENT_WINDOW_MS = 30 * 60 * 1000L
 
+/** How long the ruled margin is, whichever way it runs. */
+private val RULE_LENGTH: Dp = 96.dp
+
+/**
+ * The corner's height budget in 縦書き, and its width budget set horizontally. Both are the distance
+ * from the corner to the clock, which is what the corner may not reach.
+ */
+private val CORNER_BUDGET: Dp = 150.dp
+private val CORNER_MAX_WIDTH: Dp = 180.dp
+
 /** Vertical-rl, upright date: 令和八年 / 六月十七日 / 水曜日, columns flowing right-to-left. */
 @Composable
-private fun VerticalDate(now: LocalDateTime, colors: TempoColors) {
+private fun VerticalDate(now: LocalDateTime, colors: TempoColors, s: Strings) {
     // vertical-rl => the first line is rightmost, so we render left-to-right as dow, md, era.
-    VerticalLine(JapaneseDate.dayOfWeek(now), colors.inkFaint)
-    VerticalLine(JapaneseDate.monthDay(now), colors.inkSoft)
-    VerticalLine(JapaneseDate.era(now), colors.inkSoft)
+    VerticalColumn(s.fmt.dayOfWeek(now), colors.inkFaint)
+    VerticalColumn(s.fmt.monthDay(now), colors.inkSoft)
+    VerticalColumn(s.fmt.era(now), colors.inkSoft)
 }
 
+/** Horizontal date: `Wednesday 17 June` over `Reiwa 8`, the era kept rather than replaced (§L9). */
 @Composable
-private fun VerticalLine(text: String, color: Color, size: TextUnit = 19.sp) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        text.forEach { ch ->
-            Text(
-                text = ch.toString(),
-                style = TextStyle(
-                    fontFamily = Mincho,
-                    fontSize = size,
-                    color = color,
-                    textAlign = TextAlign.Center,
-                ),
-            )
-        }
-    }
+private fun HorizontalDate(now: LocalDateTime, colors: TempoColors, s: Strings) {
+    CornerLine("${s.fmt.dayOfWeek(now)} ${s.fmt.monthDay(now)}", colors.inkSoft, 15.sp)
+    CornerLine(s.fmt.era(now), colors.inkFaint, 13.sp)
 }
 
-/** The single vermillion 静 seal — a slightly rotated outlined square. */
+/**
+ * One column of the vertical corner.
+ *
+ * This is [TategakiText] and not a naive per-`Char` stack: the old `VerticalLine` gave every character
+ * its own cell with no upright/rotated distinction, no 縦中横, no cell cap and no height bound, which
+ * is exactly what `Tategaki.kt` calls a ransom note. For the Japanese this now draws — 令和八年,
+ * 六月十七日, 十九時三十分 — the two agree glyph for glyph, because every one of those characters is
+ * upright and the spacing and centring are the same. What Tategaki adds is a floor under the cases
+ * that used to have none.
+ */
+@Composable
+private fun VerticalColumn(
+    text: String,
+    color: Color,
+    size: TextUnit = 19.sp,
+    weight: FontWeight = FontWeight.Normal,
+    overflowColor: Color = color,
+) {
+    TategakiText(
+        text = text,
+        style = TextStyle(
+            fontFamily = Mincho,
+            fontWeight = weight,
+            fontSize = size,
+            color = color,
+        ),
+        overflowColor = overflowColor,
+        // Bounded so a long title ellipsises rather than running down into the clock.
+        modifier = Modifier.heightIn(max = CORNER_BUDGET),
+    )
+}
+
+/** One line of the horizontal corner: right-aligned, single line, ellipsised at the width budget. */
+@Composable
+private fun CornerLine(text: String, color: Color, size: TextUnit) {
+    Text(
+        text = text,
+        style = TextStyle(
+            fontFamily = Mincho,
+            fontSize = size,
+            color = color,
+            textAlign = TextAlign.End,
+        ),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.widthIn(max = CORNER_MAX_WIDTH),
+    )
+}
+
+/**
+ * The single vermillion 静 seal — a slightly rotated outlined square.
+ *
+ * **静 stays 静 in English**, and it is not in the string table. This is a *hanko*: a seal is a mark
+ * rather than a word, the way a monogram or a maker's stamp is, and translating it would be like
+ * translating a logo. It is also the only place on Home the accent colour appears, so it is carrying
+ * the app's character rather than its copy — "Stillness" in a 50.dp box would carry neither, since
+ * the box holds one square glyph and nothing else.
+ */
 @Composable
 private fun Seal(accent: Color, card: Color, modifier: Modifier) {
     Box(

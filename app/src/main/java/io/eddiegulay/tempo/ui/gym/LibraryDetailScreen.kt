@@ -1,7 +1,6 @@
 package io.eddiegulay.tempo.ui.gym
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,7 +15,6 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
@@ -46,7 +44,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.calendar.Loadable
 import io.eddiegulay.tempo.data.GymFault
-import io.eddiegulay.tempo.data.JapaneseDate
 import io.eddiegulay.tempo.data.TempoFault
 import io.eddiegulay.tempo.gym.label
 import io.eddiegulay.tempo.i18n.LocalStrings
@@ -69,9 +66,9 @@ import io.eddiegulay.tempo.gym.StartBlock
 import io.eddiegulay.tempo.gym.Tier
 import io.eddiegulay.tempo.gym.bestMetricLabel
 import io.eddiegulay.tempo.gym.bestTilesFor
+import io.eddiegulay.tempo.gym.displayName
 import io.eddiegulay.tempo.gym.engineRows
 import io.eddiegulay.tempo.gym.estimateLabel
-import io.eddiegulay.tempo.gym.heroTime
 import io.eddiegulay.tempo.gym.partialChipCopy
 import io.eddiegulay.tempo.gym.prChip
 import io.eddiegulay.tempo.gym.startBlock
@@ -82,6 +79,9 @@ import io.eddiegulay.tempo.ui.HeaderAction
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.InkPressIndication
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 import java.time.LocalDate
 
 /*
@@ -110,19 +110,21 @@ import java.time.LocalDate
 // Pure copy and shaping — Android-free, JUnit-tested in `ui/gym/LibraryDetailCopyTest.kt`
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** A value slot with nothing to put in it. `—`, as everywhere else in 鍛錬 (`gym/Numerals.kt`). */
-private const val NO_VALUE = "—"
+/*
+ * A value slot with nothing to put in it is `strings.fmt.noValue` — `—` in both languages, and never
+ * `〇`, never blank (`gym/Numerals.kt`, `DECISIONS.md` §L10).
+ */
 
 /**
  * 「シンディ」を削除しますか — the confirm, whose words change with what is at stake, **and which has
  * no destructive branch at all until the stake is actually known.**
  *
- * **Named apart from the identical function in `GymHomeCopy.kt` and `LibraryIndexScreen.kt` on
- * purpose.** All three surfaces offer 削除 and all three landed the same §1 branch independently; the
- * two of them collide with each other at the time of writing, and adding a third `deleteRoutineCopy`
- * to the package would have made a two-way redeclaration a three-way one. The right end state is one
- * copy of this function that all three call — it is Android-free and belongs beside `RecordCopy.kt` —
- * and that is a move across files no page unit owns. Flagged in this unit's report.
+ * **Named apart from the identical function in `GymHomeCopy.kt` on purpose.** All three surfaces offer
+ * 削除 and all three landed the same §1 branch independently; adding a third `deleteRoutineCopy` to the
+ * package would have made a two-way redeclaration a three-way one. `GYM.LIBRARY.INDEX` now shares this
+ * one through [deleteRoutineConfirm], so the library's two pages are one implementation; `GYM.HOME`'s
+ * is still its own, and pointing it at the same `strings.gymLibrary.delete*` keys is a one-line change
+ * in a file this unit does not own. Flagged in this unit's report.
  *
  * `04-library-records.md` §1 rules 2 and 4 are the whole of the Ready branch, and it is **not**
  * cosmetic: with sessions behind it 削除 is an `archiveRoutine` and the records survive, with none it
@@ -147,9 +149,9 @@ private const val NO_VALUE = "—"
  * words and the write must come from **one** read, or a count that resolves between the sentence and
  * the tap turns 「記録は残ります」 into a purge.
  *
- * Every string here is §3's delete-confirm table verbatim, with the count rendered through
- * `kanjiExtended` (§6's Numerals note: counts are kanji) and 読み込み中 the app's own Loading word
- * (`01-shell.md` §B, `04` §3 — the same word this page's body slot already draws).
+ * Every string here is §3's delete-confirm table, with the count rendered through `fmt.times`
+ * (§6's Numerals note: counts are kanji, and in English they are digits with a plural) and the app's
+ * own Loading word (`01-shell.md` §B, `04` §3 — the same word this page's body slot already draws).
  */
 internal sealed interface DetailDeleteState {
 
@@ -183,35 +185,54 @@ internal sealed interface DetailDeleteState {
     ) : DetailDeleteState
 }
 
-internal fun detailDeleteCopy(name: String, sessions: Loadable<Int>): DetailDeleteState {
-    val title = "「" + name + "」を削除しますか"
+internal fun detailDeleteCopy(name: String, sessions: Loadable<Int>, strings: Strings): DetailDeleteState {
+    val s = strings.gymLibrary
     return when (sessions) {
-        is Loadable.Ready ->
-            if (sessions.value > 0) {
-                DetailDeleteState.Confirm(
-                    title = title,
-                    body = "これまでの" + JapaneseDate.kanjiExtended(sessions.value) +
-                        "回の記録は残ります。型だけが一覧から消えます。",
-                    confirm = "削除",
-                    cancel = "やめる",
-                    purge = false,
-                )
-            } else {
-                DetailDeleteState.Confirm(
-                    title = title,
-                    body = "やった記録はありません。完全に消えます。",
-                    confirm = "完全に削除",
-                    cancel = "やめる",
-                    purge = true,
-                )
-            }
+        is Loadable.Ready -> deleteRoutineConfirm(name, sessions.value, strings)
 
-        Loadable.Loading -> DetailDeleteState.Waiting(title = title, body = "読み込み中", cancel = "やめる")
+        Loadable.Loading -> DetailDeleteState.Waiting(
+            title = s.deleteTitle(name),
+            body = s.loading,
+            cancel = s.cancel,
+        )
 
         is Loadable.Failed -> DetailDeleteState.Unreadable(
-            title = title,
+            title = s.deleteTitle(name),
             fault = sessions.fault,
-            cancel = "やめる",
+            cancel = s.cancel,
+        )
+    }
+}
+
+/**
+ * The confirm for a count that is **already known** — §1 rules 2 and 4, and nothing else.
+ *
+ * Split out so `GYM.LIBRARY.INDEX` can share it: that page reads the same two branches off a plain
+ * `Int` (its projection's `timesDone`, raised by the store's count) and had its own copy of them. One
+ * function, one key set, and the two library surfaces cannot drift apart on the sentence that says
+ * whether the user's records are about to survive.
+ *
+ * The `Int` is the whole of the contract: a caller that has only a [Loadable] must go through
+ * [detailDeleteCopy], which is the one place that decides a read has answered. Nothing can reach a
+ * destructive button from an unknown count without saying so in its own types first.
+ */
+internal fun deleteRoutineConfirm(name: String, sessions: Int, strings: Strings): DetailDeleteState.Confirm {
+    val s = strings.gymLibrary
+    return if (sessions > 0) {
+        DetailDeleteState.Confirm(
+            title = s.deleteTitle(name),
+            body = s.deleteBodyArchive(strings.fmt.times(sessions)),
+            confirm = s.deleteConfirmArchive,
+            cancel = s.cancel,
+            purge = false,
+        )
+    } else {
+        DetailDeleteState.Confirm(
+            title = s.deleteTitle(name),
+            body = s.deleteBodyPurge,
+            confirm = s.deleteConfirmPurge,
+            cancel = s.cancel,
+            purge = true,
         )
     }
 }
@@ -219,22 +240,24 @@ internal fun detailDeleteCopy(name: String, sessions: Loadable<Int>): DetailDele
 /**
  * What one station asks for: 五回 / 三十秒 / 限界まで.
  *
- * Seconds render **bare**, not through `durationKanji` — `DECISIONS.md` §Q10's rule is about acts
- * rather than durations, and a prescription is a value somebody chose. A 90-second hold that the
- * builder wheel set as 九十秒 must not read back as 一分三十秒 on the page that describes it.
+ * Seconds render **bare** — `fmt.seconds`, not `fmt.duration`. `DECISIONS.md` §Q10's rule is about
+ * acts rather than durations, and a prescription is a value somebody chose: a 90-second hold that the
+ * builder wheel set as 九十秒 must not read back as 一分三十秒 on the page that describes it. §L7
+ * deletes the orthographic half of that rule for English — both are digits there — but the *choice*
+ * of formatter still matters, because `90s` and `1m 30s` are two different readings of one wheel.
  *
- * `限界まで` is the picker's own word for [Measure.MAX_EFFORT] (§6's measures row). It is the only
- * string on this page taken from a table written for another surface; there is no documented
- * detail-page rendering of a max-effort prescription, and the alternative — leaving the slot blank —
- * would read as a missing value rather than as an open-ended set.
+ * `限界まで` is the picker's own word for [Measure.MAX_EFFORT] (§6's measures row) and is read as such
+ * — `strings.gymShared.measureMaxEffort`, the same member `Measure.label` serves. There is no
+ * documented detail-page rendering of a max-effort prescription, and the alternative — leaving the
+ * slot blank — would read as a missing value rather than as an open-ended set.
  *
  * A prescription whose value is null against a measure that requires one is a store bug the CHECK
- * constraint should have refused. It renders [NO_VALUE] rather than 〇回, which would be a claim.
+ * constraint should have refused. It renders `fmt.noValue` rather than 〇回, which would be a claim.
  */
-internal fun prescriptionLabel(station: RoutineStation): String = when (station.measure) {
-    Measure.REPS -> station.prescribedReps?.let { JapaneseDate.kanjiExtended(it) + "回" } ?: NO_VALUE
-    Measure.DURATION -> station.prescribedSeconds?.let { JapaneseDate.kanjiExtended(it) + "秒" } ?: NO_VALUE
-    Measure.MAX_EFFORT -> "限界まで"
+internal fun prescriptionLabel(station: RoutineStation, strings: Strings): String = when (station.measure) {
+    Measure.REPS -> station.prescribedReps?.let { strings.fmt.reps(it) } ?: strings.fmt.noValue
+    Measure.DURATION -> station.prescribedSeconds?.let { strings.fmt.seconds(it) } ?: strings.fmt.noValue
+    Measure.MAX_EFFORT -> strings.gymShared.measureMaxEffort
 }
 
 /**
@@ -243,8 +266,13 @@ internal fun prescriptionLabel(station: RoutineStation): String = when (station.
  * Ordinal first, because a circuit is an order and a screen-reader user arriving mid-list has no
  * column to read it from. The trailing `›` is decorative and never enters this string.
  */
-internal fun stationRowSemantics(position: Int, name: String, prescription: String): String =
-    JapaneseDate.kanjiExtended(position) + "番目、" + name + "、" + prescription
+internal fun stationRowSemantics(
+    position: Int,
+    name: String,
+    prescription: String,
+    strings: Strings,
+): String = listOf(strings.fmt.ordinal(position), name, prescription)
+    .joinToString(strings.fmt.listSeparator)
 
 /**
  * Why 始める cannot be pressed, or null when the reason is already on screen.
@@ -258,11 +286,11 @@ internal fun stationRowSemantics(position: Int, name: String, prescription: Stri
  * disabled button with no explanation is worse than one explained in the builder's words. Flagged in
  * this unit's report.
  */
-internal fun startBlockCopy(block: StartBlock): String? = when (block) {
+internal fun startBlockCopy(block: StartBlock, strings: Strings): String? = when (block) {
     StartBlock.None -> null
     StartBlock.Archived -> null
-    StartBlock.UnknownExercise -> "種目が見つからないため 始められません"
-    StartBlock.NoStations -> "種目を加えてください"
+    StartBlock.UnknownExercise -> strings.gymLibrary.startBlockedUnknownExercise
+    StartBlock.NoStations -> strings.gymLibrary.startBlockedNoStations
 }
 
 /**
@@ -282,12 +310,16 @@ internal fun startBlockCopy(block: StartBlock): String? = when (block) {
  * because `disabled()` alone would announce a button that is unavailable for no stated reason. The
  * separator is 、 as everywhere else on this page.
  */
-internal fun startButtonDescription(name: String, starting: Boolean, block: StartBlock): String =
-    listOfNotNull(
-        "「" + name + "」を始める",
-        if (starting) "支度" else null,
-        startBlockCopy(block),
-    ).joinToString("、")
+internal fun startButtonDescription(
+    name: String,
+    starting: Boolean,
+    block: StartBlock,
+    strings: Strings,
+): String = listOfNotNull(
+    strings.gymLibrary.startDescription(name),
+    if (starting) strings.gymLibrary.preparing else null,
+    startBlockCopy(block, strings),
+).joinToString(strings.fmt.listSeparator)
 
 /**
  * One row of これまで: 六月十七日 ・ 十七巡 ・ 二十分 ・ 自己最高, as four aligned slots.
@@ -313,17 +345,20 @@ internal data class AttemptLine(
     val partial: Boolean,
 )
 
-internal fun attemptLine(summary: SessionSummary): AttemptLine {
-    val partial = partialChipCopy(summary)
+internal fun attemptLine(summary: SessionSummary, strings: Strings): AttemptLine {
+    val partial = partialChipCopy(summary, strings)
     return AttemptLine(
-        date = JapaneseDate.monthDay(summary.localDate.atStartOfDay()),
+        date = strings.fmt.monthDay(summary.localDate.atStartOfDay()),
         score = when {
-            summary.roundsCompleted > 0 -> JapaneseDate.kanjiExtended(summary.roundsCompleted) + "巡"
-            summary.totalReps > 0 -> JapaneseDate.kanjiExtended(summary.totalReps) + "回"
+            summary.roundsCompleted > 0 -> strings.fmt.rounds(summary.roundsCompleted)
+            summary.totalReps > 0 -> strings.fmt.reps(summary.totalReps)
             else -> null
         },
-        duration = heroTime(summary.activeMs),
-        chip = partial ?: prChip(summary, isStillBest = true)?.label,
+        // `heroTime` in everything but name: `fmt.durationFromMs` is `durationKanjiFromMs` in Japanese,
+        // so this is the same string it always was, and an English build gets `6m 14s` rather than
+        // 六分十四秒. `RecordCopy.heroTime` itself is another unit's and still returns kanji.
+        duration = strings.fmt.durationFromMs(summary.activeMs),
+        chip = partial ?: prChip(summary, isStillBest = true)?.label(strings),
         partial = partial != null,
     )
 }
@@ -357,16 +392,21 @@ internal fun snapshotEstimate(snapshot: RoutineSnapshot): RoutineEstimate = Rout
  * The やった回数 tile has no date and therefore never accents. That is correct rather than a gap: it
  * is a lifetime count, and a lifetime count is not something that happened this month.
  */
-internal fun bestTileIsThisMonth(tile: BestTile, bests: List<RoutineBest>, today: LocalDate): Boolean =
+internal fun bestTileIsThisMonth(
+    tile: BestTile,
+    bests: List<RoutineBest>,
+    today: LocalDate,
+    strings: Strings,
+): Boolean =
     bests.any { best ->
-        bestMetricLabel(best.metric) == tile.label &&
+        bestMetricLabel(best.metric, strings) == tile.label &&
             best.localDate.year == today.year &&
             best.localDate.month == today.month
     }
 
 /** 時間内 ・ 中級 — the header subtitle. A user routine has no tier until `derivedTier` guesses one. */
 internal fun detailSubtitle(engine: Engine, tier: Tier?, strings: Strings): String =
-    listOfNotNull(engine.label, tier?.label(strings)).joinToString(" ・ ")
+    listOfNotNull(engine.label(strings), tier?.label(strings)).joinToString(strings.fmt.separator)
 
 /**
  * 決めた時間で何巡できるか — the one engine whose name needs explaining, on the one page that explains it.
@@ -377,8 +417,8 @@ internal fun detailSubtitle(engine: Engine, tier: Tier?, strings: Strings): Stri
  *
  * Exhaustive with no `else` so a future engine has to be classified rather than silently glossless.
  */
-internal fun detailEngineGloss(engine: Engine): String? = when (engine) {
-    Engine.AMRAP -> "決めた時間で何巡できるか"
+internal fun detailEngineGloss(engine: Engine, strings: Strings): String? = when (engine) {
+    Engine.AMRAP -> strings.gymLibrary.glossAmrap
     Engine.INTERVAL_CIRCUIT,
     Engine.FIXED_SETS,
     Engine.EMOM,
@@ -408,8 +448,9 @@ internal fun detailHeaderTitle(
     detail: Loadable<RoutineDetail>,
     library: Loadable<List<RoutineSummary>>,
     routineId: String,
-): String? = detail.valueOrNull()?.snapshot?.name
-    ?: library.valueOrNull()?.firstOrNull { it.routineId == routineId }?.name
+    strings: Strings,
+): String? = detail.valueOrNull()?.snapshot?.displayName(strings)
+    ?: library.valueOrNull()?.firstOrNull { it.routineId == routineId }?.displayName(strings)
 
 /**
  * 第七段 ・ 七 六 五 四 四 — the ladder block, or the fault that stopped it, or silence.
@@ -443,10 +484,11 @@ internal fun progressionBlock(
     engine: Engine,
     programId: String?,
     progression: Loadable<ProgressionState>,
+    strings: Strings,
 ): ProgressionBlock = when {
     engine != Engine.FIXED_SETS || programId == null -> ProgressionBlock.Silent
     progression is Loadable.Failed -> ProgressionBlock.Unreadable(progression.fault)
-    progression is Loadable.Ready -> stepFor(progression.value)
+    progression is Loadable.Ready -> stepFor(progression.value, strings)
         ?.let { ProgressionBlock.Step(line = it.line, caption = it.caption) }
         ?: ProgressionBlock.Silent
 
@@ -472,19 +514,24 @@ internal enum class DetailActionKind { Duplicate, Favourite, Edit, Delete, Resto
 
 internal data class DetailAction(val label: String, val kind: DetailActionKind, val enabled: Boolean)
 
-internal fun detailActions(builtIn: Boolean, archived: Boolean, favourite: Boolean): List<DetailAction> =
-    buildList {
-        add(DetailAction("写して作る", DetailActionKind.Duplicate, enabled = true))
-        add(DetailAction(detailFavouriteLabel(favourite), DetailActionKind.Favourite, enabled = !archived))
-        if (!builtIn) {
-            add(DetailAction("編集", DetailActionKind.Edit, enabled = !archived))
-            if (archived) {
-                add(DetailAction("元に戻す", DetailActionKind.Restore, enabled = true))
-            } else {
-                add(DetailAction("削除", DetailActionKind.Delete, enabled = true))
-            }
+internal fun detailActions(
+    builtIn: Boolean,
+    archived: Boolean,
+    favourite: Boolean,
+    strings: Strings,
+): List<DetailAction> = buildList {
+    val s = strings.gymLibrary
+    add(DetailAction(s.actionDuplicate, DetailActionKind.Duplicate, enabled = true))
+    add(DetailAction(detailFavouriteLabel(favourite, strings), DetailActionKind.Favourite, enabled = !archived))
+    if (!builtIn) {
+        add(DetailAction(s.actionEdit, DetailActionKind.Edit, enabled = !archived))
+        if (archived) {
+            add(DetailAction(s.actionRestore, DetailActionKind.Restore, enabled = true))
+        } else {
+            add(DetailAction(s.actionDelete, DetailActionKind.Delete, enabled = true))
         }
     }
+}
 
 /**
  * Whether *this* detail page is the one that should draw the resume prompt.
@@ -508,8 +555,8 @@ internal fun detailOwnsResumePrompt(stack: List<GymRoute>, routineId: String): B
     (stack.lastOrNull() as? GymRoute.RoutineDetail)?.routineId == routineId
 
 /** よく使うに入れる / よく使うから外す (§6). The label states what the tap will do, not the state. */
-internal fun detailFavouriteLabel(favourite: Boolean): String =
-    if (favourite) "よく使うから外す" else "よく使うに入れる"
+internal fun detailFavouriteLabel(favourite: Boolean, strings: Strings): String =
+    if (favourite) strings.gymLibrary.actionUnfavourite else strings.gymLibrary.actionFavourite
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The page
@@ -555,9 +602,9 @@ fun LibraryDetailScreen(gym: GymViewModel, routineId: String, modifier: Modifier
 
     Column(modifier.fillMaxSize()) {
         DetailHeader(
-            title = detailHeaderTitle(detail, library, renderedId),
+            title = detailHeaderTitle(detail, library, renderedId, s),
             subtitle = detail.valueOrNull()?.let { detailSubtitle(it.snapshot.engine, it.tier, s) },
-            gloss = detail.valueOrNull()?.let { detailEngineGloss(it.snapshot.engine) },
+            gloss = detail.valueOrNull()?.let { detailEngineGloss(it.snapshot.engine, s) },
             archived = detail.valueOrNull()?.archived == true,
             onClose = { if (gym.stack.value.size > 1) gym.onBack() },
         )
@@ -568,7 +615,7 @@ fun LibraryDetailScreen(gym: GymViewModel, routineId: String, modifier: Modifier
                 // Loading is not empty is not failed (`00-plan.md` §4.1 rule 1). Three branches, three
                 // composables, and まだ やっていません is reachable from none of them.
                 ready is Loadable.Failed -> FaultPanel(fault = ready.fault, onRecover = gym::retry)
-                ready is Loadable.Loading -> DetailNotice("読み込み中")
+                ready is Loadable.Loading -> DetailNotice(s.gymLibrary.loading)
                 ready is Loadable.Ready -> DetailBody(
                     gym = gym,
                     baseRoutineId = routineId,
@@ -584,9 +631,9 @@ fun LibraryDetailScreen(gym: GymViewModel, routineId: String, modifier: Modifier
 
     // The name is read from the same flow the page draws from, so a routine that disappeared while the
     // confirm was open takes its own dialog with it — there is nothing left to ask about.
-    val deleteName = detail.valueOrNull()?.snapshot?.name
+    val deleteName = detail.valueOrNull()?.snapshot?.displayName(s)
     if (confirmingDelete && deleteName != null) {
-        val state = detailDeleteCopy(deleteName, sessions)
+        val state = detailDeleteCopy(deleteName, sessions, s)
         DetailDeleteDialog(
             state = state,
             // `purge` comes from the state that chose the words, never from a second look at the count:
@@ -647,6 +694,7 @@ private fun DetailHeader(
     onClose: () -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Column {
         Row(
             modifier = Modifier
@@ -685,7 +733,7 @@ private fun DetailHeader(
                         )
                         if (archived) {
                             Text(
-                                text = "削除済み",
+                                text = s.gymLibrary.archived,
                                 style = TextStyle(
                                     fontFamily = Mincho,
                                     fontSize = 13.sp,
@@ -712,7 +760,12 @@ private fun DetailHeader(
                     )
                 }
             }
-            HeaderAction(label = "とじる", description = "とじる", color = c.inkFaint, onClick = onClose)
+            HeaderAction(
+                label = s.gymLibrary.close,
+                description = s.gymLibrary.close,
+                color = c.inkFaint,
+                onClick = onClose,
+            )
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.hair))
     }
@@ -736,6 +789,7 @@ private fun DetailBody(
     onDelete: () -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val block = startBlock(detail)
     val snapshot = detail.snapshot
 
@@ -758,12 +812,14 @@ private fun DetailBody(
 
         Spacer(Modifier.height(18.dp))
         StartButton(
-            name = snapshot.name,
+            // The *displayed* name, unlike the one handed to `duplicateRoutine` below: this one is
+            // read, that one is written (`CatalogDisplay.kt`).
+            name = snapshot.displayName(s),
             starting = starting,
             block = block,
             onStart = { gym.startSession(detail.routineId) },
         )
-        startBlockCopy(block)?.let { reason ->
+        startBlockCopy(block, s)?.let { reason ->
             Spacer(Modifier.height(10.dp))
             Text(
                 text = reason,
@@ -783,7 +839,7 @@ private fun DetailBody(
             )
         }
 
-        SectionHeading("組み立て")
+        SectionHeading(s.gymLibrary.sectionStructure)
         snapshot.stations.forEachIndexed { index, station ->
             if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(c.hair))
             StationRow(
@@ -793,7 +849,7 @@ private fun DetailBody(
             )
         }
 
-        engineRows(snapshot).forEach { row -> ReadOnlyRow(label = row.label, value = row.value) }
+        engineRows(snapshot, s).forEach { row -> ReadOnlyRow(label = row.label, value = row.value) }
 
         // §3 edge case 5: a ladder renders the rung you are on, never all eighteen. The step comes from
         // `progression_state`; an unread one never claims 第一段, because "which step am I on" is a fact
@@ -807,7 +863,7 @@ private fun DetailBody(
         } else {
             Loadable.Loading
         }
-        when (val ladder = progressionBlock(snapshot.engine, programId, progression)) {
+        when (val ladder = progressionBlock(snapshot.engine, programId, progression, s)) {
             ProgressionBlock.Silent -> Unit
 
             is ProgressionBlock.Step -> {
@@ -829,7 +885,7 @@ private fun DetailBody(
             }
         }
 
-        val estimate = estimateLabel(snapshot.engine, snapshotEstimate(snapshot))
+        val estimate = estimateLabel(snapshot.engine, snapshotEstimate(snapshot), s)
         if (estimate.isNotEmpty()) {
             Spacer(Modifier.height(14.dp))
             Text(
@@ -844,7 +900,7 @@ private fun DetailBody(
             Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "出典",
+                    text = s.gymLibrary.origin,
                     style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = 3.sp, color = c.inkFaint),
                 )
                 Text(
@@ -854,9 +910,9 @@ private fun DetailBody(
             }
         }
 
-        val tiles = bestTilesFor(snapshot.engine, detail.bests, detail.timesDone)
+        val tiles = bestTilesFor(snapshot.engine, detail.bests, detail.timesDone, s)
         if (tiles.isNotEmpty()) {
-            SectionHeading("最高")
+            SectionHeading(s.gymLibrary.sectionBests)
             BestTiles(tiles = tiles, bests = detail.bests)
         }
 
@@ -872,13 +928,24 @@ private fun DetailBody(
         // share its reason. §1 rule 5's 編集-becomes-写して作る is the *index*'s long-press behaviour,
         // where the menu has no room to explain itself; here 写して作る is already its own row.
         Spacer(Modifier.height(18.dp))
-        detailActions(builtIn = detail.builtIn, archived = detail.archived, favourite = detail.favourite)
+        detailActions(
+            builtIn = detail.builtIn,
+            archived = detail.archived,
+            favourite = detail.favourite,
+            strings = s,
+        )
             .forEach { action ->
                 CentredAction(label = action.label, enabled = action.enabled) {
                     when (action.kind) {
                         // The name is passed because an archived routine is not in `repository.routines`
                         // and 写して作る is the action §1 rule 3 keeps enabled there — without it the tap
                         // answered 「この型は削除されています」 and copied nothing.
+                        //
+                        // **The stored name, deliberately not `displayName(s)`.** It goes to
+                        // `uniqueName` and lands in SQLite as the copy's own name, so resolving it
+                        // through the catalogue would write whichever language happened to be on into
+                        // a row that is then read in both. Every *displayed* name on this page is
+                        // `displayName`'s; this one is written.
                         DetailActionKind.Duplicate ->
                             gym.duplicateRoutine(detail.routineId, detail.snapshot.name)
 
@@ -913,18 +980,18 @@ private fun DetailBody(
 @Composable
 private fun StartButton(name: String, starting: Boolean, block: StartBlock, onStart: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val enabled = !starting && block == StartBlock.None
-    val label = if (starting) "支度" else "始める"
+    val label = if (starting) s.gymLibrary.preparing else s.gymLibrary.start
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(64.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(c.card)
-            .clickable(enabled = enabled, onClick = onStart)
+            .background(c.card, TempoShapes.Card)
+            .pressable(TempoShapes.Card, enabled = enabled, onClick = onStart)
             .semantics {
                 role = Role.Button
-                contentDescription = startButtonDescription(name, starting, block)
+                contentDescription = startButtonDescription(name, starting, block, s)
                 if (!enabled) disabled()
             },
         contentAlignment = Alignment.Center,
@@ -956,6 +1023,7 @@ private fun StartButton(name: String, starting: Boolean, block: StartBlock, onSt
 @Composable
 private fun TierChips(choices: List<RoutineSummary>, selectedId: String, onSelect: (String) -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -967,9 +1035,16 @@ private fun TierChips(choices: List<RoutineSummary>, selectedId: String, onSelec
             val selected = choice.routineId == selectedId
             Box(
                 modifier = Modifier
-                    .sizeIn(minHeight = 48.dp)
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    // `selectable` is not one of the two modifiers `pressable` wraps — the tier is a
+                    // one-of-many choice and `Role.RadioButton` plus the group's `selectableGroup` is
+                    // what makes TalkBack say so — so the indication is handed over by hand, with the
+                    // same shape the clip takes.
+                    .clip(TempoShapes.Word)
                     .selectable(
                         selected = selected,
+                        interactionSource = null,
+                        indication = InkPressIndication(TempoShapes.Word),
                         role = Role.RadioButton,
                         onClick = { onSelect(choice.routineId) },
                     )
@@ -977,7 +1052,7 @@ private fun TierChips(choices: List<RoutineSummary>, selectedId: String, onSelec
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = choice.name,
+                    text = choice.displayName(s),
                     style = TextStyle(
                         fontFamily = Mincho,
                         fontSize = 13.sp,
@@ -1004,15 +1079,18 @@ private fun TierChips(choices: List<RoutineSummary>, selectedId: String, onSelec
 @Composable
 private fun StationRow(position: Int, station: RoutineStation, onClick: (() -> Unit)?) {
     val c = LocalTempoColors.current
-    val name = station.exercise?.nameJa ?: "不明な種目"
-    val prescription = prescriptionLabel(station)
+    val s = LocalStrings.current
+    // `displayName` rather than `nameJa`: `name_en` has been NOT NULL and correctly seeded for all 23
+    // movements since schema v1 and was simply never drawn (`CatalogDisplay.kt`).
+    val name = station.exercise?.displayName(s) ?: s.gymLibrary.unknownExercise
+    val prescription = prescriptionLabel(station, s)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 48.dp)
-            .then(if (onClick == null) Modifier else Modifier.clickable(onClick = onClick))
+            .then(if (onClick == null) Modifier else Modifier.pressable(TempoShapes.Row, onClick = onClick))
             .clearAndSetSemantics {
-                contentDescription = stationRowSemantics(position, name, prescription)
+                contentDescription = stationRowSemantics(position, name, prescription, s)
                 if (onClick != null) role = Role.Button
             }
             .padding(vertical = 12.dp),
@@ -1020,7 +1098,7 @@ private fun StationRow(position: Int, station: RoutineStation, onClick: (() -> U
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text(
-            text = JapaneseDate.kanjiExtended(position),
+            text = s.fmt.count(position),
             style = TextStyle(fontFamily = Gothic, fontSize = 11.sp, color = c.inkFaint),
         )
         Text(
@@ -1054,11 +1132,12 @@ private fun StationRow(position: Int, station: RoutineStation, onClick: (() -> U
 @Composable
 private fun ReadOnlyRow(label: String, value: String) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 48.dp)
-            .clearAndSetSemantics { contentDescription = "$label、$value" }
+            .clearAndSetSemantics { contentDescription = label + s.fmt.listSeparator + value }
             .padding(vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -1087,13 +1166,16 @@ private fun ReadOnlyRow(label: String, value: String) {
 @Composable
 private fun BestTiles(tiles: List<BestTile>, bests: List<RoutineBest>) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val today = remember { LocalDate.now() }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         tiles.forEach { tile ->
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .clearAndSetSemantics { contentDescription = tile.label + "、" + tile.value }
+                    .clearAndSetSemantics {
+                        contentDescription = tile.label + s.fmt.listSeparator + tile.value
+                    }
                     .padding(vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -1102,7 +1184,7 @@ private fun BestTiles(tiles: List<BestTile>, bests: List<RoutineBest>) {
                     style = TextStyle(
                         fontFamily = Mincho,
                         fontSize = 22.sp,
-                        color = if (bestTileIsThisMonth(tile, bests, today)) c.accent else c.ink,
+                        color = if (bestTileIsThisMonth(tile, bests, today, s)) c.accent else c.ink,
                     ),
                 )
                 Text(
@@ -1135,23 +1217,29 @@ private fun AttemptsSection(
     onAttempt: (SessionSummary) -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "これまで",
+            text = s.gymLibrary.sectionAttempts,
             modifier = Modifier.semantics { heading() },
             style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
         )
         if (attempts.isNotEmpty()) {
-            HeaderAction(label = "すべて見る", description = "すべて見る", color = c.accent, onClick = onSeeAll)
+            HeaderAction(
+                label = s.gymLibrary.seeAll,
+                description = s.gymLibrary.seeAll,
+                color = c.accent,
+                onClick = onSeeAll,
+            )
         }
     }
     if (attempts.isEmpty()) {
         Text(
-            text = "まだ やっていません",
+            text = s.gymLibrary.noAttempts,
             modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
             style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
         )
@@ -1164,16 +1252,17 @@ private fun AttemptsSection(
 @Composable
 private fun AttemptRow(attempt: SessionSummary, onClick: () -> Unit) {
     val c = LocalTempoColors.current
-    val line = remember(attempt) { attemptLine(attempt) }
+    val s = LocalStrings.current
+    val line = remember(attempt, s) { attemptLine(attempt, s) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 48.dp)
-            .clickable(onClick = onClick)
+            .pressable(TempoShapes.Row, onClick = onClick)
             .clearAndSetSemantics {
                 role = Role.Button
                 contentDescription = listOfNotNull(line.date, line.score, line.duration, line.chip)
-                    .joinToString("、")
+                    .joinToString(s.fmt.listSeparator)
             }
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1236,9 +1325,8 @@ private fun CentredAction(label: String, enabled: Boolean = true, onClick: () ->
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 48.dp)
-            .clickable(enabled = enabled, onClick = onClick)
+            .pressable(TempoShapes.Word, enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics {
-                role = Role.Button
                 contentDescription = label
                 if (!enabled) disabled()
             },

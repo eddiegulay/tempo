@@ -1,6 +1,7 @@
 package io.eddiegulay.tempo.gym
 
 import io.eddiegulay.tempo.data.JapaneseDate
+import io.eddiegulay.tempo.i18n.Strings
 
 /*
  * Finding a routine in a library you wrote yourself: search, filter, rank, and name.
@@ -141,17 +142,27 @@ fun matchRoutine(
     origin: String?,
     stationNames: List<String>,
     query: String,
+    displayName: String = name,
 ): Boolean {
     val needle = foldKana(query)
     if (needle.isEmpty()) return true
     if (foldKana(name).contains(needle)) return true
+    // The *stored* name and the *displayed* one are different strings for every built-in routine once
+    // the UI is not Japanese: the card reads "Cindy" and the row it came from still says シンディ.
+    // Searching only what is stored means a user cannot find a routine by the name they can see —
+    // which is the one name they have. Both are folded, so either spelling finds it in either language.
+    if (foldKana(displayName).contains(needle)) return true
     if (origin != null && foldKana(origin).contains(needle)) return true
     return stationNames.any { foldKana(it).contains(needle) }
 }
 
 /** The [RoutineSummary] form, so a call site does not unpack three fields in order. */
-fun matchRoutine(summary: RoutineSummary, stationNames: List<String>, query: String): Boolean =
-    matchRoutine(summary.name, summary.origin, stationNames, query)
+fun matchRoutine(
+    summary: RoutineSummary,
+    stationNames: List<String>,
+    query: String,
+    displayName: String = summary.name,
+): Boolean = matchRoutine(summary.name, summary.origin, stationNames, query, displayName)
 
 /**
  * Whether an exercise answers a query, over its Japanese and English names.
@@ -177,10 +188,25 @@ fun matchExercise(exercise: Exercise, query: String): Boolean {
  * alternative reads worse — a five-minute routine excluded from the chip that says 五分 is the kind of
  * thing a user finds by accident and never trusts again.
  */
-enum class DurationBucket(val label: String, val upperBoundSeconds: Int) {
-    UNDER_FIVE("〜五分", 5 * 60),
-    FIVE_TO_FIFTEEN("五〜十五分", 15 * 60),
-    OVER_FIFTEEN("十五分〜", Int.MAX_VALUE),
+enum class DurationBucket(val upperBoundSeconds: Int) {
+    UNDER_FIVE(5 * 60),
+    FIVE_TO_FIFTEEN(15 * 60),
+    OVER_FIFTEEN(Int.MAX_VALUE),
+}
+
+/**
+ * The chip's word.
+ *
+ * **Three strings, not one wave dash moved around.** 〜五分 / 五〜十五分 / 十五分〜 spell the whole range
+ * with one character used leading, medially and trailingly; English needs a different word in each
+ * position (`Under 5 min` / `5–15 min` / `15 min+`), so interpolating an endpoint into a shared
+ * 「〜{n}分」 would have translated the typography instead of the meaning. The endpoint rule the labels
+ * carry — five belongs to the lower bucket — is [durationBucket]'s and is stated in both.
+ */
+fun DurationBucket.label(strings: Strings): String = when (this) {
+    DurationBucket.UNDER_FIVE -> strings.gymShared.durationUnderFive
+    DurationBucket.FIVE_TO_FIFTEEN -> strings.gymShared.durationFiveToFifteen
+    DurationBucket.OVER_FIFTEEN -> strings.gymShared.durationOverFifteen
 }
 
 /** Which chip a routine's stored estimate falls under. Never null: every duration is somewhere. */
@@ -224,12 +250,13 @@ fun applyFilters(
     routines: List<RoutineSummary>,
     filter: RoutineFilter,
     stationNames: (RoutineSummary) -> List<String> = { emptyList() },
+    displayName: (RoutineSummary) -> String = { it.name },
 ): List<RoutineSummary> = routines.filter { routine ->
     !routine.archived &&
         (filter.tiers.isEmpty() || routine.tier in filter.tiers) &&
         (filter.engines.isEmpty() || routine.engine in filter.engines) &&
         (filter.duration == null || durationBucket(routine.estimatedDurationSeconds) == filter.duration) &&
-        matchRoutine(routine, stationNames(routine), filter.query)
+        matchRoutine(routine, stationNames(routine), filter.query, displayName(routine))
 }
 
 // ─── よく使う ────────────────────────────────────────────────────────────────────────────────────
@@ -303,13 +330,28 @@ fun rankFrequent(
  * **Duplicate names are legal** (§3 edge case 4 — two routines called 朝の五分 are the user's business
  * and the builder only warns). This function is not enforcing uniqueness on the library; it is
  * choosing a *default* that does not arrive pre-collided.
+ *
+ * ## Why this is still Japanese under an English UI
+ *
+ * **This string is stored, not drawn.** It becomes `routine.name` in SQLite the moment 写して作る lands,
+ * and from then on it is the user's data — a name they can edit, that history pins, and that
+ * `.planning/i18n/DECISIONS.md` §L10 says no toggle may rewrite. Localising it therefore changes what
+ * is *written*, once, at creation time, and needs the language selected at that moment.
+ *
+ * So the name is composed in **whichever language was active when the copy was made**, and never
+ * touched again. `GymViewModel` now holds a `Strings` for exactly this and for the library search;
+ * the three facts that do not port — the postposition, the counter starting at 二, the deliberate
+ * space — live in `GymLibraryStrings.copyName`/`copyNameNumbered`.
+ *
+ * The consequence is accepted, not a bug (§L10): a routine named under one language keeps that name
+ * after a switch, because it is the user's row and not our copy.
  */
-fun uniqueName(base: String, existing: Set<String>): String {
-    val first = "$base の写し"
+fun uniqueName(base: String, existing: Set<String>, strings: Strings): String {
+    val first = strings.gymLibrary.copyName(base)
     if (first !in existing) return first
     // Bounded by the number of names that could collide, so a caller cannot spin here.
     for (n in 2..existing.size + 2) {
-        val candidate = first + JapaneseDate.kanjiExtended(n)
+        val candidate = strings.gymLibrary.copyNameNumbered(base, strings.fmt.count(n))
         if (candidate !in existing) return candidate
     }
     return first

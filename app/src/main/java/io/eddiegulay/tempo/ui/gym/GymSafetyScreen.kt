@@ -15,6 +15,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.eddiegulay.tempo.gym.GymViewModel
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 
@@ -36,6 +37,12 @@ import io.eddiegulay.tempo.ui.theme.Mincho
  * a body rather than to a page: **a heading with nothing beneath it claims nothing.** The gap is
  * reported; the four paragraphs drop straight into [SafetyBody] when they are written.
  *
+ * **Translating the page does not close that gap either.** An English paragraph about pain or medical
+ * clearance would be an invention in a second language rather than a translation of anything, and
+ * safety prose is the last copy in this app that may be improvised. The one sourced line moved to the
+ * table with everything else; the four that do not exist stay absent in both languages, and when they
+ * are written they want a human translator rather than a matched pair of guesses.
+ *
  * **This page writes nothing at all, and that is §B's rule read exactly.** §B GYM.SAFETY's Data line is
  * "none, except `setSafetyNoteAcknowledged()` **when reached from the first-run note**", and
  * `GymHomeScreen`'s `SafetyFootnote` already writes the flag on both of its exits — 開く before it
@@ -54,8 +61,13 @@ import io.eddiegulay.tempo.ui.theme.Mincho
  */
 @Composable
 fun GymSafetyScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
+    val s = LocalStrings.current
     Column(modifier.fillMaxSize()) {
-        GymBackHeader(title = "安全のために", subtitle = null, onBack = { if (gym.stack.value.size > 1) gym.onBack() })
+        GymBackHeader(
+            title = s.gymSettings.safetyTitle,
+            subtitle = null,
+            onBack = { if (gym.stack.value.size > 1) gym.onBack() },
+        )
         SafetyBody()
     }
 }
@@ -70,6 +82,7 @@ fun GymSafetyScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
 @Composable
 private fun SafetyBody() {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Column(
         Modifier
             .fillMaxWidth()
@@ -79,7 +92,7 @@ private fun SafetyBody() {
     ) {
         Spacer(Modifier.height(26.dp))
         Text(
-            text = "痛みを感じたらやめる",
+            text = s.gymSettings.safetyLine,
             style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, lineHeight = 28.sp, color = c.accent),
         )
     }

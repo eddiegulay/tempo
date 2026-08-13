@@ -1,6 +1,6 @@
 package io.eddiegulay.tempo.gym
 
-import io.eddiegulay.tempo.data.JapaneseDate
+import io.eddiegulay.tempo.i18n.Strings
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -196,7 +196,7 @@ fun estimateRoutine(
  * and the caller omits the line. There is no documented copy for "unbounded", and 約 〇分 would be a
  * claim.
  */
-fun estimateLabel(engine: Engine, estimate: RoutineEstimate): String {
+fun estimateLabel(engine: Engine, estimate: RoutineEstimate, strings: Strings): String {
     val minutes = if (estimate.durationSeconds > 0) {
         max(1, (estimate.durationSeconds / 60.0).roundToInt())
     } else {
@@ -204,12 +204,12 @@ fun estimateLabel(engine: Engine, estimate: RoutineEstimate): String {
     }
     if (minutes == 0 && estimate.totalReps == 0) return ""
     val parts = buildList {
-        if (minutes > 0) add("約 " + JapaneseDate.kanjiExtended(minutes) + "分")
+        if (minutes > 0) add(strings.gymShared.estimateDuration(strings.fmt.minutes(minutes)))
         if (estimate.totalReps > 0) {
-            val reps = JapaneseDate.kanjiExtended(estimate.totalReps) + "回"
-            add(if (engine == Engine.AMRAP) reps + "まで" else reps)
+            val reps = strings.fmt.reps(estimate.totalReps)
+            add(if (engine == Engine.AMRAP) strings.gymShared.estimateRepsCap(reps) else reps)
         }
     }
-    val line = parts.joinToString(" ・ ")
-    return if (estimate.approximate) "$line 目安" else line
+    val line = parts.joinToString(strings.fmt.separator)
+    return if (estimate.approximate) strings.gymShared.estimateApproximate(line) else line
 }

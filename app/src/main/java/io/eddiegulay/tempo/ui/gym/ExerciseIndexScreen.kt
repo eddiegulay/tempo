@@ -4,7 +4,6 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,7 +17,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,7 +27,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
@@ -46,19 +43,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.calendar.Loadable
-import io.eddiegulay.tempo.data.JapaneseDate
 import io.eddiegulay.tempo.gym.Exercise
 import io.eddiegulay.tempo.gym.ExerciseCatalog
 import io.eddiegulay.tempo.gym.GymRoute
 import io.eddiegulay.tempo.gym.GymViewModel
 import io.eddiegulay.tempo.gym.MovementBest
 import io.eddiegulay.tempo.gym.Pattern
-import io.eddiegulay.tempo.gym.coefficientLabel
+import io.eddiegulay.tempo.gym.displayCue
+import io.eddiegulay.tempo.gym.displayName
+import io.eddiegulay.tempo.gym.label
 import io.eddiegulay.tempo.gym.matchExercise
+import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.i18n.Strings
 import io.eddiegulay.tempo.ui.HeaderAction
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 
 /*
  * GYM.LIBRARY.EXERCISE_INDEX — 種目. `04-library-records.md` §3's movement catalogue.
@@ -109,13 +111,15 @@ private const val RUN_ID = "run"
 internal fun countsReps(exercise: Exercise): Boolean = exercise.id != RUN_ID
 
 /**
- * 一.〇 / 〇.五 / — , through the one coefficient formatter (`gym/Numerals.kt`).
+ * 一.〇 / 1.0 / — , through the one coefficient formatter ([Strings.fmt]).
  *
- * `coefficientLabel(null)` is already `—`, so edge case 5 is expressed by *what is passed*, not by a
- * second branch here. `Numerals.kt`'s own KDoc names 走る as the caller that passes null.
+ * `fmt.coefficient(null)` is already `—`, so edge case 5 is expressed by *what is passed*, not by a
+ * second branch here. `Numerals.kt`'s own KDoc names 走る as the caller that passes null, and the
+ * English implementation keeps that hole exactly as it is: a movement with no rep semantics renders no
+ * value, rather than a number that would imply you could count it.
  */
-internal fun exerciseCoefficient(exercise: Exercise): String =
-    coefficientLabel(exercise.difficulty.takeIf { countsReps(exercise) })
+internal fun exerciseCoefficient(exercise: Exercise, strings: Strings): String =
+    strings.fmt.coefficient(exercise.difficulty.takeIf { countsReps(exercise) })
 
 /**
  * 二.〇秒/回 — the meta line's pace fragment, or null when there is no pace to state.
@@ -128,22 +132,22 @@ internal fun exerciseCoefficient(exercise: Exercise): String =
  * omitting it is merely a missing one. 走る is isometric, so edge case 5's second half falls out of
  * the same rule.
  */
-internal fun paceLabel(exercise: Exercise): String? =
-    if (exercise.isIsometric) null else coefficientLabel(exercise.secondsPerRep) + "秒/回"
+internal fun paceLabel(exercise: Exercise, strings: Strings): String? =
+    if (exercise.isIsometric) null else strings.gymExercise.pace(strings.fmt.coefficient(exercise.secondsPerRep))
 
-/** 最高 三十二回 — §3's own fragment. 最高 is §6's word, the count is kanji (§6's Numerals note). */
-internal fun bestRepsLabel(singleSetReps: Int): String? =
-    if (singleSetReps <= 0) null else "最高 " + JapaneseDate.kanjiExtended(singleSetReps) + "回"
+/** 最高 三十二回 — §3's own fragment. 最高 is §6's word, the count is [Formats.reps]'. */
+internal fun bestRepsLabel(singleSetReps: Int, strings: Strings): String? =
+    if (singleSetReps <= 0) null else strings.gymExercise.bestReps(strings.fmt.reps(singleSetReps))
 
 /**
- * 十六の動き — §6's exercise-index subtitle, counted through `kanjiExtended` as that row requires.
+ * 十六の動き — §6's exercise-index subtitle, counted through [Strings.fmt] as that row requires.
  *
  * Counts the **catalogue**, never the matches. The subtitle says what this page is a list of, and a
  * number that shrank as the user typed would be answering a different question from the one the line
  * asks; §3's `SearchActive` state changes the *list's* shape and says nothing about the header.
  */
-internal fun exerciseIndexSubtitle(catalogueSize: Int): String =
-    JapaneseDate.kanjiExtended(catalogueSize) + "の動き"
+internal fun exerciseIndexSubtitle(catalogueSize: Int, strings: Strings): String =
+    strings.gymExercise.indexSubtitle(strings.fmt.count(catalogueSize))
 
 /**
  * One exercise card's words. A shape, so the composable is a layout and nothing else — the same
@@ -180,22 +184,27 @@ internal data class ExerciseCardCopy(
     val description: String,
 )
 
-internal fun exerciseCardCopy(exercise: Exercise, singleSetReps: Int?): ExerciseCardCopy {
-    val coefficient = exerciseCoefficient(exercise)
-    val best = singleSetReps?.let(::bestRepsLabel)
+internal fun exerciseCardCopy(exercise: Exercise, singleSetReps: Int?, strings: Strings): ExerciseCardCopy {
+    val coefficient = exerciseCoefficient(exercise, strings)
+    val best = singleSetReps?.let { bestRepsLabel(it, strings) }
+    val name = exercise.displayName(strings)
     return ExerciseCardCopy(
-        name = exercise.nameJa,
+        // The row's own second column, drawn for the first time. `name_en` has been NOT NULL and
+        // correctly seeded for all twenty-three movements since schema v1 and was simply never read.
+        name = name,
         coefficient = coefficient,
-        // §3 edge case 3: no cue, no line — never a blank one, which reads as a missing value.
-        cue = exercise.cue,
-        meta = listOfNotNull(exercise.pattern.label, paceLabel(exercise)).joinToString(" ・ "),
+        // §3 edge case 3: no cue, no line — never a blank one, which reads as a missing value. The
+        // null survives translation: `displayCue` returns null for the six movements §F.1 gives no cue.
+        cue = exercise.displayCue(strings),
+        meta = listOfNotNull(exercise.pattern.label(strings), paceLabel(exercise, strings))
+            .joinToString(strings.fmt.separator),
         best = best,
         description = listOfNotNull(
-            exercise.nameJa,
-            exercise.pattern.label,
-            "難度 " + coefficient,
+            name,
+            exercise.pattern.label(strings),
+            strings.gymExercise.difficulty(coefficient),
             best,
-        ).joinToString("、"),
+        ).joinToString(strings.fmt.listSeparator),
     )
 }
 
@@ -213,8 +222,19 @@ internal data class ExerciseSection(val pattern: Pattern?, val exercises: List<E
  * Two orderings, both §3's and neither of them alphabetical:
  *
  * 1. **Within a pattern, by difficulty ascending, ties by name** (edge case 1) — "so a ladder reads
- *    top-to-bottom as it should be climbed". `nameJa` breaks ties rather than `id`, because the tie is
- *    only ever visible as two names in a column.
+ *    top-to-bottom as it should be climbed". The name breaks ties rather than the id, because the tie
+ *    is only ever visible as two names in a column — and for the same reason it is the **displayed**
+ *    name, [displayName], not `nameJa`.
+ *
+ *    That is a deliberate behaviour change and it is visible: 空気椅子 sorts before 踏み台昇降 by
+ *    codepoint, and "Step-up" sorts before "Wall sit" by letter, so those two rows swap under an
+ *    English UI. Sorting an English list by kanji block is an order no reader of that list can see,
+ *    and a tiebreak nobody can read is not an order worth preserving. **Only within-section order
+ *    moves**; the sections themselves are [Pattern]'s declaration order and are untouched.
+ *
+ *    *Note* — `ExerciseCatalogSource.ladder` made the twin fix the other way, tiebreaking on `id`.
+ *    That is right there and wrong here: a ladder's order *is* its meaning, so it must not reshuffle
+ *    when the language changes; this list's order is a reading aid for the labels beside it.
  * 2. **Pattern order is [Pattern]'s declaration order** (edge case 2) — 押す → 引く → しゃがむ → 股関節 →
  *    体幹 → 移動 → 跳ぶ, which is design §9's fatigue alternation. Sorting it would quietly undo a
  *    decision about the body. The enum's own KDoc says the same thing from the other end, so this
@@ -227,10 +247,14 @@ internal data class ExerciseSection(val pattern: Pattern?, val exercises: List<E
  * Empty patterns are dropped. A heading over nothing is furniture announcing an absence, and 移動
  * genuinely empties under most queries.
  */
-internal fun exerciseSections(catalogue: List<Exercise>, query: String): List<ExerciseSection> {
+internal fun exerciseSections(
+    catalogue: List<Exercise>,
+    query: String,
+    strings: Strings,
+): List<ExerciseSection> {
     val matched = catalogue
         .filter { matchExercise(it, query) }
-        .sortedWith(compareBy({ it.pattern.ordinal }, { it.difficulty }, { it.nameJa }))
+        .sortedWith(compareBy({ it.pattern.ordinal }, { it.difficulty }, { it.displayName(strings) }))
     if (matched.isEmpty()) return emptyList()
     // `matchExercise` treats a blank query as matching everything, so "is anything being searched" is
     // asked of the query and not of the result — a query of spaces must not collapse the headings.
@@ -262,8 +286,6 @@ internal fun bestRepsByExercise(bests: List<MovementBest>): Map<String, Int> =
 // The page
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-private const val PAGE_TITLE = "種目"
-
 /**
  * 種目 — the movement catalogue as a browsable thing.
  *
@@ -282,6 +304,7 @@ private const val PAGE_TITLE = "種目"
 @Composable
 fun ExerciseIndexScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
 
     // A map read, not a query. `remember` because the catalogue cannot change for the life of the
     // process, and re-sorting twenty-three rows on every recomposition of a scrolling list is work
@@ -300,7 +323,9 @@ fun ExerciseIndexScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
     val bests by bestsFlow.collectAsStateWithLifecycle(initialValue = Loadable.Loading)
     val bestReps = remember(bests) { bestRepsByExercise(bests.valueOrNull().orEmpty()) }
 
-    val sections = remember(catalogue, query) { exerciseSections(catalogue, query) }
+    // Keyed on `s` as well: the tiebreak sorts on the displayed name, so a language change reorders
+    // the rows within a section and a cached list would be the old order under the new labels.
+    val sections = remember(catalogue, query, s) { exerciseSections(catalogue, query, s) }
 
     Column(modifier.fillMaxSize()) {
         Row(
@@ -312,12 +337,12 @@ fun ExerciseIndexScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
         ) {
             Column(Modifier.semantics(mergeDescendants = true) { heading() }) {
                 Text(
-                    text = PAGE_TITLE,
+                    text = s.gymExercise.indexTitle,
                     style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
                 )
                 Spacer(Modifier.height(7.dp))
                 Text(
-                    text = exerciseIndexSubtitle(catalogue.size),
+                    text = exerciseIndexSubtitle(catalogue.size, s),
                     style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 4.sp, color = c.inkFaint),
                 )
             }
@@ -325,8 +350,8 @@ fun ExerciseIndexScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
                 // 探す / とじる, §6's own pair — the word states what the tap does, not what is open.
                 // There is no second とじる for the page itself: this page is pushed and back pops it,
                 // and two identical words on one header would be two different exits.
-                label = if (searchOpen) "とじる" else "探す",
-                description = if (searchOpen) "とじる" else "探す",
+                label = if (searchOpen) s.gymExercise.closeSearch else s.gymExercise.openSearch,
+                description = if (searchOpen) s.gymExercise.closeSearch else s.gymExercise.openSearch,
                 color = c.inkFaint,
                 onClick = {
                     if (searchOpen) query = ""
@@ -368,7 +393,7 @@ fun ExerciseIndexScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
                             key = { "exercise:${it.id}" },
                         ) { exercise ->
                             ExerciseCard(
-                                copy = exerciseCardCopy(exercise, bestReps[exercise.id]),
+                                copy = exerciseCardCopy(exercise, bestReps[exercise.id], s),
                                 onOpen = { gym.go(GymRoute.ExerciseDetail(exercise.id)) },
                             )
                         }
@@ -389,6 +414,7 @@ fun ExerciseIndexScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
 @Composable
 private fun ExerciseSearchField(open: Boolean, query: String, onQuery: (String) -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val focusRequester = remember { FocusRequester() }
 
     Column(Modifier.fillMaxWidth().animateContentSize(tween(220, easing = LinearOutSlowInEasing))) {
@@ -407,13 +433,13 @@ private fun ExerciseSearchField(open: Boolean, query: String, onQuery: (String) 
                 .fillMaxWidth()
                 .padding(horizontal = 22.dp)
                 .focusRequester(focusRequester)
-                .semantics { contentDescription = "さがす" },
+                .semantics { contentDescription = s.gymExercise.searchPlaceholder },
             decorationBox = { inner ->
                 Column {
                     Box(Modifier.padding(vertical = 8.dp)) {
                         if (query.isEmpty()) {
                             Text(
-                                text = "さがす",
+                                text = s.gymExercise.searchPlaceholder,
                                 style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, color = c.inkFaint),
                             )
                         }
@@ -431,7 +457,7 @@ private fun ExerciseSearchField(open: Boolean, query: String, onQuery: (String) 
 private fun PatternHeading(pattern: Pattern) {
     val c = LocalTempoColors.current
     Text(
-        text = pattern.label,
+        text = pattern.label(LocalStrings.current),
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 6.dp)
@@ -458,9 +484,8 @@ private fun ExerciseCard(copy: ExerciseCardCopy, onOpen: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .padding(vertical = 5.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(c.card)
-            .clickable(onClick = onOpen)
+            .background(c.card, TempoShapes.Card)
+            .pressable(TempoShapes.Card, onClick = onOpen)
             .clearAndSetSemantics {
                 contentDescription = copy.description
                 role = Role.Button
@@ -526,9 +551,10 @@ private fun ExerciseCard(copy: ExerciseCardCopy, onOpen: () -> Unit) {
 @Composable
 private fun ExerciseNoMatch() {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
-            text = "該当する種目はありません",
+            text = s.gymExercise.noMatch,
             style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
         )
     }

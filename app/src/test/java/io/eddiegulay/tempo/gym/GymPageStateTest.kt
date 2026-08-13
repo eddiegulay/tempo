@@ -208,7 +208,10 @@ class GymPageStateTest {
 private fun card(id: String) = RoutineCard(
     routineId = id,
     name = id,
-    summary = "",
+    stationCount = 0,
+    workSeconds = null,
+    restBetweenStations = 0,
+    estimatedDurationSeconds = 0,
     timesDone = 0,
     lastResult = null,
     best = null,

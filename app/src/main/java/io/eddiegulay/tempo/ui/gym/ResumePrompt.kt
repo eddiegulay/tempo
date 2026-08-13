@@ -1,7 +1,6 @@
 package io.eddiegulay.tempo.ui.gym
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,10 +34,13 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.gym.GymViewModel
 import io.eddiegulay.tempo.gym.ResumePromptState
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.FaultStrip
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 
 /**
  * つづき — the question a session left open asks, as a **modal and never a route**.
@@ -188,12 +190,15 @@ fun ResumePrompt(
     onDismiss: () -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
 
     // Coarse by design (`03-player.md` §A edge case 4), so one reading at the moment the prompt appears
     // is the honest one — re-reading the clock per frame would make 一時間前 flip to 二時間前 under a
     // user who is deciding, which is a fact about our clock and not about their workout.
     val nowWallMs = remember(state.session.sessionId) { System.currentTimeMillis() }
-    val copy = remember(state.session.sessionId, nowWallMs) { resumePromptCopy(state.session, nowWallMs) }
+    val copy = remember(state.session.sessionId, nowWallMs, s) {
+        resumePromptCopy(state.session, nowWallMs, s)
+    }
 
     AlertDialog(
         onDismissRequest = {
@@ -265,7 +270,7 @@ fun ResumePrompt(
                     // has no copy of its own anywhere in the specs, and this is the nearest documented
                     // line rather than a new one.
                     Text(
-                        text = "元に戻せません。",
+                        text = s.gymHome.promptDiscardIrreversible,
                         style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, lineHeight = 22.sp, color = c.inkFaint),
                     )
                 } else {
@@ -273,7 +278,7 @@ fun ResumePrompt(
                     Box(Modifier.fillMaxWidth().height(1.dp).background(c.hair))
                     if (state.options.canResume) {
                         PromptOption(
-                            label = "続ける",
+                            label = s.gymHome.resumeAction,
                             color = c.accent,
                             enabled = !state.writing,
                             onClick = onResume,
@@ -281,7 +286,7 @@ fun ResumePrompt(
                     }
                     if (state.options.canRecord) {
                         PromptOption(
-                            label = "記録する",
+                            label = s.gymHome.promptRecord,
                             color = c.inkSoft,
                             enabled = !state.writing,
                             onClick = {
@@ -292,7 +297,7 @@ fun ResumePrompt(
                     }
                     if (state.options.canDiscard) {
                         PromptOption(
-                            label = "捨てる",
+                            label = s.gymHome.promptDiscard,
                             color = c.inkFaint,
                             enabled = !state.writing,
                             onClick = onRequestDiscard,
@@ -311,7 +316,7 @@ fun ResumePrompt(
                     enabled = !state.writing,
                 ) {
                     Text(
-                        text = "捨てる",
+                        text = s.gymHome.promptDiscard,
                         style = TextStyle(
                             fontFamily = Mincho,
                             color = if (state.writing) c.inkFaint else c.accent,
@@ -323,7 +328,7 @@ fun ResumePrompt(
         dismissButton = {
             when {
                 state.confirmingDiscard -> TextButton(onClick = onCancelDiscard, enabled = !state.writing) {
-                    Text("やめる", style = TextStyle(fontFamily = Mincho, color = c.inkFaint))
+                    Text(s.gymHome.cancel, style = TextStyle(fontFamily = Mincho, color = c.inkFaint))
                 }
                 // A session with nothing worth saving has lost both 続ける and 記録する, so 捨てる is the
                 // only row left — and a modal whose one visible option deletes a workout needs its way
@@ -331,7 +336,7 @@ fun ResumePrompt(
                 // 捨てる plus a そのまま dismiss. **Auto-discarding is tempting and wrong** — the user
                 // should learn that this app never deletes silently.
                 !state.options.canRecord -> TextButton(onClick = onDismiss, enabled = !state.writing) {
-                    Text("そのまま", style = TextStyle(fontFamily = Mincho, color = c.inkFaint))
+                    Text(s.gymHome.promptLeave, style = TextStyle(fontFamily = Mincho, color = c.inkFaint))
                 }
                 else -> Unit
             }
@@ -355,7 +360,9 @@ private fun PromptOption(label: String, color: Color, enabled: Boolean, onClick:
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 56.dp)
-            .clickable(enabled = enabled, onClick = onClick)
+            // The same shape the quit sheet's rows take, because the note above says these two are
+            // meant to read as one object.
+            .pressable(TempoShapes.Row, enabled = enabled, onClick = onClick)
             .clearAndSetSemantics {
                 contentDescription = label
                 role = Role.Button

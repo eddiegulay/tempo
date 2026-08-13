@@ -1,6 +1,7 @@
 package io.eddiegulay.tempo.ui.gym
 
 import io.eddiegulay.tempo.gym.Engine
+import io.eddiegulay.tempo.gym.EngineRowKind
 import io.eddiegulay.tempo.gym.GymPreferences
 import io.eddiegulay.tempo.gym.GymRoute
 import io.eddiegulay.tempo.gym.Measure
@@ -9,11 +10,20 @@ import io.eddiegulay.tempo.gym.RestSlot
 import io.eddiegulay.tempo.gym.RoutineDraft
 import io.eddiegulay.tempo.gym.StationDraft
 import io.eddiegulay.tempo.gym.WheelOption
+import io.eddiegulay.tempo.gym.engineRows
 import io.eddiegulay.tempo.gym.repOptions
+import io.eddiegulay.tempo.gym.repWheelValueLabel
 import io.eddiegulay.tempo.gym.restOptions
+import io.eddiegulay.tempo.gym.restWheelValueLabel
 import io.eddiegulay.tempo.gym.roundOptions
+import io.eddiegulay.tempo.gym.roundWheelValueLabel
+import io.eddiegulay.tempo.gym.secondWheelValueLabel
+import io.eddiegulay.tempo.i18n.Strings
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -55,15 +65,15 @@ class BuilderScreenTest {
 
     @Test
     fun `the title says whether a routine exists yet`() {
-        assertEquals("型を作る", builderTitle(null))
-        assertEquals("型を編集", builderTitle("r_cindy"))
+        assertEquals("型を作る", builderTitle(null, StringsJa))
+        assertEquals("型を編集", builderTitle("r_cindy", StringsJa))
     }
 
     @Test
     fun `a disabled save says what it is waiting for`() {
         // §3: 「保存 disabled → "保存、名前と種目が要ります", never an unexplained inert word.」
-        assertEquals("保存", saveSemantics(canSave = true))
-        assertEquals("保存、名前と種目が要ります", saveSemantics(canSave = false))
+        assertEquals("保存", saveSemantics(canSave = true, strings = StringsJa))
+        assertEquals("保存、名前と種目が要ります", saveSemantics(canSave = false, strings = StringsJa))
     }
 
     @Test
@@ -71,10 +81,13 @@ class BuilderScreenTest {
         // `canSave` carries the `saving` flag, so it is false for the whole `Saving` state — and the
         // name and the stations are both present, which is *why* the write is running. §3's rule is
         // that a disabled word says why; 「名前と種目が要ります」 here says the wrong why.
-        assertEquals("保存中", saveDescription(saving = true, canSave = false))
-        assertEquals("保存中", saveDescription(saving = true, canSave = true))
-        assertEquals("保存", saveDescription(saving = false, canSave = true))
-        assertEquals("保存、名前と種目が要ります", saveDescription(saving = false, canSave = false))
+        assertEquals("保存中", saveDescription(saving = true, canSave = false, strings = StringsJa))
+        assertEquals("保存中", saveDescription(saving = true, canSave = true, strings = StringsJa))
+        assertEquals("保存", saveDescription(saving = false, canSave = true, strings = StringsJa))
+        assertEquals(
+            "保存、名前と種目が要ります",
+            saveDescription(saving = false, canSave = false, strings = StringsJa),
+        )
     }
 
     @Test
@@ -92,9 +105,9 @@ class BuilderScreenTest {
 
     @Test
     fun `a station reads as the value it prescribes`() {
-        assertEquals("二十回", stationValueLabel(station("e_pushup")))
-        assertEquals("三十秒", stationValueLabel(station("e_plank", Measure.DURATION, null, 30)))
-        assertEquals("限界まで", stationValueLabel(station("e_run", Measure.MAX_EFFORT, null, null)))
+        assertEquals("二十回", stationValueLabel(station("e_pushup"), StringsJa))
+        assertEquals("三十秒", stationValueLabel(station("e_plank", Measure.DURATION, null, 30), StringsJa))
+        assertEquals("限界まで", stationValueLabel(station("e_run", Measure.MAX_EFFORT, null, null), StringsJa))
     }
 
     @Test
@@ -102,32 +115,32 @@ class BuilderScreenTest {
         // `DECISIONS.md` §Q10 pins the wheel, the builder row and the detail page to one form. Sixty
         // seconds is 六十秒 in all three; 一分 here would be the user reading back a value they never
         // picked. The station value is the same act and takes the same rule.
-        assertEquals("六十秒", stationValueLabel(station("e_plank", Measure.DURATION, null, 60)))
-        assertEquals("九十秒", stationValueLabel(station("e_plank", Measure.DURATION, null, 90)))
+        assertEquals("六十秒", stationValueLabel(station("e_plank", Measure.DURATION, null, 60), StringsJa))
+        assertEquals("九十秒", stationValueLabel(station("e_plank", Measure.DURATION, null, 90), StringsJa))
     }
 
     @Test
     fun `a prescription with no number says nothing rather than zero`() {
         // The schema's CHECK refuses this row, so it is a store bug rather than a prescription — and
         // 〇回 would be a prescription.
-        assertEquals("", stationValueLabel(station("e_pushup", Measure.REPS, null, null)))
+        assertEquals("", stationValueLabel(station("e_pushup", Measure.REPS, null, null), StringsJa))
     }
 
     @Test
     fun `a row announces its position, its movement and its prescription`() {
-        assertEquals("一番目、腕立て伏せ、二十回", stationSemantics(0, "腕立て伏せ", "二十回"))
-        assertEquals("三番目、懸垂、限界まで", stationSemantics(2, "懸垂", "限界まで"))
+        assertEquals("一番目、腕立て伏せ、二十回", stationSemantics(0, "腕立て伏せ", "二十回", StringsJa))
+        assertEquals("三番目、懸垂、限界まで", stationSemantics(2, "懸垂", "限界まで", StringsJa))
     }
 
     @Test
     fun `a row with no prescription still announces cleanly`() {
-        assertEquals("一番目、腕立て伏せ", stationSemantics(0, "腕立て伏せ", ""))
+        assertEquals("一番目、腕立て伏せ", stationSemantics(0, "腕立て伏せ", "", StringsJa))
     }
 
     @Test
     fun `the handle and the drop announce themselves`() {
-        assertEquals("腕立て伏せ の並べ替え", handleSemantics("腕立て伏せ"))
-        assertEquals("三番目に移動しました", moveAnnouncement(2))
+        assertEquals("腕立て伏せ の並べ替え", handleSemantics("腕立て伏せ", StringsJa))
+        assertEquals("三番目に移動しました", moveAnnouncement(2, StringsJa))
     }
 
     // ─── The lines under the fields ─────────────────────────────────────────────────────────────
@@ -136,11 +149,11 @@ class BuilderScreenTest {
     fun `the history line appears only when there is history and the structure changed`() {
         assertEquals(
             "これまでの六回の記録はそのまま残ります",
-            historySafeLine(sessions = 6, structureDirty = true),
+            historySafeLine(sessions = 6, structureDirty = true, strings = StringsJa),
         )
         // A typo corrected in the title writes no new version, so nothing is owed about records.
-        assertNull(historySafeLine(sessions = 6, structureDirty = false))
-        assertNull(historySafeLine(sessions = 0, structureDirty = true))
+        assertNull(historySafeLine(sessions = 6, structureDirty = false, strings = StringsJa))
+        assertNull(historySafeLine(sessions = 0, structureDirty = true, strings = StringsJa))
     }
 
     @Test
@@ -197,6 +210,7 @@ class BuilderScreenTest {
             draft = draft(listOf(station("push_a"), station("push_b"), station("squat"))),
             pattern = { id -> if (id.startsWith("push")) Pattern.H_PUSH else Pattern.SQUAT },
             name = { id -> id },
+            StringsJa,
         )
 
         assertEquals(mapOf(1 to "push_a と push_b は続けて置かない方がよい"), warnings)
@@ -211,6 +225,7 @@ class BuilderScreenTest {
             draft = draft(listOf(station("push_a"), station("squat"), station("push_b")), rounds = 2),
             pattern = { id -> if (id.startsWith("push")) Pattern.H_PUSH else Pattern.SQUAT },
             name = { id -> id },
+            StringsJa,
         )
 
         assertEquals(mapOf(0 to "push_b と push_a は続けて置かない方がよい"), warnings)
@@ -225,10 +240,10 @@ class BuilderScreenTest {
         // joined with `stationSemantics`' own 、 so no new copy is invented.
         assertEquals(
             "二番目に移動しました、腕立て伏せ と ディップス は続けて置かない方がよい",
-            moveAnnouncementWith(1, "腕立て伏せ と ディップス は続けて置かない方がよい"),
+            moveAnnouncementWith(1, "腕立て伏せ と ディップス は続けて置かない方がよい", StringsJa),
         )
         // A reorder into clean order says only that it moved.
-        assertEquals("三番目に移動しました", moveAnnouncementWith(2, null))
+        assertEquals("三番目に移動しました", moveAnnouncementWith(2, null, StringsJa))
     }
 
     @Test
@@ -240,16 +255,16 @@ class BuilderScreenTest {
         val pattern: (String) -> Pattern? = { id -> if (id.startsWith("push")) Pattern.H_PUSH else Pattern.SQUAT }
 
         // Nothing to say about the order as it stands.
-        assertTrue(stationWarnings(before, pattern, { it }).isEmpty())
+        assertTrue(stationWarnings(before, pattern, { it }, StringsJa).isEmpty())
 
         val target = 1
         val after = before.copy(stations = io.eddiegulay.tempo.gym.moveItem(before.stations, 2, target))
-        val clash = stationWarnings(after, pattern, { it })[target]
+        val clash = stationWarnings(after, pattern, { it }, StringsJa)[target]
 
         assertEquals("push_a と push_b は続けて置かない方がよい", clash)
         assertEquals(
             "二番目に移動しました、push_a と push_b は続けて置かない方がよい",
-            moveAnnouncementWith(target, clash),
+            moveAnnouncementWith(target, clash, StringsJa),
         )
     }
 
@@ -258,7 +273,8 @@ class BuilderScreenTest {
         val warnings = stationWarnings(
             draft = draft(listOf(station("gone_a"), station("gone_b"))),
             pattern = { null },
-            name = { UNKNOWN_EXERCISE },
+            name = { unknownExercise(StringsJa) },
+            StringsJa,
         )
 
         assertTrue(warnings.isEmpty())
@@ -274,16 +290,18 @@ class BuilderScreenTest {
         // below are shipped seed data, not hypotheticals.
 
         // チェルシー is 30 rounds; 巡数 offers 1..20.
-        val rounds = mergedWheelOptions(roundOptions(), 30, ::roundWheelValueLabel)
+        val rounds = mergedWheelOptions(roundOptions(StringsJa), 30) { roundWheelValueLabel(it, StringsJa) }
         assertEquals(WheelOption(30, "三十巡"), rounds.last())
-        assertEquals(roundOptions().size + 1, rounds.size)
+        assertEquals(roundOptions(StringsJa).size + 1, rounds.size)
 
         // タバタ rests 10 between rounds; 巡の間の休息 steps by 15, so 10 lands between なし and 十五秒.
-        val roundRest = mergedWheelOptions(restOptions(RestSlot.BETWEEN_ROUNDS), 10, ::restWheelValueLabel)
+        val roundRest = mergedWheelOptions(restOptions(RestSlot.BETWEEN_ROUNDS, StringsJa), 10) {
+            restWheelValueLabel(it, StringsJa)
+        }
         assertEquals(listOf(WheelOption(0, "なし"), WheelOption(10, "十秒"), WheelOption(15, "十五秒")), roundRest.take(3))
 
         // マーフ has stations at 200 and 300 reps; 回数 offers 1..100.
-        val reps = mergedWheelOptions(repOptions(), 300, ::repWheelValueLabel)
+        val reps = mergedWheelOptions(repOptions(StringsJa), 300) { repWheelValueLabel(it, StringsJa) }
         assertEquals(WheelOption(300, "三百回"), reps.last())
 
         // And the point of all three: the wheel can now seed itself on the value it was opened with.
@@ -296,11 +314,19 @@ class BuilderScreenTest {
     fun `a wheel that already holds its value is left exactly as it was`() {
         // The merge is a repair, not a transform: widening every range to cover every seedable number
         // would give every user a three-hundred-row 回数 wheel to pay for three catalogue stations.
-        assertEquals(roundOptions(), mergedWheelOptions(roundOptions(), 12, ::roundWheelValueLabel))
-        assertEquals(repOptions(), mergedWheelOptions(repOptions(), 20, ::repWheelValueLabel))
         assertEquals(
-            restOptions(RestSlot.BETWEEN_STATIONS),
-            mergedWheelOptions(restOptions(RestSlot.BETWEEN_STATIONS), 0, ::restWheelValueLabel),
+            roundOptions(StringsJa),
+            mergedWheelOptions(roundOptions(StringsJa), 12) { roundWheelValueLabel(it, StringsJa) },
+        )
+        assertEquals(
+            repOptions(StringsJa),
+            mergedWheelOptions(repOptions(StringsJa), 20) { repWheelValueLabel(it, StringsJa) },
+        )
+        assertEquals(
+            restOptions(RestSlot.BETWEEN_STATIONS, StringsJa),
+            mergedWheelOptions(restOptions(RestSlot.BETWEEN_STATIONS, StringsJa), 0) {
+                restWheelValueLabel(it, StringsJa)
+            },
         )
     }
 
@@ -308,11 +334,67 @@ class BuilderScreenTest {
     fun `the merged row is labelled in its own wheel's words`() {
         // §Q10: a duration the user chose renders as the value they chose, なし at zero. A merged row
         // that reached for `durationKanji` would print 一分 into a column of 六十秒.
-        assertEquals("なし", restWheelValueLabel(0))
-        assertEquals("六十秒", restWheelValueLabel(60))
-        assertEquals("九十秒", secondWheelValueLabel(90))
-        assertEquals("二百回", repWheelValueLabel(200))
-        assertEquals("三十巡", roundWheelValueLabel(30))
+        assertEquals("なし", restWheelValueLabel(0, StringsJa))
+        assertEquals("六十秒", restWheelValueLabel(60, StringsJa))
+        assertEquals("九十秒", secondWheelValueLabel(90, StringsJa))
+        assertEquals("二百回", repWheelValueLabel(200, StringsJa))
+        assertEquals("三十巡", roundWheelValueLabel(30, StringsJa))
+    }
+
+    // ─── The row dispatch ───────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `every dialable row resolves to its wheel in both languages`() {
+        // **The test the old code could not have carried.** The dispatch used to be
+        // `when (row.label)` against three Japanese `private const val`s, and it was correct only
+        // because `engineRows` happened to spell the same three words. In English every arm would have
+        // missed and fallen through to the read-only branch: the station rest, the round rest and 巡数
+        // silently undialable, with no compile error, no exception and nothing on screen to say the
+        // page was broken rather than simply that shape. Asserting in one language cannot see that, so
+        // this asserts in both.
+        for (strings in listOf<Strings>(StringsJa, StringsEn)) {
+            val rows = engineRows(
+                engine = Engine.INTERVAL_CIRCUIT,
+                rounds = 3,
+                timeCapSeconds = null,
+                restBetweenStations = 15,
+                restBetweenRounds = 60,
+                strings = strings,
+            )
+
+            assertEquals(
+                "${strings.lang}: 巡回 draws the two rests and 巡数, and all three must be wheels",
+                mapOf(
+                    EngineRowKind.REST_BETWEEN_STATIONS to BuilderRow.StationRest,
+                    EngineRowKind.REST_BETWEEN_ROUNDS to BuilderRow.RoundRest,
+                    EngineRowKind.ROUNDS to BuilderRow.Rounds,
+                ),
+                rows.associate { it.kind to builderRowControl(it.kind, Engine.INTERVAL_CIRCUIT) },
+            )
+        }
+    }
+
+    @Test
+    fun `the row labels differ by language, which is why they cannot be the dispatch`() {
+        // The other half of the argument, and the half that keeps the test above honest: if the labels
+        // were the same in both languages the assertion above would pass under a string match too.
+        val ja = engineRows(Engine.INTERVAL_CIRCUIT, 3, null, 15, 60, StringsJa).map { it.label }
+        val en = engineRows(Engine.INTERVAL_CIRCUIT, 3, null, 15, 60, StringsEn).map { it.label }
+
+        assertEquals(listOf("種目の間の休息", "巡の間の休息", "巡数"), ja)
+        assertNotEquals(ja, en)
+    }
+
+    @Test
+    fun `時間内 states its rounds and its cap rather than dialling them`() {
+        // 時間内で is not a value on a wheel, and §3 edge case 11 gives no range for a 制限時間 — so
+        // both rows are read-only, in either language, for the same reason and not by falling through.
+        assertNull(builderRowControl(EngineRowKind.ROUNDS, Engine.AMRAP))
+        assertNull(builderRowControl(EngineRowKind.TIME_CAP, Engine.AMRAP))
+        // …and 巡数 is a wheel everywhere else it appears.
+        for (engine in Engine.entries.filter { it != Engine.AMRAP }) {
+            assertEquals(engine.name, BuilderRow.Rounds, builderRowControl(EngineRowKind.ROUNDS, engine))
+        }
     }
 
     // ─── Opening and landing ────────────────────────────────────────────────────────────────────

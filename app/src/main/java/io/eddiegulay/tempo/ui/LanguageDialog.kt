@@ -1,7 +1,6 @@
 package io.eddiegulay.tempo.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,6 +23,8 @@ import io.eddiegulay.tempo.i18n.Lang
 import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 
 /**
  * Choose the UI language.
@@ -107,7 +108,9 @@ private fun LanguageRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClickLabel = name, role = Role.RadioButton, onClick = onClick)
+            // Same row shape and same 56dp as [ModeDialog]: the two dialogs are the same object with
+            // different words in it, and a user who has pressed one has learnt the other.
+            .pressable(TempoShapes.Row, onClickLabel = name, role = Role.RadioButton, onClick = onClick)
             .heightIn(min = 56.dp)
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,

@@ -4,6 +4,9 @@ import io.eddiegulay.tempo.gym.EffectiveGymPreferences
 import io.eddiegulay.tempo.gym.GymPreferences
 import io.eddiegulay.tempo.gym.Phase
 import io.eddiegulay.tempo.gym.SpeechAvailability
+import io.eddiegulay.tempo.i18n.Lang
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -127,6 +130,14 @@ class CueEngineTest {
             private set
 
         val spokenIds = mutableListOf<String>()
+        val spoken = mutableListOf<String>()
+
+        /** Every language this channel has been pointed at, in order, starting with construction. */
+        val languages = mutableListOf<Lang>()
+
+        override fun setLanguage(lang: Lang) {
+            languages += lang
+        }
 
         override fun prepare() {
             prepareCount++
@@ -134,6 +145,7 @@ class CueEngineTest {
 
         override fun speak(text: String, utteranceId: String) {
             spokenIds += utteranceId
+            spoken += text
         }
 
         override fun stop() = Unit
@@ -338,7 +350,7 @@ class CueEngineTest {
             touchExplorationEnabled = false,
         )
         h.engine.arm(prefs)
-        h.speech.engineAnswers(SpeechAvailability.NoJapaneseVoice)
+        h.speech.engineAnswers(SpeechAvailability.NoVoiceForLanguage)
         h.engine.arm(prefs)
 
         assertTrue(h.engine.settings.tones)
@@ -362,6 +374,67 @@ class CueEngineTest {
 
         assertEquals(2, h.speech.spokenIds.size)
         assertNotEquals(h.speech.spokenIds[0], h.speech.spokenIds[1])
+    }
+
+    // ── the language of the voice, and of the words ────────────────────────────────────────────
+
+    @Test
+    fun `the channel is pointed at a language before anything can be spoken`() {
+        // The probe used to ask about Locale.JAPANESE and nothing else. It now has to be told, and the
+        // engine is the thing that tells it — at construction, so there is no window in which the sink
+        // holds a language nobody chose.
+        val h = Harness()
+        assertEquals(listOf(Lang.Ja), h.speech.languages)
+    }
+
+    @Test
+    fun `switching language moves the voice and the words together`() {
+        // Two halves of one fact. Words in English read by a Japanese voice is not a degraded state,
+        // it is an unintelligible one, so the field that carries them is one field.
+        val h = harness(tones = true, speech = true)
+        h.engine.setLanguage(StringsEn)
+
+        assertEquals(listOf(Lang.Ja, Lang.En), h.speech.languages)
+
+        h.engine.enterSegment(
+            CueSegment(ordinal = 0, phase = Phase.WORK, plannedMs = 30_000, startsFinalRound = true),
+        )
+        h.clock.advanceTo(0)
+        assertEquals(listOf("Last round"), h.speech.spoken)
+    }
+
+    @Test
+    fun `setting the language it already has re-probes nothing`() {
+        // A re-probe is a round trip to another process and, on the settings page's sibling probe, a
+        // fresh TextToSpeech binding. Recomposition hands the same table back constantly.
+        val h = Harness()
+        h.engine.setLanguage(StringsJa)
+
+        assertEquals(listOf(Lang.Ja), h.speech.languages)
+    }
+
+    @Test
+    fun `losing the voice for the new language disarms speech and keeps every other channel`() {
+        // The concrete new failure: a Japanese-market phone nearly always has a Japanese voice and may
+        // well have no English one. §D.6's fallback must hold — tones carry on, and nothing prompts for
+        // a download mid-workout.
+        val h = Harness()
+        val prefs = EffectiveGymPreferences(
+            stored = GymPreferences(haptics = true, tones = true, speech = true),
+            touchExplorationEnabled = false,
+        )
+        h.engine.arm(prefs)
+        h.speech.engineAnswers(SpeechAvailability.Available)
+        h.engine.arm(prefs)
+        assertTrue(h.engine.settings.speech)
+
+        h.engine.setLanguage(StringsEn)
+        h.speech.engineAnswers(SpeechAvailability.NoVoiceForLanguage) // the re-probe's answer
+        h.engine.arm(prefs) // what the owner does on that callback
+
+        assertFalse(h.engine.settings.speech)
+        assertTrue(h.engine.settings.tones)
+        assertTrue(h.engine.settings.haptics)
     }
 
     @Test

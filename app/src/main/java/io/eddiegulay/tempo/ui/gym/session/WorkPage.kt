@@ -17,9 +17,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.eddiegulay.tempo.gym.displayName
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.CycleDots
 import io.eddiegulay.tempo.ui.cycleDotsOverflow
 import io.eddiegulay.tempo.ui.theme.Gothic
@@ -51,9 +54,11 @@ import io.eddiegulay.tempo.ui.theme.Mincho
 @Composable
 fun WorkPage(state: SessionUiState, actions: SessionActions, modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
-    val name = state.exercise?.nameJa
-    val nextLabel = nextUpLabel(state.next, state.nextExercise?.nameJa)
-    val nextDescription = nextUpDescription(state.next, state.nextExercise?.nameJa)
+    val s = LocalStrings.current
+    val name = state.exercise?.displayName(s)
+    val nextName = state.nextExercise?.displayName(s)
+    val nextLabel = nextUpLabel(s, state.next, nextName)
+    val nextDescription = nextUpDescription(s, state.next, nextName)
 
     PlayerFrame(
         state = state,
@@ -68,12 +73,12 @@ fun WorkPage(state: SessionUiState, actions: SessionActions, modifier: Modifier 
         // stops (§A WORK, accessibility). Anything finer fights the tones. `effectiveMs` — the
         // segment's own length, ＋二十秒 included — is passed because a threshold this interval never
         // had must not be announced at all: タバタ's twenty seconds are never 「残り 三十秒」.
-        announcement = countdownAnnouncement(state.remainingMs, state.segment.effectiveMs),
+        announcement = countdownAnnouncement(s, state.remainingMs, state.segment.effectiveMs),
         ringContent = {
             ExerciseHeading(name)
             Spacer(Modifier.height(4.dp))
             Text(
-                text = formatCountdown(state.remainingMs),
+                text = formatCountdown(s, state.remainingMs),
                 softWrap = false,
                 maxLines = 1,
                 modifier = Modifier.clearAndSetSemantics { },
@@ -119,6 +124,14 @@ internal val NEXT_UP_SLOT = 64.dp
  * It changes exactly once per segment, which is what makes `liveRegion` safe on it where it is
  * forbidden on the numeral: the fact being announced is *which movement*, and that fact changes at a
  * transition and never between.
+ *
+ * **`maxLines = 1` now ellipsises rather than clipping.** It always had the one line — the ring is
+ * 220.dp and a movement name that wrapped would push the countdown out of it — but with no `overflow`
+ * the excess was cut mid-glyph, which reads as a rendering fault rather than as a long name. This is
+ * catalogue content, not copy: it is `name_en` or a routine the user typed, so no string table can
+ * bound its length, and the history and PR cards already ellipsise names for exactly this reason. The
+ * *hero numerals* keep clipping, deliberately — they are capped by [LocalHeroCap] instead, and an
+ * ellipsised countdown would be a worse answer than a smaller one.
  */
 @Composable
 internal fun ExerciseHeading(name: String?, fontSize: TextUnit = 24.sp) {
@@ -127,6 +140,7 @@ internal fun ExerciseHeading(name: String?, fontSize: TextUnit = 24.sp) {
         text = name.orEmpty(),
         textAlign = TextAlign.Center,
         maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
         modifier = Modifier.semantics {
             heading()
             liveRegion = LiveRegionMode.Polite
@@ -151,6 +165,7 @@ internal fun ExerciseHeading(name: String?, fontSize: TextUnit = 24.sp) {
  */
 @Composable
 internal fun phaseCounterLabel(state: SessionUiState): String? = counterLabel(
+    strings = LocalStrings.current,
     round = state.round,
     totalRounds = state.totalRounds,
     station = state.stationIndex ?: state.next?.stationIndex,
@@ -168,11 +183,12 @@ internal fun phaseCounterLabel(state: SessionUiState): String? = counterLabel(
 @Composable
 internal fun RoundIndicator(state: SessionUiState, modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Box(modifier.fillMaxWidth().height(ROUND_INDICATOR_SLOT), contentAlignment = Alignment.Center) {
         when {
             state.totalRounds <= 1 -> Unit
             cycleDotsOverflow(state.totalRounds) -> Text(
-                text = roundsOverflowLabel(state.round, state.totalRounds),
+                text = roundsOverflowLabel(s, state.round, state.totalRounds),
                 style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
             )
 
@@ -183,7 +199,7 @@ internal fun RoundIndicator(state: SessionUiState, modifier: Modifier = Modifier
                 pendingColor = c.hair,
                 dotSize = 6.dp,
                 gap = 12.dp,
-                label = cycleDotsLabel(state.round, state.totalRounds),
+                label = cycleDotsLabel(s, state.round, state.totalRounds),
             )
         }
     }

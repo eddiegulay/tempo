@@ -1,5 +1,6 @@
 package io.eddiegulay.tempo.ui.gym
 
+import io.eddiegulay.tempo.i18n.StringsEn
 import io.eddiegulay.tempo.i18n.StringsJa
 import io.eddiegulay.tempo.gym.BestMetric
 import io.eddiegulay.tempo.gym.Engine
@@ -135,14 +136,26 @@ class LibraryIndexScreenTest {
 
     @Test
     fun `a section heading counts what is under it`() {
-        assertEquals("よく使う、二件", sectionSemantics("よく使う", 2))
+        assertEquals("よく使う、二件", sectionSemantics("よく使う", 2, StringsJa))
+        assertEquals("Frequent, 2 items", sectionSemantics("Frequent", 2, StringsEn))
+    }
+
+    @Test
+    fun `the card's punctuation follows the language, not the Japanese typography`() {
+        // 「 ・ 」 is a katakana middle dot and 「、」 an ideographic comma; both are `fmt`'s and both
+        // have to become ASCII in a Latin build. A separator hard-coded at the join — which is how
+        // this line was written — ships a CJK glyph into English and is invisible in a Japanese test.
+        val detail = routineCardCopy(cindy.copy(best = null), StringsEn).detail
+        assertFalse(detail.contains("・"))
+        assertTrue(detail.contains(" · "))
+        assertFalse(routineCardCopy(cindy, StringsEn).description.contains("、"))
     }
 
     @Test
     fun `an empty section announces its name alone`() {
         // 自分の型 is the one heading that survives having nothing under it, and 〇件 would scold a
         // user who is about to be told 型はまだありません on the next line anyway.
-        assertEquals("自分の型", sectionSemantics("自分の型", 0))
+        assertEquals("自分の型", sectionSemantics("自分の型", 0, StringsJa))
     }
 
     @Test
@@ -163,17 +176,17 @@ class LibraryIndexScreenTest {
 
     @Test
     fun `the よく使う item states the direction it will move the routine`() {
-        assertEquals("よく使うに入れる", RoutineMenuItem.Favourite.label)
-        assertEquals("よく使うから外す", RoutineMenuItem.Unfavourite.label)
+        assertEquals("よく使うに入れる", RoutineMenuItem.Favourite.label(StringsJa))
+        assertEquals("よく使うから外す", RoutineMenuItem.Unfavourite.label(StringsJa))
         assertTrue(routineMenuItems(sevenMinute).contains(RoutineMenuItem.Favourite))
         assertTrue(
             routineMenuItems(sevenMinute.copy(favourite = true)).contains(RoutineMenuItem.Unfavourite),
         )
     }
 
-    // 削除's two-branch confirm is `deleteRoutineCopy`'s, shared with `GYM.HOME` and
-    // `GYM.LIBRARY.DETAIL`, and is pinned by whichever file owns it — this page reads it and adds no
-    // second implementation to test.
+    // 削除's two-branch confirm is `deleteRoutineConfirm`'s, shared with `GYM.LIBRARY.DETAIL` and
+    // pinned by `LibraryDetailCopyTest` — this page reads it and adds no second implementation to
+    // test.
 
     private fun summary(
         routineId: String,

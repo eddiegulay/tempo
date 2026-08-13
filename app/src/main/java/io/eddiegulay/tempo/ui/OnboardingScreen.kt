@@ -2,7 +2,6 @@ package io.eddiegulay.tempo.ui
 
 import android.content.Intent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,7 +30,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
@@ -45,6 +43,8 @@ import io.eddiegulay.tempo.notification.TempoNotificationListener
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 
 /**
  * First-launch gate. Before Tempo reaches Home it names every access it relies on and why, then lets
@@ -224,13 +224,18 @@ private fun StatusDot(active: Boolean) {
     )
 }
 
+/**
+ * 許可 / あとで. A lozenge for the same reason the header actions are: a bare word with no fill of its
+ * own, where a rectangle would be the only hard edge on a page made of prose and hairlines. `minWidth`
+ * grows the target rightward into the 28dp gap so あとで is 48dp wide without moving a pixel of type.
+ */
 @Composable
 private fun TextAction(label: String, color: Color, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .sizeIn(minHeight = 48.dp)
-            .clickable(onClick = onClick)
-            .semantics { role = Role.Button; contentDescription = label },
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .pressable(TempoShapes.Word, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label },
         contentAlignment = Alignment.CenterStart,
     ) {
         Text(
@@ -259,10 +264,11 @@ private fun BeginButton(enabled: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 56.dp)
-            .clip(CircleShape)
-            .background(color.copy(alpha = 0.07f))
-            .clickable(enabled = enabled, onClick = onClick)
-            .semantics { role = Role.Button; contentDescription = s.onboarding.begin },
+            // The one filled control in the app, and already a capsule — so the press takes
+            // `CircleShape` too and the wash lands exactly on the fill rather than in a box around it.
+            .background(color.copy(alpha = 0.07f), CircleShape)
+            .pressable(CircleShape, enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = s.onboarding.begin },
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -304,9 +310,9 @@ private fun LanguageWord(word: String, selected: Boolean, onClick: () -> Unit) {
     val c = LocalTempoColors.current
     Box(
         modifier = Modifier
-            .sizeIn(minHeight = 48.dp)
-            .clickable(onClick = onClick)
-            .semantics { role = Role.RadioButton; contentDescription = word },
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .pressable(TempoShapes.Word, role = Role.RadioButton, onClick = onClick)
+            .semantics { contentDescription = word },
         contentAlignment = Alignment.CenterStart,
     ) {
         Text(

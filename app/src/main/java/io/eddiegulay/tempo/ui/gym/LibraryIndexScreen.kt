@@ -4,10 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,7 +24,6 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -42,7 +38,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
@@ -63,7 +58,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.calendar.Loadable
-import io.eddiegulay.tempo.data.JapaneseDate
 import io.eddiegulay.tempo.gym.label
 import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.i18n.Strings
@@ -78,7 +72,7 @@ import io.eddiegulay.tempo.gym.RoutineSummary
 import io.eddiegulay.tempo.gym.Tier
 import io.eddiegulay.tempo.gym.bestMetricLabel
 import io.eddiegulay.tempo.gym.bestValueLabel
-import io.eddiegulay.tempo.gym.durationKanji
+import io.eddiegulay.tempo.gym.displayName
 import io.eddiegulay.tempo.gym.estimateLabel
 import io.eddiegulay.tempo.ui.FaultPanel
 import io.eddiegulay.tempo.ui.FaultStrip
@@ -87,6 +81,9 @@ import io.eddiegulay.tempo.ui.rememberMinuteTime
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.combinedPressable
+import io.eddiegulay.tempo.ui.theme.pressable
 
 /*
  * GYM.LIBRARY.INDEX — 型. `04-library-records.md` §3's first page.
@@ -135,9 +132,6 @@ data class RoutineCardCopy(
     val description: String,
 )
 
-/** 最高 十七巡's first word — §6's best tiles and `GYM.RECORDS.PR`'s own title. */
-private const val BEST_PREFIX = "最高"
-
 /**
  * A [RoutineSummary] as a card reads it.
  *
@@ -165,18 +159,23 @@ private const val BEST_PREFIX = "最高"
  *
  * The 制限時間 fragment is AMRAP-only, following `EngineRows.engineRows` rather than "any routine with
  * a cap": §6 marks 制限時間 AMRAP-only and the two surfaces must not disagree about which routines have
- * a clock. A cap renders through [durationKanji] (二十分) and not as bare seconds, which is the same
- * split `DECISIONS.md` §Q10 draws — a cap is a span of the clock you watch, a rest is a value you set.
+ * a clock. A cap renders through `fmt.duration` (二十分 / `20m`) and not as bare seconds, which is
+ * the same split `DECISIONS.md` §Q10 draws — a cap is a span of the clock you watch, a rest is a value
+ * you set.
  *
  * A best with no documented label — `HIGHEST_STEP`, the one `BestMetric` §Q9 forbids inventing a word
  * for — is treated as no best at all, so the card falls back to its engine label rather than printing
  * a bare number under a missing heading.
+ *
+ * The name is [displayName]'s, not the row's: a seeded routine is stored once and read in whichever
+ * language is on, and a user's own routine falls through to what they typed (`CatalogDisplay.kt`).
  */
 fun routineCardCopy(summary: RoutineSummary, strings: Strings): RoutineCardCopy {
-    val structure = JapaneseDate.kanjiExtended(summary.stationCount) + "種目"
+    val name = summary.displayName(strings)
+    val structure = strings.fmt.stations(summary.stationCount)
     val cap = summary.timeCapSeconds
         ?.takeIf { summary.engine == Engine.AMRAP }
-        ?.let(::durationKanji)
+        ?.let { strings.fmt.duration(it) }
     // The cap *is* the routine's duration, so an 約二十分 beside 二十分 would state one fact twice.
     val estimate = if (cap != null) {
         null
@@ -184,13 +183,14 @@ fun routineCardCopy(summary: RoutineSummary, strings: Strings): RoutineCardCopy 
         estimateLabel(
             summary.engine,
             RoutineEstimate(summary.estimatedDurationSeconds, totalReps = 0, approximate = false),
+            strings,
         ).takeIf { it.isNotBlank() }
     }
     val best = summary.best
-        ?.takeIf { bestMetricLabel(it.metric) != null }
-        ?.let { "$BEST_PREFIX " + bestValueLabel(it.metric, it.value) }
-    val count = summary.timesDone.takeIf { it > 0 }?.let { JapaneseDate.kanjiExtended(it) + "回" }
-    val engineLabel = summary.engine.label
+        ?.takeIf { bestMetricLabel(it.metric, strings) != null }
+        ?.let { strings.gymLibrary.bestValue(bestValueLabel(it.metric, it.value, strings)) }
+    val count = summary.timesDone.takeIf { it > 0 }?.let { strings.fmt.times(it) }
+    val engineLabel = summary.engine.label(strings)
 
     val detail = listOfNotNull(
         structure,
@@ -198,17 +198,17 @@ fun routineCardCopy(summary: RoutineSummary, strings: Strings): RoutineCardCopy 
         estimate,
         // Displaced from the meta line only when a record is standing on it.
         engineLabel.takeIf { best != null },
-    ).joinToString(" ・ ")
+    ).joinToString(strings.fmt.separator)
 
     return RoutineCardCopy(
-        name = summary.name,
+        name = name,
         tier = summary.tier?.label(strings),
         detail = detail,
         engine = if (best == null) engineLabel else null,
         best = best,
         count = count,
         description = listOfNotNull(
-            summary.name,
+            name,
             summary.tier?.label(strings),
             structure,
             cap,
@@ -216,7 +216,7 @@ fun routineCardCopy(summary: RoutineSummary, strings: Strings): RoutineCardCopy 
             engineLabel,
             best,
             count,
-        ).joinToString("、"),
+        ).joinToString(strings.fmt.listSeparator),
     )
 }
 
@@ -227,8 +227,8 @@ fun routineCardCopy(summary: RoutineSummary, strings: Strings): RoutineCardCopy 
  * under it, and 「自分の型、〇件」 is a scolding where 型はまだありません — the line directly beneath it —
  * is a statement; the count adds nothing a screen-reader user is about to hear anyway.
  */
-fun sectionSemantics(label: String, count: Int): String =
-    if (count <= 0) label else label + "、" + JapaneseDate.kanjiExtended(count) + "件"
+fun sectionSemantics(label: String, count: Int, strings: Strings): String =
+    if (count <= 0) label else label + strings.fmt.listSeparator + strings.fmt.items(count)
 
 // ─── The long-press menu ────────────────────────────────────────────────────────────────────────
 
@@ -241,14 +241,28 @@ fun sectionSemantics(label: String, count: Int): String =
  * need the gesture, and the way to guarantee that is to make one list the source of both.
  *
  * Every label is `04-library-records.md` §6's: 始める, 写して作る, よく使うに入れる / よく使うから外す,
- * 削除.
+ * 削除 — and every one of them is now [label]'s rather than a constructor argument. A label fixed at
+ * class-init cannot be re-resolved when the user flips the language (`DECISIONS.md` §L3), and this
+ * enum is a `object`-lifetime singleton: it would have held whichever language was selected the first
+ * time the class loaded, for the life of the process.
+ *
+ * The words are shared with the detail page's foot, which offers the same actions as centred rows.
  */
-enum class RoutineMenuItem(val label: String) {
-    Start("始める"),
-    Duplicate("写して作る"),
-    Favourite("よく使うに入れる"),
-    Unfavourite("よく使うから外す"),
-    Delete("削除"),
+enum class RoutineMenuItem {
+    Start,
+    Duplicate,
+    Favourite,
+    Unfavourite,
+    Delete,
+}
+
+/** §6's word for each item, resolved per read. */
+fun RoutineMenuItem.label(strings: Strings): String = when (this) {
+    RoutineMenuItem.Start -> strings.gymLibrary.start
+    RoutineMenuItem.Duplicate -> strings.gymLibrary.actionDuplicate
+    RoutineMenuItem.Favourite -> strings.gymLibrary.actionFavourite
+    RoutineMenuItem.Unfavourite -> strings.gymLibrary.actionUnfavourite
+    RoutineMenuItem.Delete -> strings.gymLibrary.actionDelete
 }
 
 /**
@@ -285,17 +299,14 @@ fun routineMenuItems(summary: RoutineSummary): List<RoutineMenuItem> = buildList
 
 // ─── The page ───────────────────────────────────────────────────────────────────────────────────
 
-/**
- * 型's three sections, in the order §3's mock stacks them, and the page's own title.
+/*
+ * 型's three sections and the page's own title are `strings.gymLibrary.title` /
+ * `.sectionFrequent` / `.sectionBuiltIn` / `.sectionUser`.
  *
- * [PAGE_TITLE] and [HEADING_BUILT_IN] are deliberately the same word and deliberately two constants:
- * §6 lists 型 twice, once as "library page title — here a page, not a section" and once as the
- * built-in section's heading, and they are free to diverge without either call site chasing the other.
+ * The title and the built-in heading are deliberately **two members** even though Japanese spells both
+ * 型: §6 lists the word twice, once as "library page title — here a page, not a section" and once as
+ * the built-in section's heading. English is where that split stops being theoretical.
  */
-private const val PAGE_TITLE = "型"
-private const val HEADING_FREQUENT = "よく使う"
-private const val HEADING_BUILT_IN = "型"
-private const val HEADING_USER = "自分の型"
 
 /**
  * The engine chips, in §3's own order: 巡回 段階 毎分 完走 時間内.
@@ -336,6 +347,7 @@ private val ENGINE_CHIPS = listOf(
 @Composable
 fun LibraryIndexScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val now by rememberMinuteTime()
 
     val index by gym.libraryIndex.collectAsStateWithLifecycle()
@@ -361,28 +373,28 @@ fun LibraryIndexScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
         ) {
             Column {
                 Text(
-                    text = PAGE_TITLE,
+                    text = s.gymLibrary.title,
                     modifier = Modifier.semantics { heading() },
                     style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
                 )
                 Spacer(Modifier.height(7.dp))
                 Text(
-                    text = "${JapaneseDate.era(now)} ・ ${JapaneseDate.monthDay(now)}",
+                    text = s.fmt.era(now) + s.fmt.separator + s.fmt.monthDay(now),
                     style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 4.sp, color = c.inkFaint),
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                 HeaderAction(
                     // 探す / とじる, §6's own pair. The word states what the tap does, not what is open.
-                    label = if (searchOpen) "とじる" else "探す",
-                    description = if (searchOpen) "とじる" else "探す",
+                    label = if (searchOpen) s.gymLibrary.searchClose else s.gymLibrary.searchOpen,
+                    description = if (searchOpen) s.gymLibrary.searchClose else s.gymLibrary.searchOpen,
                     color = c.inkFaint,
                     onClick = { if (searchOpen) gym.closeSearch() else gym.openSearch() },
                 )
                 HeaderAction(
-                    label = "作る",
+                    label = s.gymLibrary.create,
                     // §6's builder title, so the button and the page it opens say the same word.
-                    description = "型を作る",
+                    description = s.gymLibrary.createDescription,
                     color = if (ready) c.accent else c.inkFaint,
                     enabled = ready,
                     onClick = { gym.go(GymRoute.Builder()) },
@@ -527,13 +539,13 @@ private fun SearchAndFilters(
                 .fillMaxWidth()
                 .padding(horizontal = 22.dp)
                 .focusRequester(focusRequester)
-                .semantics { contentDescription = "さがす" },
+                .semantics { contentDescription = s.gymLibrary.searchPlaceholder },
             decorationBox = { inner ->
                 Column {
                     Box(Modifier.padding(vertical = 8.dp)) {
                         if (filter.query.isEmpty()) {
                             Text(
-                                text = "さがす",
+                                text = s.gymLibrary.searchPlaceholder,
                                 style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, color = c.inkFaint),
                             )
                         }
@@ -556,11 +568,11 @@ private fun SearchAndFilters(
             }
             ChipDivider()
             ENGINE_CHIPS.forEach { engine ->
-                FilterChip(engine.label, engine in filter.engines) { onEngine(engine) }
+                FilterChip(engine.label(s), engine in filter.engines) { onEngine(engine) }
             }
             ChipDivider()
             DurationBucket.entries.forEach { bucket ->
-                FilterChip(bucket.label, bucket == filter.duration) { onDuration(bucket) }
+                FilterChip(bucket.label(s), bucket == filter.duration) { onDuration(bucket) }
             }
         }
     }
@@ -581,9 +593,27 @@ private fun ChipDivider() {
 }
 
 /**
- * One filter chip. Selected is vermillion, unselected is faint — no fill, no border, no ripple pill:
- * the page already carries cards, and a second boxed idiom on the same screen would make the chips
- * read as content.
+ * One filter chip. Selected is vermillion, unselected is faint — **no fill and no border**: the page
+ * already carries cards, and a second boxed idiom on the same screen would make the chips read as
+ * content.
+ *
+ * The header of this function used to end that list with "no ripple pill" while the body was a bare
+ * `clickable`, which has never been indication-free: it took whatever `LocalIndication` provided —
+ * Material's grey rectangle before [InkPress], the ink wash since. The doc and the code have disagreed
+ * since the chip was written, and the disagreement is resolved **towards a press**, not away from one.
+ *
+ * What that line was defending is the chip's *resting* appearance, and that is untouched: a chip at
+ * rest still draws nothing but its word. What it was not entitled to promise is that a tap does
+ * nothing visible. Every other chip family in 鍛錬 — the builder's engine row, the picker's はかり方,
+ * the detail page's tiers — now takes [TempoShapes.Word], and a filter that changes the list below it
+ * is the last control on the page that should leave a thumb guessing whether it landed. `Word` is also
+ * the shape that keeps the promise honest: a lozenge of wash that appears under the finger and dries,
+ * never a pill drawn around the word.
+ *
+ * *Rejected* — `indication = null`, keeping the sentence as written. It is the reading the old comment
+ * supports, and it would make these the only chips in the feature that are silent, on the one screen
+ * whose chips filter what is underneath them. `GymTabBar` is silent on purpose because the dock is
+ * chrome; a filter is content.
  *
  * `stateDescription = "選択中"` is §3's accessibility line verbatim. There is no documented word for
  * the unselected state and none is invented — an unselected chip simply carries no state, which is
@@ -592,13 +622,15 @@ private fun ChipDivider() {
 @Composable
 private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Box(
         modifier = Modifier
-            .sizeIn(minHeight = 48.dp)
-            .clickable(onClick = onClick)
+            // 体 is one glyph wide. The target grows into the gutter either side; the word does not
+            // move, because the `Box` centres it in whatever width the floor buys.
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .pressable(TempoShapes.Word, role = Role.Button, onClick = onClick)
             .semantics {
-                role = Role.Button
-                if (selected) stateDescription = "選択中"
+                if (selected) stateDescription = s.gymLibrary.selected
             }
             .padding(horizontal = 10.dp),
         contentAlignment = Alignment.Center,
@@ -639,24 +671,25 @@ private fun LibraryList(
     onMenu: (RoutineSummary, RoutineMenuItem) -> Unit,
     onExercises: () -> Unit,
 ) {
+    val s = LocalStrings.current
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize().imePadding().padding(horizontal = 22.dp, vertical = 6.dp),
         // The seated tab bar, which is shallower than the launcher's floating dock (`00-plan.md` §3.2).
         contentPadding = PaddingValues(bottom = 88.dp),
     ) {
-        routineSection(HEADING_FREQUENT, "frequent", routines.frequent, onOpen, onMenu)
-        routineSection(HEADING_BUILT_IN, "builtin", routines.builtIn, onOpen, onMenu)
+        routineSection(s.gymLibrary.sectionFrequent, "frequent", routines.frequent, onOpen, onMenu)
+        routineSection(s.gymLibrary.sectionBuiltIn, "builtin", routines.builtIn, onOpen, onMenu)
 
         if (routines.user.isNotEmpty() || !filtering) {
-            routineSection(HEADING_USER, "user", routines.user, onOpen, onMenu, keepEmpty = true)
+            routineSection(s.gymLibrary.sectionUser, "user", routines.user, onOpen, onMenu, keepEmpty = true)
             if (routines.user.isEmpty()) {
-                item(key = "empty:user") { InlineEmpty("型はまだありません") }
+                item(key = "empty:user") { InlineEmpty(s.gymLibrary.userEmpty) }
             }
         }
 
         item(key = "action:exercises") {
-            CenteredAction(label = "種目を見る", onClick = onExercises)
+            CenteredAction(label = s.gymLibrary.exercises, onClick = onExercises)
         }
     }
 }
@@ -709,13 +742,14 @@ private fun LazyListScope.routineSection(
 @Composable
 private fun SectionHeading(label: String, count: Int) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 6.dp)
             .clearAndSetSemantics {
                 heading()
-                contentDescription = sectionSemantics(label, count)
+                contentDescription = sectionSemantics(label, count, s)
             },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(9.dp),
@@ -739,7 +773,6 @@ private fun SectionHeading(label: String, count: Int) {
  * The name is allowed one line and the detail line two, because a card that grows to fit a long
  * routine name pushes the count out of alignment down the whole list; §3 sizes the card at ~86.dp.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RoutineCardRow(
     summary: RoutineSummary,
@@ -752,8 +785,8 @@ private fun RoutineCardRow(
 
     val copy = remember(summary, s) { routineCardCopy(summary, s) }
     val items = remember(summary.builtIn, summary.favourite) { routineMenuItems(summary) }
-    val actions = remember(items, onMenu) {
-        items.map { item -> CustomAccessibilityAction(label = item.label) { onMenu(item); true } }
+    val actions = remember(items, onMenu, s) {
+        items.map { item -> CustomAccessibilityAction(label = item.label(s)) { onMenu(item); true } }
     }
 
     Box {
@@ -761,14 +794,18 @@ private fun RoutineCardRow(
             Modifier
                 .fillMaxWidth()
                 .padding(vertical = 5.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(c.card)
-                .combinedClickable(onClick = onOpen, onLongClick = { menuOpen = true })
+                .background(c.card, TempoShapes.Card)
+                .combinedPressable(
+                    shape = TempoShapes.Card,
+                    onLongClickLabel = s.gymLibrary.menu,
+                    onLongClick = { menuOpen = true },
+                    onClick = onOpen,
+                )
                 .clearAndSetSemantics {
                     contentDescription = copy.description
                     role = Role.Button
                     onClick { onOpen(); true }
-                    onLongClick(label = "メニュー") { menuOpen = true; true }
+                    onLongClick(label = s.gymLibrary.menu) { menuOpen = true; true }
                     customActions = actions
                 },
         ) {
@@ -844,7 +881,7 @@ private fun RoutineCardRow(
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             items.forEach { item ->
                 DropdownMenuItem(
-                    text = { Text(item.label, style = TextStyle(fontFamily = Mincho, color = c.ink)) },
+                    text = { Text(item.label(s), style = TextStyle(fontFamily = Mincho, color = c.ink)) },
                     onClick = {
                         menuOpen = false
                         onMenu(item)
@@ -870,11 +907,13 @@ private fun RoutineCardRow(
  * The archive branch is the ordinary one: sessions stay readable and keep their PRs (§1 rule 2), which
  * is exactly what the body says out loud.
  *
- * The words themselves are **`deleteRoutineCopy`'s, not this page's**. `GYM.HOME` and
- * `GYM.LIBRARY.DETAIL` raise the same confirm from the same two rows of §6, and three implementations
- * of one string table is the divergence bug `DECISIONS.md` §Q7 spells out for numerals. This call site
- * reads only `title` / `body` / `confirm` and supplies §6's own やめる, so it is indifferent to which
- * file ends up owning the function.
+ * The words themselves are **not this page's**. `GYM.HOME` and `GYM.LIBRARY.DETAIL` raise the same
+ * confirm from the same two rows of §6, and three implementations of one string table is the
+ * divergence bug `DECISIONS.md` §Q7 spells out for numerals. It now reads [deleteRoutineConfirm] —
+ * `GYM.LIBRARY.DETAIL`'s own branch, which is the same branch this page used to reach through
+ * `deleteRoutineCopy` — so the two library surfaces share one implementation and one key set.
+ * `GymHomeCopy.deleteRoutineCopy` is still a third copy of the branch; pointing it at the same keys is
+ * a one-line change in a file this unit does not own, and it is on the report.
  */
 @Composable
 private fun DeleteRoutineDialog(
@@ -883,13 +922,14 @@ private fun DeleteRoutineDialog(
     onDismiss: () -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     // `countForRoutine` is now a `Loadable` (`GymRepository.countForRoutine`), so an unread or failed
     // count no longer masquerades as zero. Unwrapped here only to keep this page compiling unchanged;
     // the projection's own `timesDone` is still the second reading and still the one that gates the
     // purge branch, so an unknown store count can only ever make this dialog *more* conservative.
     val stored by gym.countForRoutine(target.routineId).collectAsStateWithLifecycle()
     val sessions = maxOf(stored.valueOrNull() ?: 0, target.timesDone)
-    val copy = deleteRoutineCopy(target.name, sessions)
+    val copy = deleteRoutineConfirm(target.displayName(s), sessions, s)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -925,7 +965,7 @@ private fun DeleteRoutineDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("やめる", style = TextStyle(fontFamily = Mincho, color = c.inkFaint))
+                Text(copy.cancel, style = TextStyle(fontFamily = Mincho, color = c.inkFaint))
             }
         },
     )
@@ -941,9 +981,10 @@ private fun DeleteRoutineDialog(
 @Composable
 private fun LoadingState() {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
-            text = "読み込み中",
+            text = s.gymLibrary.loading,
             style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
         )
     }
@@ -959,14 +1000,15 @@ private fun LoadingState() {
 @Composable
 private fun NoMatchState(chipped: Boolean, onClear: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(
-                text = "該当する型はありません",
+                text = s.gymLibrary.noMatch,
                 style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
             )
             if (chipped) {
-                CenteredAction(label = "絞り込みを外す", onClick = onClear)
+                CenteredAction(label = s.gymLibrary.clearFilters, onClick = onClear)
             }
         }
     }
@@ -995,8 +1037,8 @@ private fun CenteredAction(label: String, onClick: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 48.dp)
-            .clickable(onClick = onClick)
-            .semantics { role = Role.Button; contentDescription = label }
+            .pressable(TempoShapes.Word, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label }
             .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {

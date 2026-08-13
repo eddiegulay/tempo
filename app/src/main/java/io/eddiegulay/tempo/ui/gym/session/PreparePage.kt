@@ -11,6 +11,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.eddiegulay.tempo.gym.displayCue
+import io.eddiegulay.tempo.gym.displayName
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 
@@ -46,16 +49,19 @@ import io.eddiegulay.tempo.ui.theme.Mincho
 @Composable
 fun PreparePage(state: SessionUiState, actions: SessionActions, modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val remaining = state.prepare?.remainingMs ?: state.remainingMs
     val total = state.prepare?.totalMs ?: state.segment.effectiveMs
     val exercise = state.exercise ?: state.nextExercise
-    val prescription = prescriptionLabel(upcomingSegment(state))
+    val prescription = prescriptionLabel(s, upcomingSegment(state))
+    val name = exercise?.displayName(s)
+    val cue = exercise?.displayCue(s)
 
     // Frozen on the countdown's *length*, not on what is left of it: read live it would say 五秒後に,
     // 四秒後に, 三秒後に — one announcement per second, which is the failure `00-plan.md` §4.1 rule 5
     // exists to prevent, and it would talk over the very cue it is describing.
-    val announcement = remember(total, exercise?.nameJa) {
-        prepareAnnouncement(total, exercise?.nameJa)
+    val announcement = remember(total, name, s.lang) {
+        prepareAnnouncement(s, total, name)
     }
 
     PlayerFrame(
@@ -69,7 +75,7 @@ fun PreparePage(state: SessionUiState, actions: SessionActions, modifier: Modifi
         announcement = announcement,
         ringContent = {
             Text(
-                text = "支度",
+                text = s.gymSession.prepareTitle,
                 style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = 6.sp, color = c.inkFaint),
             )
             Spacer(Modifier.height(6.dp))
@@ -89,17 +95,14 @@ fun PreparePage(state: SessionUiState, actions: SessionActions, modifier: Modifi
             )
         },
         below = {
+            // One node, and it is the same sentence the entry announcement made: three separate nodes
+            // read as an orphaned name, an orphaned number and an orphaned instruction.
+            val upcoming = listOfNotNull(name, prescription, cue).joinToString(s.fmt.listSeparator)
             UpcomingBlock(
-                name = exercise?.nameJa,
+                name = name,
                 prescription = prescription,
-                cue = exercise?.cue,
-                modifier = Modifier.clearAndSetSemantics {
-                    // One node, and it is the same sentence the entry announcement made: three
-                    // separate nodes read as an orphaned name, an orphaned number and an orphaned
-                    // instruction.
-                    contentDescription = listOfNotNull(exercise?.nameJa, prescription, exercise?.cue)
-                        .joinToString("、")
-                },
+                cue = cue,
+                modifier = Modifier.clearAndSetSemantics { contentDescription = upcoming },
             )
         },
     )

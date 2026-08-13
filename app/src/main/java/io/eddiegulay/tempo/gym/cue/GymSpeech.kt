@@ -8,6 +8,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.view.accessibility.AccessibilityManager
 import io.eddiegulay.tempo.gym.SpeechAvailability
+import io.eddiegulay.tempo.i18n.Lang
 import java.util.Locale
 
 /**
@@ -29,15 +30,37 @@ fun isTouchExplorationEnabled(context: Context): Boolean {
 }
 
 /**
+ * The voice a [Lang] is read in — **the one place the app decides which voice to ask for.**
+ *
+ * There were two hard-coded `Locale.JAPANESE`s: the player's channel ([GymSpeech.setLanguage]) and
+ * `GYM.SETTINGS`' own probe. Two independent copies of one decision is how they came to disagree with
+ * the UI language and could not stop disagreeing with each other; this is the shared answer, and the
+ * settings probe should call it rather than keep a third.
+ *
+ * `Locale.ENGLISH` rather than a country-qualified locale on purpose. `TextToSpeech.setLanguage`
+ * answers `LANG_AVAILABLE` for a language match and only `LANG_COUNTRY_AVAILABLE` for a country one,
+ * and every value except `LANG_MISSING_DATA` / `LANG_NOT_SUPPORTED` counts as available — so asking
+ * for the language alone accepts en-GB, en-IN and en-US alike. Asking for `en-US` would have made a
+ * British voice a missing voice.
+ */
+fun ttsLocale(lang: Lang): Locale = when (lang) {
+    Lang.Ja -> Locale.JAPANESE
+    Lang.En -> Locale.ENGLISH
+}
+
+/**
  * The spoken channel: two words at a time, always interrupting, never asking for anything.
  *
  * Three rules from `03-player.md` §D.6, each of which is a failure someone has shipped before:
  *
  * 1. **`QUEUE_FLUSH`, always.** A stale 「半分」 arriving over the next station is worse than no cue at
  *    all, and a queue in a timer app is a queue that grows.
- * 2. **Silent fallback on a missing Japanese voice.** `LANG_MISSING_DATA` / `LANG_NOT_SUPPORTED` mark
- *    the channel unavailable and the player carries on with tones. It must **never** prompt for a
- *    voice download mid-workout — the one moment the user cannot deal with a dialog.
+ * 2. **Silent fallback on a missing voice.** `LANG_MISSING_DATA` / `LANG_NOT_SUPPORTED` mark the
+ *    channel unavailable and the player carries on with tones. It must **never** prompt for a voice
+ *    download mid-workout — the one moment the user cannot deal with a dialog. That rule matters more
+ *    now, not less: a Japanese-market phone very nearly always has a Japanese voice, and the same phone
+ *    running an English UI may well have no English one, so this fallback is reached by a population it
+ *    never was before. `Intent(ACTION_INSTALL_TTS_DATA)` is what it must not do, and it does not.
  * 3. **Never the 3-2-1.** Engine latency is variable and speech would drift audibly against a haptic
  *    that does not. That rule is enforced by the cue table, which gives [Cue.COUNT_TICK] no speech
  *    column at all, so there is nothing here to get wrong.
@@ -55,6 +78,7 @@ class GymSpeech(
     context: Context,
     onWindowOpen: () -> Unit,
     onWindowClose: () -> Unit,
+    language: Lang = Lang.Ja,
 ) : SpeechSink {
 
     private val appContext = context.applicationContext
@@ -62,6 +86,9 @@ class GymSpeech(
 
     private var tts: TextToSpeech? = null
     private var initialised = false
+
+    /** The language every probe asks about and every utterance is read in. See [setLanguage]. */
+    private var lang: Lang = language
 
     /** Unknown until [prepare] has run and the engine has called back. Callers disarm on anything else. */
     override var availability: SpeechAvailability = SpeechAvailability.NoEngine
@@ -98,19 +125,34 @@ class GymSpeech(
         }
     }
 
+    /**
+     * Re-points the voice at [lang], and re-probes if the engine is already up.
+     *
+     * Idempotent, and cheap when nothing changed. The probe is the whole of the work: `setLanguage`
+     * *is* the question ("do you have a voice for this?") as well as the instruction, so there is no
+     * separate query to make and no state to invalidate beyond [initialised].
+     *
+     * Called with no engine bound — the common case, because a launcher whose user never turns speech
+     * on never binds one — this only records the answer to give at [prepare] time.
+     *
+     * It deliberately does **not** stop what is being said. A `setLanguage` applies to subsequent
+     * utterances, so at worst one already-queued phrase finishes in the outgoing voice; cutting it off
+     * would mean a cue vanishing mid-word, which §D.6 treats as worse than a cue that is merely late.
+     */
+    override fun setLanguage(lang: Lang) {
+        if (this.lang == lang) return
+        this.lang = lang
+        val engine = tts ?: return
+        applyLanguage(engine)
+    }
+
     private fun onEngineReady(status: Int) {
         val engine = tts ?: return
         if (status != TextToSpeech.SUCCESS) {
             availability = SpeechAvailability.NoEngine
             return
         }
-        val result = runCatching { engine.setLanguage(Locale.JAPANESE) }
-            .getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
-        availability = when (result) {
-            TextToSpeech.LANG_MISSING_DATA, TextToSpeech.LANG_NOT_SUPPORTED ->
-                SpeechAvailability.NoJapaneseVoice
-            else -> SpeechAvailability.Available
-        }
+        applyLanguage(engine)
         runCatching {
             engine.setAudioAttributes(
                 AudioAttributes.Builder()
@@ -120,6 +162,31 @@ class GymSpeech(
             )
         }
         engine.setOnUtteranceProgressListener(listener)
+    }
+
+    /**
+     * Asks the engine for a voice in [lang] and records the answer — the one probe, in one place.
+     *
+     * It was two copies of the same `when` before ([onEngineReady] and a settings-page probe), which is
+     * how a hard-coded `Locale.JAPANESE` came to exist twice. This is the engine's half; the settings
+     * page keeps its own because it must express a fourth state (*not answered yet*) that this field
+     * cannot — but both now have to ask about the same language, and this is the one the player obeys.
+     *
+     * [initialised] is set from the result rather than alongside it, so a language change that loses
+     * the voice also stops [speak] from handing text to an engine that would read it in the wrong one.
+     */
+    private fun applyLanguage(engine: TextToSpeech) {
+        val result = runCatching { engine.setLanguage(ttsLocale(lang)) }
+            .getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
+        availability = when (result) {
+            // The case still spells "Japanese" and no longer means it: this arm is reached for whatever
+            // [lang] is. Renaming it to `NoVoiceForLanguage` is one token in `GymPreferences.kt` plus
+            // every `when` over the enum, and `speechRowState` is exhaustive with no `else`, so the
+            // rename has to land in one commit across files this unit does not own. Reported, not done.
+            TextToSpeech.LANG_MISSING_DATA, TextToSpeech.LANG_NOT_SUPPORTED ->
+                SpeechAvailability.NoVoiceForLanguage
+            else -> SpeechAvailability.Available
+        }
         initialised = availability == SpeechAvailability.Available
     }
 

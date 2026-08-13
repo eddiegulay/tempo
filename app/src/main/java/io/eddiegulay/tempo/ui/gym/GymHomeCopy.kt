@@ -2,7 +2,6 @@ package io.eddiegulay.tempo.ui.gym
 
 import io.eddiegulay.tempo.calendar.Loadable
 import io.eddiegulay.tempo.data.GymFault
-import io.eddiegulay.tempo.data.JapaneseDate
 import io.eddiegulay.tempo.data.TempoFault
 import io.eddiegulay.tempo.gym.BestMetric
 import io.eddiegulay.tempo.gym.Engine
@@ -16,13 +15,13 @@ import io.eddiegulay.tempo.gym.RoutineBest
 import io.eddiegulay.tempo.gym.RoutineCard
 import io.eddiegulay.tempo.gym.SegmentResult
 import io.eddiegulay.tempo.gym.data.recoveredActiveMs
-import io.eddiegulay.tempo.gym.durationKanjiFromMs
+import io.eddiegulay.tempo.gym.displayName
 import io.eddiegulay.tempo.gym.homeBuiltIn
-import io.eddiegulay.tempo.ui.faultCopy
+import io.eddiegulay.tempo.i18n.Strings
+import io.eddiegulay.tempo.ui.faultHasAction
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
@@ -41,6 +40,17 @@ import kotlin.math.roundToLong
  * case has no documented copy the function returns null so the surface omits the line. Nothing here is
  * invented, and the three places that came closest are named in KDoc where they occur ([bestLine]'s
  * `HIGHEST_STEP`, [stalenessLabel]'s bucket edges, [lastResultLine]'s engine split).
+ *
+ * **No word below is a literal any more, and none of them was a constant to begin with**
+ * (`.planning/i18n/DECISIONS.md` §L2, §L4). This file used to be seventeen functions gluing a numeral
+ * to a suffix with `+`; every one of them now *selects* a whole composed string from
+ * `strings.gymHome` and hands it a value that came from `strings.fmt`. The numerals, the durations,
+ * the separators and the relative days are all the formatter's — a `when` that selects is translatable
+ * by replacing a table, and a `when` that concatenates is not.
+ *
+ * **Every function takes `strings: Strings` as a parameter**, never a global and never a composition
+ * local: `GymHomeCopyTest` is plain JUnit with no Compose and no `Context`, and passing the table is
+ * what keeps it there.
  */
 
 // ─── The page's sections ────────────────────────────────────────────────────────────────────────
@@ -96,21 +106,22 @@ data class HomeSection(
  * 3. **すべて見る appears only when the preview is short of the total.** `builtInTotal` is untouched
  *    by either preview width, so this asks the same question in the first-run and ordinary shapes.
  */
-fun homeSections(feed: GymHomeFeed): List<HomeSection> {
+fun homeSections(feed: GymHomeFeed, strings: Strings): List<HomeSection> {
     val builtIn = homeBuiltIn(feed)
+    val copy = strings.gymHome
     return buildList {
         if (feed.everTrained && feed.recent.isNotEmpty()) {
-            add(HomeSection(HomeSectionKind.Frequent, "よく使う", feed.recent))
+            add(HomeSection(HomeSectionKind.Frequent, copy.sectionFrequent, feed.recent))
         }
         add(
             HomeSection(
                 kind = HomeSectionKind.BuiltIn,
-                label = "型",
+                label = copy.sectionBuiltIn,
                 cards = builtIn,
                 seeAll = feed.builtInTotal > builtIn.size,
             ),
         )
-        add(HomeSection(HomeSectionKind.User, "自分の型", feed.userRoutines))
+        add(HomeSection(HomeSectionKind.User, copy.sectionUser, feed.userRoutines))
     }
 }
 
@@ -131,17 +142,18 @@ fun homeSections(feed: GymHomeFeed): List<HomeSection> {
  *
  * @param today the day to measure 三日前 against. The caller passes one derived from the same clock
  *   the header's date is drawn from, so the card and the header can never disagree about what day it is.
+ * @param strings the active table. A parameter rather than a lookup, so this stays a JVM test (§L4).
  */
-fun lastResultLine(result: LastResult?, today: LocalDate, zone: ZoneId): String? {
+fun lastResultLine(result: LastResult?, today: LocalDate, zone: ZoneId, strings: Strings): String? {
     if (result == null) return null
     val roundsEngine = result.engine == Engine.AMRAP || result.engine == Engine.EMOM
     val value = if (roundsEngine && result.roundsCompleted > 0) {
-        JapaneseDate.kanjiExtended(result.roundsCompleted) + "巡"
+        strings.fmt.rounds(result.roundsCompleted)
     } else {
-        durationKanjiFromMs(result.activeMs)
+        strings.fmt.durationFromMs(result.activeMs)
     }
     val day = Instant.ofEpochMilli(result.startedAt).atZone(zone).toLocalDate()
-    return "前回 " + value + " ・ " + relativeDayJa(day, today)
+    return strings.gymHome.lastResult(value, strings.fmt.relativeDay(day, today))
 }
 
 /**
@@ -160,13 +172,14 @@ fun lastResultLine(result: LastResult?, today: LocalDate, zone: ZoneId): String?
  * A non-positive value is also null. 最高 〇巡 is not a record, and a home card with no PR simply has
  * one line fewer — card heights are not fixed (§B edge case 4).
  */
-fun bestLine(best: RoutineBest?): String? {
+fun bestLine(best: RoutineBest?, strings: Strings): String? {
     if (best == null || best.value <= 0.0) return null
+    val copy = strings.gymHome
     return when (best.metric) {
-        BestMetric.MOST_ROUNDS -> "最高 " + JapaneseDate.kanjiExtended(best.value.roundToInt()) + "巡"
-        BestMetric.MOST_REPS -> "最高 " + JapaneseDate.kanjiExtended(best.value.roundToInt()) + "回"
-        BestMetric.BEST_TIME -> "最速 " + durationKanjiFromMs(best.value.roundToLong())
-        BestMetric.MOST_VOLUME -> "最高負荷 " + JapaneseDate.kanjiExtended(best.value.roundToInt())
+        BestMetric.MOST_ROUNDS -> copy.bestMost(strings.fmt.rounds(best.value.roundToInt()))
+        BestMetric.MOST_REPS -> copy.bestMost(strings.fmt.reps(best.value.roundToInt()))
+        BestMetric.BEST_TIME -> copy.bestFastest(strings.fmt.durationFromMs(best.value.roundToLong()))
+        BestMetric.MOST_VOLUME -> copy.bestVolume(strings.fmt.count(best.value.roundToInt()))
         BestMetric.HIGHEST_STEP -> null
     }
 }
@@ -193,38 +206,27 @@ fun isPrThisMonth(best: RoutineBest?, today: LocalDate): Boolean {
     return set.year == today.year && set.month == today.month
 }
 
-/** 十四回 — a card's outing count, or **null at zero**: the line is omitted, never rendered 〇回 (§B edge case 3). */
-fun timesDoneLabel(count: Int): String? =
-    if (count <= 0) null else JapaneseDate.kanjiExtended(count) + "回"
-
 /**
- * 六分十四秒 — an elapsed clock read rather than watched.
+ * 十四回 — a card's outing count, or **null at zero**: the line is omitted, never rendered 〇回
+ * (§B edge case 3).
  *
- * Delegates to `Numerals.durationKanjiFromMs` rather than restating its truncation and its no-hours
- * rule. `01-shell.md` §B lists `formatElapsedJa` as this page's own pure function; it is this page's
- * name for a formatter that already exists, and a second implementation would agree on every number
- * anyone tested and disagree on 百分 (`DECISIONS.md` §Q7's argument, applied one file down).
+ * `fmt.times` rather than `fmt.reps`: 回 counts *occasions* here, not repetitions of a movement, and
+ * English has two different words for the two.
  */
-fun formatElapsedJa(millis: Long): String = durationKanjiFromMs(millis)
+fun timesDoneLabel(count: Int, strings: Strings): String? =
+    if (count <= 0) null else strings.fmt.times(count)
 
-/**
- * きょう / きのう / 三日前 — how long ago a card's last outing was.
+/*
+ * **`formatElapsedJa` and `relativeDayJa` were deleted rather than translated**, and both had `Ja` in
+ * their names for the reason the migration found them: they were this page's own copies of behaviour
+ * that belongs to the formatter layer (§L8).
  *
- * Hiragana, because `01-shell.md` §B writes it that way; `JapaneseDate.dayToken` says 今日 / 明日 in
- * kanji for the *calendar* page, which looks forwards, and this looks back. Two surfaces, two
- * vocabularies, both documented.
- *
- * A day in the future reads きょう rather than a negative count — a system clock wound backwards is the
- * only way to produce one, and 負三日前 would report the clock's confusion as a fact about training.
+ * - `formatElapsedJa` already delegated to `durationKanjiFromMs`, which is `fmt.durationFromMs`.
+ * - `relativeDayJa` is `fmt.relativeDay`, which implements both languages — and where Japanese keeps
+ *   two vocabularies on purpose (hiragana きょう/きのう looking backwards, kanji 今日/明日 looking
+ *   forwards, both documented), **English has one word for both**. That collapse is §L7's ruling: a
+ *   documented distinction deleted rather than translated, because there is nowhere for it to go.
  */
-fun relativeDayJa(then: LocalDate, today: LocalDate): String {
-    val days = today.toEpochDay() - then.toEpochDay()
-    return when {
-        days <= 0L -> "きょう"
-        days == 1L -> "きのう"
-        else -> JapaneseDate.kanjiExtended(days.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()) + "日前"
-    }
-}
 
 // ─── The つづき banner ──────────────────────────────────────────────────────────────────────────
 
@@ -252,8 +254,8 @@ fun resumeFault(resumable: Loadable<ResumableSession?>): TempoFault? =
     (resumable as? Loadable.Failed)?.fault
 
 /** 八種目まで進んだ — how far a session got, or null before the first station closed. */
-fun progressLine(stations: Int): String? =
-    if (stations <= 0) null else JapaneseDate.kanjiExtended(stations) + "種目まで進んだ"
+fun progressLine(stations: Int, strings: Strings): String? =
+    if (stations <= 0) null else strings.gymHome.progress(strings.fmt.stations(stations))
 
 /**
  * How many stations a session actually reached, counted from the segments it persisted.
@@ -298,13 +300,17 @@ fun resumeBannerDescription(
     elapsed: String?,
     progress: String?,
     resumable: Boolean,
-): String = listOfNotNull(
-    "つづき",
-    routineName,
-    elapsed?.let { it + " 経過" },
-    progress,
-    "続ける".takeIf { resumable },
-).joinToString("、")
+    strings: Strings,
+): String {
+    val copy = strings.gymHome
+    return listOfNotNull(
+        copy.resumeBanner,
+        routineName,
+        elapsed?.let(copy::elapsed),
+        progress,
+        copy.resumeAction.takeIf { resumable },
+    ).joinToString(strings.fmt.listSeparator)
+}
 
 /**
  * A card's single TalkBack node:
@@ -313,18 +319,23 @@ fun resumeBannerDescription(
  * §B's example separates 前回 六分五十秒 from 三日前 with a comma where the visible line uses ・ — a
  * reading pause where the eye gets a separator — so the one line is re-punctuated rather than composed
  * twice. Composing it twice is how the two drift.
+ *
+ * The re-punctuation is `fmt.separator` → `fmt.listSeparator` rather than 「 ・ 」→「、」, which is why
+ * [lastResultLine] must build its line through the formatter: a literal here would find nothing to
+ * replace in English, where the same two marks are ` · ` and `, `.
  */
 fun routineCardDescription(
     card: RoutineCard,
     lastLine: String?,
     bestLine: String?,
+    strings: Strings,
 ): String = listOfNotNull(
-    card.name,
-    card.summary,
-    lastLine?.replace(" ・ ", "、"),
-    timesDoneLabel(card.timesDone),
+    card.displayName(strings),
+    routineCardSummary(card, strings),
+    lastLine?.replace(strings.fmt.separator, strings.fmt.listSeparator),
+    timesDoneLabel(card.timesDone, strings),
     bestLine,
-).joinToString("、")
+).joinToString(strings.fmt.listSeparator)
 
 // ─── 削除's confirmation ────────────────────────────────────────────────────────────────────────
 
@@ -335,18 +346,29 @@ fun routineCardDescription(
  * count* and not the routine's kind: a routine with history is archived and its records survive
  * (§1 rule 2), one without is purged outright (§1 rule 4). The copy has to say which, because "削除"
  * means two different things and only one of them is reversible.
+ *
+ * **The words are `strings.gymLibrary.delete*`, not this namespace's.** Three surfaces raise this one
+ * dialog — here, `GYM.LIBRARY.INDEX` and `GYM.LIBRARY.DETAIL` — from the same two rows of §6, and
+ * three independent implementations of one sentence is the divergence `DECISIONS.md` §Q7 argues about
+ * for numerals. The library's two pages already converged on one key set and named this function as
+ * the remaining third copy; this is that convergence from the other end. The *shape* stays here
+ * because the call site is this page's, and [DeleteRoutineCopy] carries three strings where the
+ * library's own model carries five.
  */
 data class DeleteRoutineCopy(val title: String, val body: String, val confirm: String)
 
-fun deleteRoutineCopy(routineName: String, timesDone: Int): DeleteRoutineCopy = DeleteRoutineCopy(
-    title = "「" + routineName + "」を削除しますか",
-    body = if (timesDone > 0) {
-        "これまでの" + JapaneseDate.kanjiExtended(timesDone) + "回の記録は残ります。型だけが一覧から消えます。"
-    } else {
-        "やった記録はありません。完全に消えます。"
-    },
-    confirm = if (timesDone > 0) "削除" else "完全に削除",
-)
+fun deleteRoutineCopy(routineName: String, timesDone: Int, strings: Strings): DeleteRoutineCopy {
+    val copy = strings.gymLibrary
+    return DeleteRoutineCopy(
+        title = copy.deleteTitle(routineName),
+        body = if (timesDone > 0) {
+            copy.deleteBodyArchive(strings.fmt.times(timesDone))
+        } else {
+            copy.deleteBodyPurge
+        },
+        confirm = if (timesDone > 0) copy.deleteConfirmArchive else copy.deleteConfirmPurge,
+    )
+}
 
 /**
  * The count 削除's dialog may branch on — [RoutineCard.timesDone], **except** for the routine an open
@@ -382,11 +404,12 @@ fun deleteRoutineCount(card: RoutineCard, openRoutineId: String?): Int =
  * undismissable strip to the top of the feed for the rest of the visit — a failed 写して作る on a
  * routine that has left the library sets `RoutineGone`, and only leaving the shell cleared it.
  *
- * Delegates to [faultCopy] rather than re-listing the four cases: a second table is how the two drift,
- * and the day §Q6 gains an action for one of them this predicate has to follow it. `faultCopy` is a
- * pure function with its own JVM test (`CalendarFeedbackTest`) despite living beside composables.
+ * Delegates to [faultHasAction] rather than re-listing the four cases: a second table is how the two
+ * drift, and the day §Q6 gains an action for one of them this predicate has to follow it. That helper
+ * is `faultCopy`'s own language-independent half, so this stays a question about layout and takes no
+ * `Strings` of its own; both are pure functions with a JVM test (`CalendarFeedbackTest`).
  */
-fun writeFaultStuck(fault: GymFault): Boolean = faultCopy(fault).action == null
+fun writeFaultStuck(fault: GymFault): Boolean = !faultHasAction(fault)
 
 // ─── The resume prompt ──────────────────────────────────────────────────────────────────────────
 
@@ -403,8 +426,8 @@ private const val ONE_HOUR_BUCKET_MS = 2 * 60 * 60 * 1000L
  * is pinned in `GymHomeCopyTest` against `resumability`'s own edge so the two cannot drift.
  */
 private const val RESUMABLE_HORIZON_MS = 4 * 60 * 60 * 1000L
-// No 48h constant: past the 4h horizon the day words come from relativeDayJa, which counts calendar
-// days rather than elapsed hours. An hour-count edge there is precisely the bug review found.
+// No 48h constant: past the 4h horizon the day words come from `fmt.relativeDay`, which counts
+// calendar days rather than elapsed hours. An hour-count edge there is precisely the bug review found.
 
 /**
  * How stale the open session is, in the five words `03-player.md` §A edge case 4 permits:
@@ -425,8 +448,8 @@ private const val RESUMABLE_HORIZON_MS = 4 * 60 * 60 * 1000L
  * and twenty-four hours none of §A edge case 4's five words is true — 昨日 is wrong for a five-hour-old
  * session begun this morning, exactly as 二時間前 was. The sixth word was not invented; it already
  * existed. `01-shell.md` :642 declares this feature's own relative-day formatter as
- * きょう / きのう / 三日前, and [relativeDayJa] implements it two hundred lines above. So past the
- * horizon this function stops measuring and asks *that* function what day it was.
+ * きょう / きのう / 三日前, and `fmt.relativeDay` implements it (in both languages). So past the horizon
+ * this function stops measuring and asks *that* function what day it was.
  *
  * That also settles a split the two specs would otherwise have shipped side by side on one screen:
  * §A edge case 4 writes 昨日, `01` :642 writes きのう. **One formatter is authoritative**, the same
@@ -441,14 +464,21 @@ private const val RESUMABLE_HORIZON_MS = 4 * 60 * 60 * 1000L
  * Below the horizon elapsed time still wins, deliberately. Twenty minutes after midnight, きのう is
  * true and useless — the fact the user wants is that they stopped a moment ago. The day words take
  * over only once the elapsed number has stopped being the more informative of the two.
+ *
+ * **The three bucket words differ between the languages, and that is the point.** The Japanese is
+ * transcribed from §A — 一時間前 over a 10m–2h bucket and 二時間前 over 2h–4h are the spec's words and
+ * ship unchanged. The English is authored, and an authored "2 hours ago" over a three-and-a-half-hour
+ * session would restate the very falsehood the bucket edges above were moved to remove. So the English
+ * arms round ("A few hours ago") where the Japanese names. See `GymHomeStrings.stalenessJustNow`.
  */
-fun stalenessLabel(startedAtWallMs: Long, nowWallMs: Long, zone: ZoneId): String {
+fun stalenessLabel(startedAtWallMs: Long, nowWallMs: Long, zone: ZoneId, strings: Strings): String {
     val deltaMs = (nowWallMs - startedAtWallMs).coerceAtLeast(0L)
+    val copy = strings.gymHome
     return when {
-        deltaMs < JUST_NOW_MS -> "さっき"
-        deltaMs < ONE_HOUR_BUCKET_MS -> "一時間前"
-        deltaMs < RESUMABLE_HORIZON_MS -> "二時間前"
-        else -> relativeDayJa(
+        deltaMs < JUST_NOW_MS -> copy.stalenessJustNow
+        deltaMs < ONE_HOUR_BUCKET_MS -> copy.stalenessEarlier
+        deltaMs < RESUMABLE_HORIZON_MS -> copy.stalenessSeveralHours
+        else -> strings.fmt.relativeDay(
             then = Instant.ofEpochMilli(startedAtWallMs).atZone(zone).toLocalDate(),
             today = Instant.ofEpochMilli(nowWallMs).atZone(zone).toLocalDate(),
         )
@@ -484,21 +514,26 @@ data class ResumePromptCopy(
 fun resumePromptCopy(
     session: ResumableSession,
     nowWallMs: Long,
+    strings: Strings,
     zone: ZoneId = ZoneId.systemDefault(),
 ): ResumePromptCopy {
+    val copy = strings.gymHome
     val stopped = session.resumability == Resumability.REBOOTED || session.resumability == Resumability.STALE
     val elapsed = recoveredElapsedMs(session)
     val stations = stationsProgressed(session.results)
     val detail = listOfNotNull(
+        // **Never translated.** `session.routine_name` is a snapshot frozen at `startSession` so the
+        // prompt survives the routine's deletion, and whatever the routine was called that day, in
+        // whatever language, is what that session performed (§L10, `CatalogDisplay.kt`).
         session.routineName,
-        formatElapsedJa(elapsed).takeIf { elapsed > 0L },
-        JapaneseDate.kanjiExtended(stations).plus("種目").takeIf { stations > 0 },
-    ).joinToString(" ・ ")
+        strings.fmt.durationFromMs(elapsed).takeIf { elapsed > 0L },
+        strings.fmt.stations(stations).takeIf { stations > 0 },
+    ).joinToString(strings.fmt.separator)
     return ResumePromptCopy(
-        title = if (stopped) "途中の 鍛錬が 残っています" else "途中の 鍛錬があります",
+        title = if (stopped) copy.promptTitleStopped else copy.promptTitleOpen,
         detail = detail,
-        staleness = stalenessLabel(session.lastWriteWallMs, nowWallMs, zone),
-        note = if (stopped) "続きからは できません" else null,
+        staleness = stalenessLabel(session.lastWriteWallMs, nowWallMs, zone, strings),
+        note = if (stopped) copy.promptNoResume else null,
     )
 }
 
@@ -515,3 +550,26 @@ fun recoveredElapsedMs(session: ResumableSession): Long {
     val lastWrite = session.results.maxByOrNull { it.ordinal }?.closedAtElapsedMs ?: return 0L
     return recoveredActiveMs(session.clock, lastWrite)
 }
+
+/**
+ * The card's one-line shape: 「十二種目 ・ 三十秒 / 十秒 ・ 約 八分」 / `12 stations · 30s / 10s · ~8m`.
+ *
+ * Composed here rather than in `GymStore`, which is where the numbers come from, because a rendered
+ * sentence in the data layer cannot follow a language switch — that feed re-emits on a table change,
+ * so the card would keep its old wording until something wrote to the database.
+ *
+ * One deliberate change to Japanese: the estimate now reads 約 八分 with the space, matching
+ * `RoutineEstimate` and the specs' own sample, where this line alone used to write 約八分. The two
+ * surfaces disagreed; routing both through `fmt.approx` settles it rather than preserving the split.
+ */
+fun routineCardSummary(card: RoutineCard, strings: Strings): String = buildList {
+    add(strings.fmt.stations(card.stationCount))
+    card.workSeconds?.let { work ->
+        val rest = if (card.restBetweenStations > 0) " / " + strings.fmt.seconds(card.restBetweenStations) else ""
+        add(strings.fmt.seconds(work) + rest)
+    }
+    if (card.estimatedDurationSeconds > 0) {
+        val minutes = (card.estimatedDurationSeconds / 60.0).roundToInt().coerceAtLeast(1)
+        add(strings.fmt.approx(strings.fmt.minutes(minutes)))
+    }
+}.joinToString(strings.fmt.separator)

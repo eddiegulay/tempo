@@ -88,7 +88,7 @@ class ExerciseScreenStructureTest {
         assertEquals(
             "読み込み中 belongs to the two store-backed blocks and nothing else",
             2,
-            drawn(detail, "読み込み中"),
+            drawn(detail, "s.gymExercise.loading"),
         )
     }
 
@@ -107,8 +107,8 @@ class ExerciseScreenStructureTest {
                 Regex(Regex.escape(branch)).findAll(bestsAndUsedBy).count(),
             )
         }
-        assertEquals("まだ やっていません is drawn once", 1, drawn(detail, "まだ やっていません"))
-        assertEquals("どの型にも入っていません is drawn once", 1, drawn(detail, "どの型にも入っていません"))
+        assertEquals("まだ やっていません is drawn once", 1, drawn(detail, "s.gymExercise.noHistory"))
+        assertEquals("どの型にも入っていません is drawn once", 1, drawn(detail, "s.gymExercise.noRoutines"))
         assertEquals("both failures reach the one fault chrome", 2, Regex("FaultStrip\\(").findAll(detail).count())
     }
 
@@ -134,7 +134,7 @@ class ExerciseScreenStructureTest {
         )
         assertTrue(
             "each rung is a button with its own sentence",
-            declarationBody(detail, "private fun LadderRungRow(").contains("rungSemantics(rung)"),
+            declarationBody(detail, "private fun LadderRungRow(").contains("rungSemantics(rung, s)"),
         )
     }
 
@@ -241,15 +241,20 @@ class ExerciseScreenStructureTest {
     // ─── reading the source ─────────────────────────────────────────────────────────────────────
 
     /**
-     * How many times [sentence] is *drawn*, rather than merely written.
+     * How many times [expression] is *drawn*, rather than merely written.
      *
      * These pages name their own copy in KDoc — deliberately, because the argument for a sentence is
      * the sentence — so a bare `contains` count would rise every time the reasoning was documented.
      * A drawn string is one handed to [ExerciseNotice], which is the only composable that renders a
      * section-sized line on either page.
+     *
+     * The argument is now a **table lookup** rather than a literal: the sentences moved into
+     * `GymExerciseStrings` and the page names them by key. What is being counted is unchanged — how
+     * many branches can reach each of the three notices — and the sentences themselves are pinned by
+     * value in `ExerciseCatalogueCopyTest`, against `StringsJa`.
      */
-    private fun drawn(source: String, sentence: String): Int =
-        Regex(Regex.escape("ExerciseNotice(\"$sentence\")")).findAll(source).count()
+    private fun drawn(source: String, expression: String): Int =
+        Regex(Regex.escape("ExerciseNotice($expression)")).findAll(source).count()
 
     /** The declaration's body, brace-matched from its header — `LibraryIndexScreenStructureTest`'s. */
     private fun declarationBody(source: String, header: String): String {

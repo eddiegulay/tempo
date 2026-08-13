@@ -1,5 +1,9 @@
 package io.eddiegulay.tempo.gym
 
+import io.eddiegulay.tempo.i18n.stringsFor
+import io.eddiegulay.tempo.i18n.Strings
+import io.eddiegulay.tempo.i18n.Lang
+import io.eddiegulay.tempo.data.ThemeRepository
 import android.content.Context
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.lifecycle.ViewModel
@@ -131,7 +135,27 @@ private const val RECENT_USAGE_DAYS = 60
 class GymViewModel(
     val repository: GymRepository,
     val preferences: GymPreferencesRepository,
+    themeRepository: ThemeRepository,
 ) : ViewModel() {
+
+    /**
+     * The UI language, and therefore the copy table this ViewModel resolves against.
+     *
+     * 鍛錬 needs one for two reasons that are easy to miss because neither is a label on a screen:
+     * the library's **search** folds a routine's displayed name (a card reading "Cindy" has to be
+     * findable by typing "Cindy"), and `uniqueName` composes the name a duplicated routine is
+     * **saved** under.
+     *
+     * `ThemeRepository` rather than a new one — `preferencesDataStore` allows one owner per file per
+     * process, and `tempo_settings` already has an owner. This is the same instance
+     * `LauncherViewModel` holds, so the synchronous seed read below hits a DataStore whose value is
+     * already in memory: the launcher has read it at app start, long before the gym is ever opened.
+     */
+    val lang: StateFlow<Lang> = themeRepository.language
+        .stateIn(viewModelScope, SharingStarted.Eagerly, themeRepository.loadInitialSettings().lang)
+
+    /** The active table, for the handful of places this ViewModel composes or compares copy. */
+    val strings: Strings get() = stringsFor(lang.value)
 
     private val _stack = MutableStateFlow<List<GymRoute>>(listOf(GymRoute.Home))
     val stack: StateFlow<List<GymRoute>> = _stack.asStateFlow()
@@ -463,14 +487,34 @@ class GymViewModel(
      * state). The `Loading` seed is what `NoMatch` is told apart from.
      */
     val libraryIndex: StateFlow<Loadable<LibraryIndexRoutines>> = combine(
-        repository.routines.onEach(::cacheStationNames),
-        _routineFilter,
-        stationNames,
+        // Five, then one. `combine` is only typed up to five flows; a sixth falls through to the
+        // `Array<Any?>` overload, and every field then has to be cast back out by index — three
+        // unchecked casts and a positional contract nothing checks. Pairing the ranking inputs first
+        // keeps both halves typed, and they belong together anyway.
         recentUsage,
         usageCounts,
-    ) { loadable, filter, names, recent, counts ->
-        loadable.mapValue { list ->
-            libraryIndexRoutines(list, filter, recent, counts) { names[it.versionId].orEmpty() }
+    ) { recent, counts -> recent to counts }.let { ranking ->
+        combine(
+            repository.routines.onEach(::cacheStationNames),
+            _routineFilter,
+            stationNames,
+            ranking,
+            // `lang` is in the combine so a language switch **re-runs the search**, not merely the
+            // rendering. A query typed in one language would otherwise keep matching against the
+            // other one's names until the next keystroke.
+            lang,
+        ) { loadable, filter, names, (recent, counts), language ->
+            val table = stringsFor(language)
+            loadable.mapValue { list ->
+                libraryIndexRoutines(
+                    routines = list,
+                    filter = filter,
+                    recentUsage = recent,
+                    usageCounts = counts,
+                    stationNames = { names[it.versionId].orEmpty() },
+                    displayName = { it.displayName(table) },
+                )
+            }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Loadable.Loading)
 
@@ -525,7 +569,13 @@ class GymViewModel(
                 val snapshot = repository.routineVersion(versionId).valueOrNull() ?: return@mapNotNull null
                 // The id is kept when the catalogue no longer knows it: searching for a station that
                 // is missing should find nothing, not throw away the rest of the routine's names.
-                versionId to snapshot.stations.mapNotNull { it.exercise?.nameJa }
+                // **Both** names, always, regardless of the active language. A station list is
+                // search fodder, not copy: folding only the displayed name would make 腕立て伏せ
+                // unfindable under an English UI and "push-up" unfindable under a Japanese one, and a
+                // user who has typed a routine's contents in either script means the same station.
+                versionId to snapshot.stations.flatMap { station ->
+                    listOfNotNull(station.exercise?.nameJa, station.exercise?.nameEn)
+                }
             }
             if (resolved.isNotEmpty()) stationNames.update { it + resolved }
         }
@@ -670,7 +720,7 @@ class GymViewModel(
                 _writeFault.value = GymFault.RoutineGone
                 return@launch
             }
-            when (val outcome = repository.duplicateRoutine(routineId, uniqueName(sourceName, taken))) {
+            when (val outcome = repository.duplicateRoutine(routineId, uniqueName(sourceName, taken, strings))) {
                 is GymWrite.Ok -> go(GymRoute.Builder(outcome.value))
                 is GymWrite.Failed -> _writeFault.value = outcome.fault
             }
@@ -1033,6 +1083,7 @@ class GymViewModelFactory(context: Context) : ViewModelProvider.Factory {
         return GymViewModel(
             repository = GymRepository.getInstance(appContext),
             preferences = GymPreferencesStore(appContext),
+            themeRepository = ThemeRepository(appContext),
         ) as T
     }
 }

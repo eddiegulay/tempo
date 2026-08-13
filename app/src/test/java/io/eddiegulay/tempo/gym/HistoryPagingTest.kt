@@ -1,5 +1,7 @@
 package io.eddiegulay.tempo.gym
 
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -33,6 +35,7 @@ class HistoryPagingTest {
                 row(id = 2, date = LocalDate.of(2026, 6, 2)),
                 row(id = 1, date = LocalDate.of(2026, 5, 30)),
             ),
+            StringsJa,
         )
         assertEquals(listOf("六月", "五月"), groups.map { it.header })
         assertEquals(listOf("二回", "一回"), groups.map { it.countLabel })
@@ -47,8 +50,8 @@ class HistoryPagingTest {
         // empty 五月 heading above 四月's rows.
         val loaded = listOf(row(id = 2, date = LocalDate.of(2026, 6, 2)), row(id = 1, date = LocalDate.of(2026, 5, 30)))
         val afterDelete = loaded.filterNot { it.sessionId == 1L }
-        assertEquals(listOf("六月"), groupByMonth(afterDelete).map { it.header })
-        assertTrue(groupByMonth(emptyList()).isEmpty())
+        assertEquals(listOf("六月"), groupByMonth(afterDelete, StringsJa).map { it.header })
+        assertTrue(groupByMonth(emptyList(), StringsJa).isEmpty())
     }
 
     @Test
@@ -62,7 +65,16 @@ class HistoryPagingTest {
             // 2026-01-01T01:00Z — already January in UTC. The local date is what decides.
             startedAt = 1_767_229_200_000L,
         )
-        assertEquals(listOf("十二月"), groupByMonth(listOf(newYearsEve)).map { it.header })
+        assertEquals(listOf("十二月"), groupByMonth(listOf(newYearsEve), StringsJa).map { it.header })
+    }
+
+    @Test
+    fun `a month header is a month's name and not a count of months`() {
+        // `fmt.monthName` against `fmt.months`. Both are 六月 in Japanese, so only an English build can
+        // catch the substitution — and it renders "6 months" over June's rows when it happens.
+        val groups = groupByMonth(listOf(row(id = 1, date = LocalDate.of(2026, 6, 17))), StringsEn)
+        assertEquals(listOf("June"), groups.map { it.header })
+        assertEquals(listOf("1 time"), groups.map { it.countLabel })
     }
 
     // ─── the cursor ─────────────────────────────────────────────────────────────────────────────

@@ -14,11 +14,14 @@ import io.eddiegulay.tempo.gym.RoutineStation
 import io.eddiegulay.tempo.gym.SegmentResult
 import io.eddiegulay.tempo.gym.SessionDetail
 import io.eddiegulay.tempo.gym.SessionSummary
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import io.eddiegulay.tempo.ui.gym.RatingEdit
 import io.eddiegulay.tempo.ui.gym.RecordFooterAction
 import io.eddiegulay.tempo.ui.gym.RecordMode
 import io.eddiegulay.tempo.ui.gym.breakdownRows
 import io.eddiegulay.tempo.ui.gym.historicalData
+import io.eddiegulay.tempo.ui.gym.label
 import io.eddiegulay.tempo.ui.gym.missingSnapshotCopy
 import io.eddiegulay.tempo.ui.gym.pinnedExerciseNames
 import io.eddiegulay.tempo.ui.gym.playsEnsoClosure
@@ -63,10 +66,10 @@ class SessionDetailScreenTest {
     @Test
     fun `a record since beaten is demoted to 当時の自己最高`() {
         // Row 6 end to end: the chip the mounted component will actually draw, in `c.inkFaint`.
-        val beaten = recordAccolades(RecordMode.Historical, historicalData(detail(isStillBest = false)))
+        val beaten = recordAccolades(RecordMode.Historical, historicalData(detail(isStillBest = false)), StringsJa)
         assertEquals(PrChip.FORMER, beaten.chip)
 
-        val standing = recordAccolades(RecordMode.Historical, historicalData(detail(isStillBest = true)))
+        val standing = recordAccolades(RecordMode.Historical, historicalData(detail(isStillBest = true)), StringsJa)
         assertEquals(PrChip.CURRENT, standing.chip)
     }
 
@@ -76,7 +79,7 @@ class SessionDetailScreenTest {
         // in Historical even if something were. Showing today's streak on a March record is a category
         // error, and computing March's means walking the whole history for one line.
         assertNull(historicalData(detail()).streakDays)
-        assertNull(recordAccolades(RecordMode.Historical, historicalData(detail())).streak)
+        assertNull(recordAccolades(RecordMode.Historical, historicalData(detail()), StringsJa).streak)
     }
 
     @Test
@@ -122,7 +125,7 @@ class SessionDetailScreenTest {
     @Test
     fun `a partial session reads identically here — chip kept, accolades withheld`() {
         val partial = detail(summary = summary(complete = false, stationsCompleted = 8, stationsPlanned = 20))
-        val accolades = recordAccolades(RecordMode.Historical, historicalData(partial))
+        val accolades = recordAccolades(RecordMode.Historical, historicalData(partial), StringsJa)
         assertNull(accolades.chip)
         assertNull(accolades.comparison)
         assertFalse(accolades.firstEver)
@@ -136,7 +139,7 @@ class SessionDetailScreenTest {
         val names = pinnedExerciseNames(snapshot())
         assertEquals("腕立て伏せ", names["e_pushup"])
 
-        val rows = breakdownRows(listOf(result())) { id -> names[id] }
+        val rows = breakdownRows(listOf(result()), { id -> names[id] }, StringsJa)
         assertEquals(listOf("腕立て伏せ"), rows.map { it.name })
     }
 
@@ -145,15 +148,15 @@ class SessionDetailScreenTest {
         // §4 edge case 4, and §6's note that 当時の内容は残っていません is the **backup-restore case
         // only**. Never fabricate a structure — and never claim one is missing when it is pinned.
         assertEquals(emptyMap<String, String>(), pinnedExerciseNames(null))
-        assertEquals("当時の内容は残っていません", missingSnapshotCopy(null))
-        assertNull(missingSnapshotCopy(snapshot()))
+        assertEquals("当時の内容は残っていません", missingSnapshotCopy(null, StringsJa))
+        assertNull(missingSnapshotCopy(snapshot(), StringsJa))
     }
 
     @Test
     fun `an unresolvable station is named 不明な種目 rather than left blank`() {
         // The fallback is the caller's live-catalogue lookup returning nothing; `breakdownRow` owns the
         // word, and a nameless row in a list of names looks like a rendering bug rather than a fact.
-        val rows = breakdownRows(listOf(result())) { null }
+        val rows = breakdownRows(listOf(result()), { null }, StringsJa)
         assertEquals(listOf("不明な種目"), rows.map { it.name })
     }
 
@@ -163,12 +166,16 @@ class SessionDetailScreenTest {
     fun `the header dates the record by the day it started`() {
         // §4 edge case 6, stated once for the whole feature: a session that crosses midnight belongs to
         // the day it started, in the grid, in the streak, in the grouping — and here.
-        assertEquals("令和八年 ・ 六月十七日", recordDateLine(detail()))
+        assertEquals("令和八年 ・ 六月十七日", recordDateLine(detail(), StringsJa))
     }
 
     @Test
     fun `the foot carries 型を見る and 記録を削除`() {
-        assertEquals(listOf("型を見る", "記録を削除"), RecordFooterAction.entries.map { it.label })
+        assertEquals(listOf("型を見る", "記録を削除"), RecordFooterAction.entries.map { it.label(StringsJa) })
+        assertEquals(
+            listOf("See the routine", "Delete record"),
+            RecordFooterAction.entries.map { it.label(StringsEn) },
+        )
     }
 
     @Test

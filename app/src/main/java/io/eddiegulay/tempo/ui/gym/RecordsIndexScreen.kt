@@ -5,7 +5,6 @@ import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,7 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,7 +44,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.calendar.Loadable
 import io.eddiegulay.tempo.data.GymFault
-import io.eddiegulay.tempo.data.JapaneseDate
 import io.eddiegulay.tempo.data.TempoFault
 import io.eddiegulay.tempo.gym.ChartKind
 import io.eddiegulay.tempo.gym.ChartRange
@@ -65,10 +62,13 @@ import io.eddiegulay.tempo.gym.chartSemantics
 import io.eddiegulay.tempo.gym.gridSemantics
 import io.eddiegulay.tempo.gym.heroTime
 import io.eddiegulay.tempo.gym.inkLevel
+import io.eddiegulay.tempo.gym.label
 import io.eddiegulay.tempo.gym.monthCaption
 import io.eddiegulay.tempo.gym.monthCells
 import io.eddiegulay.tempo.gym.partialChipCopy
 import io.eddiegulay.tempo.gym.streakCopy
+import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.i18n.Strings
 import io.eddiegulay.tempo.ui.FaultPanel
 import io.eddiegulay.tempo.ui.HeaderAction
 import io.eddiegulay.tempo.ui.faultCopy
@@ -76,6 +76,8 @@ import io.eddiegulay.tempo.ui.rememberMinuteTime
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
@@ -108,7 +110,8 @@ import java.time.YearMonth
  * [RecordTile] and is shared: 記録 and the post-session summary draw the same value-over-label idiom
  * and there is no reason for two types of it. What differs is only the sentence, and that is this.
  */
-fun recordsTileSemantics(tile: RecordTile): String = tile.label + "、" + tile.value
+fun recordsTileSemantics(tile: RecordTile, strings: Strings): String =
+    tile.label + strings.fmt.listSeparator + tile.value
 
 /**
  * The tile row: 今月 · 活動時間 · これまで — as many of the three as can be answered.
@@ -134,19 +137,20 @@ fun recordsTileSemantics(tile: RecordTile): String = tile.label + "、" + tile.v
  *
  * Minutes truncate, matching `historySubtitle` — 二百四十分 is the whole minutes trained.
  */
-fun recordsTiles(monthSessions: Int, monthActiveMs: Long, lifetimeSessions: Int?): List<RecordTile> {
+fun recordsTiles(
+    monthSessions: Int,
+    monthActiveMs: Long,
+    lifetimeSessions: Int?,
+    strings: Strings,
+): List<RecordTile> {
+    val copy = strings.gymRecords
     val minutes = (if (monthActiveMs <= 0L) 0L else monthActiveMs / 60_000L).toInt()
     return buildList {
-        add(RecordTile(JapaneseDate.kanjiExtended(monthSessions) + "回", TILE_MONTH))
-        add(RecordTile(JapaneseDate.kanjiExtended(minutes) + "分", TILE_ACTIVE))
-        lifetimeSessions?.let { add(RecordTile(JapaneseDate.kanjiExtended(it) + "回", TILE_LIFETIME)) }
+        add(RecordTile(strings.fmt.times(monthSessions), copy.tileMonth))
+        add(RecordTile(strings.fmt.minutes(minutes), copy.activeTime))
+        lifetimeSessions?.let { add(RecordTile(strings.fmt.times(it), copy.tileLifetime)) }
     }
 }
-
-/** §6's three tile labels, exactly: 今月 / 活動時間 / これまで. */
-private const val TILE_MONTH = "今月"
-private const val TILE_ACTIVE = "活動時間"
-private const val TILE_LIFETIME = "これまで"
 
 // ─── 最近 ───────────────────────────────────────────────────────────────────────────────────────
 
@@ -183,18 +187,21 @@ data class RecentRowCopy(
  * two lines tall; this row is one, and §4's mock ends it at the rating. A record that stands is one tap
  * away in 最高 and in the session itself.
  */
-fun recentRowCopy(summary: SessionSummary): RecentRowCopy {
-    val date = JapaneseDate.monthDay(summary.localDate.atStartOfDay())
-    val duration = heroTime(summary.activeMs)
-    val partial = partialChipCopy(summary)
+fun recentRowCopy(summary: SessionSummary, strings: Strings): RecentRowCopy {
+    val date = strings.fmt.monthDay(summary.localDate.atStartOfDay())
+    val duration = heroTime(summary.activeMs, strings)
+    val partial = partialChipCopy(summary, strings)
+    val rating = summary.rating?.label(strings)
     return RecentRowCopy(
         date = date,
+        // The routine's name is the session row's denormalised copy, frozen at write time and never
+        // retranslated (§L10). A session performed in Japanese keeps its Japanese name for ever.
         name = summary.routineName,
         duration = duration,
-        rating = summary.rating?.label,
+        rating = rating,
         partial = partial,
-        semantics = listOfNotNull(date, summary.routineName, duration, summary.rating?.label, partial)
-            .joinToString("、"),
+        semantics = listOfNotNull(date, summary.routineName, duration, rating, partial)
+            .joinToString(strings.fmt.listSeparator),
     )
 }
 
@@ -217,11 +224,13 @@ fun recentRowCopy(summary: SessionSummary): RecentRowCopy {
  * [current] is required rather than defaulted for the same reason the bug existed: a label that can be
  * asked for without a year to compare against is a label that will be.
  */
-fun monthPagerLabel(month: YearMonth, current: YearMonth): String =
+fun monthPagerLabel(month: YearMonth, current: YearMonth, strings: Strings): String =
     if (month.year == current.year) {
-        JapaneseDate.kanji(month.monthValue) + "月"
+        // A month **name** — `fmt.monthName`, never `fmt.months`, which counts them. Japanese spells
+        // both 六月 and English spells the wrong one `6 months`.
+        strings.fmt.monthName(month.monthValue)
     } else {
-        recordsSubtitle(month.atDay(1).atStartOfDay())
+        recordsSubtitle(month.atDay(1).atStartOfDay(), strings)
     }
 
 /**
@@ -240,18 +249,8 @@ fun canPageBack(month: YearMonth, earliest: YearMonth?): Boolean =
 fun canPageForward(month: YearMonth, current: YearMonth): Boolean = month.isBefore(current)
 
 /** 令和八年 ・ 六月 — §4's mock. The month, not the day: this page is about months. */
-fun recordsSubtitle(now: LocalDateTime): String =
-    JapaneseDate.era(now) + " ・ " + JapaneseDate.kanji(now.monthValue) + "月"
-
-/**
- * 日 月 火 水 木 金 土 — §4's own header row, above the canvas and never inside it.
- *
- * Text in a `DrawScope` needs a `TextMeasurer` and `drawText`, which is more machinery than seven
- * static letters deserve (§5.1). Sunday-first, matching `monthCells`' `leadingBlank` and
- * `JapaneseDate.DOW`; `RecordsIndexScreenTest` pins them against `JapaneseDate.dayOfWeek` so the two
- * tables cannot drift apart.
- */
-val RECORDS_WEEKDAYS: List<String> = listOf("日", "月", "火", "水", "木", "金", "土")
+fun recordsSubtitle(now: LocalDateTime, strings: Strings): String =
+    strings.fmt.era(now) + strings.fmt.separator + strings.fmt.monthName(now.monthValue)
 
 // ─── Which of the four bodies is on screen ──────────────────────────────────────────────────────
 
@@ -314,13 +313,6 @@ fun sparklineSessions(weeks: List<WeekPoint>): List<Int> = weeks.map { it.sessio
 
 // ─── The page ───────────────────────────────────────────────────────────────────────────────────
 
-private const val PAGE_TITLE = "記録"
-private const val HEADING_WEEKLY = "週ごと"
-private const val HEADING_RECENT = "最近"
-private const val ACTION_DETAIL = "詳しく"
-private const val ACTION_SEE_ALL = "すべて見る"
-private const val ACTION_BESTS = "最高"
-
 /** §5.1's geometry: 20.dp cells, 4.dp dots, a 7.dp today ring at 1.dp. */
 private val GRID_CELL = 20.dp
 
@@ -358,6 +350,7 @@ private const val SPARKLINE_WEEKS = 12
 @Composable
 fun RecordsIndexScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val now by rememberMinuteTime()
     val today = now.toLocalDate()
     val currentMonth = YearMonth.from(today)
@@ -411,13 +404,13 @@ fun RecordsIndexScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
         ) {
             Column {
                 Text(
-                    text = PAGE_TITLE,
+                    text = s.gymRecords.pageTitle,
                     modifier = Modifier.semantics { heading() },
                     style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
                 )
                 Spacer(Modifier.height(7.dp))
                 Text(
-                    text = recordsSubtitle(now),
+                    text = recordsSubtitle(now, s),
                     style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 4.sp, color = c.inkFaint),
                 )
             }
@@ -425,8 +418,8 @@ fun RecordsIndexScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
             // an empty or unreadable store is a page of three empty axes.
             if (body is RecordsBody.Ready) {
                 HeaderAction(
-                    label = ACTION_DETAIL,
-                    description = ACTION_DETAIL,
+                    label = s.gymRecords.actionDetail,
+                    description = s.gymRecords.actionDetail,
                     color = c.accent,
                     onClick = { gym.go(GymRoute.Charts) },
                 )
@@ -507,6 +500,7 @@ private fun RecordsBodyContent(
     onBests: () -> Unit,
     onSession: (SessionSummary) -> Unit,
 ) {
+    val s = LocalStrings.current
     Column(
         Modifier
             .fillMaxSize()
@@ -529,7 +523,7 @@ private fun RecordsBodyContent(
             Loadable.Loading -> Box(
                 Modifier.fillMaxWidth().height(GRID_CELL * 6),
                 contentAlignment = Alignment.Center,
-            ) { RecordsWord("読み込み中") }
+            ) { RecordsWord(s.gymRecords.loading) }
 
             // Unreachable — a failed month is a page-level fault (see `recordsBodyState`) — and left
             // exhaustive rather than as an `else`, so a fifth `Loadable` case would stop the build here
@@ -558,6 +552,7 @@ private fun RecordsBodyContent(
                 // §Q22's read. `valueOrNull` is the whole of the doctrine here: an unread or unreadable
                 // lifetime total is a *missing tile*, never a 〇回 one. See [recordsTiles].
                 lifetimeSessions = lifetime.valueOrNull()?.sessions,
+                strings = s,
             ),
         )
 
@@ -567,7 +562,11 @@ private fun RecordsBodyContent(
             // reaching for it. The 56.dp is the sparkline's own height, so nothing moves.
             Loadable.Loading -> {
                 Spacer(Modifier.height(24.dp))
-                RecordsSectionRow(label = HEADING_WEEKLY, action = ACTION_DETAIL, onAction = onCharts)
+                RecordsSectionRow(
+                    label = s.gymRecords.weeklyHeading,
+                    action = s.gymRecords.actionDetail,
+                    onAction = onCharts,
+                )
                 SparklineLoading()
             }
 
@@ -583,13 +582,21 @@ private fun RecordsBodyContent(
                 Unit
             } else {
                 Spacer(Modifier.height(24.dp))
-                RecordsSectionRow(label = HEADING_WEEKLY, action = ACTION_DETAIL, onAction = onCharts)
+                RecordsSectionRow(
+                    label = s.gymRecords.weeklyHeading,
+                    action = s.gymRecords.actionDetail,
+                    onAction = onCharts,
+                )
                 Sparkline(weeks = weekly.value, onTap = onCharts)
             }
         }
 
         Spacer(Modifier.height(24.dp))
-        RecordsSectionRow(label = HEADING_RECENT, action = ACTION_SEE_ALL, onAction = onHistory)
+        RecordsSectionRow(
+            label = s.gymRecords.recentHeading,
+            action = s.gymRecords.actionSeeAll,
+            onAction = onHistory,
+        )
         recent.forEach { session ->
             RecentRow(summary = session, onClick = { onSession(session) })
         }
@@ -615,6 +622,7 @@ private fun MonthPager(
     onMonth: (YearMonth) -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
         horizontalArrangement = Arrangement.Center,
@@ -622,15 +630,15 @@ private fun MonthPager(
     ) {
         // The arrows carry the year on the same rule as the label between them: 「五月」 spoken over a
         // grid of last year's ink is the same lie, told to the user who cannot see the grid.
-        PagerArrow("‹", enabled = canBack, label = monthPagerLabel(month.minusMonths(1), currentMonth)) {
+        PagerArrow("‹", enabled = canBack, label = monthPagerLabel(month.minusMonths(1), currentMonth, s)) {
             onMonth(month.minusMonths(1))
         }
         Text(
-            text = monthPagerLabel(month, currentMonth),
+            text = monthPagerLabel(month, currentMonth, s),
             modifier = Modifier.padding(horizontal = 18.dp),
             style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = 3.sp, color = c.ink),
         )
-        PagerArrow("›", enabled = canForward, label = monthPagerLabel(month.plusMonths(1), currentMonth)) {
+        PagerArrow("›", enabled = canForward, label = monthPagerLabel(month.plusMonths(1), currentMonth, s)) {
             onMonth(month.plusMonths(1))
         }
     }
@@ -653,7 +661,7 @@ private fun PagerArrow(glyph: String, enabled: Boolean, label: String, onClick: 
     Box(
         modifier = Modifier
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .clickable(enabled = enabled, onClick = onClick)
+            .pressable(TempoShapes.Glyph, enabled = enabled, onClick = onClick)
             .clearAndSetSemantics {
                 if (enabled) {
                     role = Role.Button
@@ -709,19 +717,26 @@ private fun InkGrid(
     onTap: () -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val grid = remember(month) { monthCells(month) }
-    val summary = remember(month, days) { gridSemantics(month, days) }
-    val caption = remember(month, days) { monthCaption(month, days) }
+    val summary = remember(month, days, s) { gridSemantics(month, days, s) }
+    val caption = remember(month, days, s) { monthCaption(month, days, s) }
 
     Column(
         Modifier.fillMaxWidth().padding(top = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        // 日 月 火 … / S M T … — `fmt.weekdayInitials()`, which is Sunday-first in both languages so
+        // that it keeps matching `monthCells`' `leadingBlank`. The cell is one CJK glyph wide, so the
+        // letters are clamped to one line rather than allowed to wrap the header out of the grid.
         Row(Modifier.clearAndSetSemantics {}) {
-            RECORDS_WEEKDAYS.forEach { letter ->
+            s.fmt.weekdayInitials().forEach { letter ->
                 Box(Modifier.width(GRID_CELL), contentAlignment = Alignment.Center) {
                     Text(
                         text = letter,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Clip,
                         style = TextStyle(
                             fontFamily = Mincho,
                             fontSize = 10.sp,
@@ -740,7 +755,9 @@ private fun InkGrid(
                 Modifier
                     .width(GRID_CELL * 7)
                     .height(GRID_CELL * grid.rows)
-                    .clickable(onClickLabel = "記録の一覧をひらく", onClick = onTap)
+                    // The month is one block the size of a card, so the wash takes a card's corner
+                    // rather than washing a bare rectangle the width of seven cells.
+                    .pressable(TempoShapes.Card, onClickLabel = s.gymRecords.gridA11y, onClick = onTap)
                     .semantics { contentDescription = summary; role = Role.Button },
             ) {
                 val cellPx = GRID_CELL.toPx()
@@ -809,7 +826,10 @@ private fun StreakBlock(
     historyDays: Int,
 ) {
     val c = LocalTempoColors.current
-    val copy = remember(streak, monotony7d, historyDays) { streakCopy(streak, monotony7d, historyDays) }
+    val s = LocalStrings.current
+    val copy = remember(streak, monotony7d, historyDays, s) {
+        streakCopy(streak, s, monotony7d, historyDays)
+    }
 
     Column(
         modifier = Modifier
@@ -845,10 +865,11 @@ private fun StreakBlock(
 @Composable
 private fun TileRow(tiles: List<RecordTile>) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(TempoShapes.Card)
             .background(c.card)
             .padding(vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -860,7 +881,7 @@ private fun TileRow(tiles: List<RecordTile>) {
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .clearAndSetSemantics { contentDescription = recordsTileSemantics(tile) },
+                    .clearAndSetSemantics { contentDescription = recordsTileSemantics(tile, s) },
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -895,16 +916,17 @@ private fun TileRow(tiles: List<RecordTile>) {
 @Composable
 private fun Sparkline(weeks: List<WeekPoint>, onTap: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val values = remember(weeks) { sparklineSessions(weeks) }
-    val summary = remember(weeks) {
-        chartSemantics(ChartKind.WEEKLY_SESSIONS, ChartRange.TWELVE, values.map { it.toDouble() })
+    val summary = remember(weeks, s) {
+        chartSemantics(ChartKind.WEEKLY_SESSIONS, ChartRange.TWELVE, values.map { it.toDouble() }, s)
     }
 
     Canvas(
         Modifier
             .fillMaxWidth()
             .height(SPARKLINE_HEIGHT)
-            .clickable(onClickLabel = ACTION_DETAIL, onClick = onTap)
+            .pressable(TempoShapes.Card, onClickLabel = s.gymRecords.actionDetail, onClick = onTap)
             .semantics { contentDescription = summary; role = Role.Button },
     ) {
         val stub = 2.dp.toPx()
@@ -949,7 +971,7 @@ private fun SparklineLoading() {
     Box(
         Modifier.fillMaxWidth().height(SPARKLINE_HEIGHT),
         contentAlignment = Alignment.Center,
-    ) { RecordsWord("読み込み中") }
+    ) { RecordsWord(LocalStrings.current.gymRecords.loading) }
 }
 
 /** 週ごと … 詳しく — a section heading with one accent word opposite it. */
@@ -976,13 +998,14 @@ private fun RecordsSectionRow(label: String, action: String, onAction: () -> Uni
 @Composable
 private fun RecentRow(summary: SessionSummary, onClick: () -> Unit) {
     val c = LocalTempoColors.current
-    val copy = remember(summary) { recentRowCopy(summary) }
+    val s = LocalStrings.current
+    val copy = remember(summary, s) { recentRowCopy(summary, s) }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 48.dp)
-            .clickable(onClick = onClick)
+            .pressable(TempoShapes.Row, onClick = onClick)
             .clearAndSetSemantics { role = Role.Button; contentDescription = copy.semantics }
             .padding(vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1023,18 +1046,19 @@ private fun RecentRow(summary: SessionSummary, onClick: () -> Unit) {
 @Composable
 private fun BestsRow(onClick: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 48.dp)
-            .clickable(onClick = onClick)
-            .clearAndSetSemantics { role = Role.Button; contentDescription = ACTION_BESTS }
+            .pressable(TempoShapes.Row, onClick = onClick)
+            .clearAndSetSemantics { role = Role.Button; contentDescription = s.gymRecords.bests }
             .padding(vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = ACTION_BESTS,
+            text = s.gymRecords.bests,
             style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 2.sp, color = c.accent),
         )
         Text(
@@ -1054,7 +1078,7 @@ private fun BestsRow(onClick: () -> Unit) {
 @Composable
 private fun RecordsLoading() {
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
-        RecordsWord("読み込み中")
+        RecordsWord(LocalStrings.current.gymRecords.loading)
     }
 }
 
@@ -1068,22 +1092,23 @@ private fun RecordsLoading() {
 @Composable
 private fun RecordsEmpty(onChoose: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            RecordsWord("まだ 記録はありません")
+            RecordsWord(s.gymRecords.recordsEmpty)
             Box(
                 Modifier
                     .sizeIn(minHeight = 48.dp)
-                    .clickable(onClick = onChoose)
-                    .semantics { role = Role.Button; contentDescription = "型をえらぶ" }
+                    .pressable(TempoShapes.Word, role = Role.Button, onClick = onChoose)
+                    .semantics { contentDescription = s.gymRecords.chooseRoutine }
                     .padding(vertical = 12.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = "型をえらぶ",
+                    text = s.gymRecords.chooseRoutine,
                     style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 2.sp, color = c.accent),
                 )
             }
@@ -1126,10 +1151,11 @@ private fun RecordsEmpty(onChoose: () -> Unit) {
 @Composable
 private fun HistoryLossPanel(onDismiss: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     // The sentence comes from `faultCopy`, not from a literal here: `DECISIONS.md` §Q6 binds it and a
     // second copy of 記録を読めません is exactly the divergence §Q7 forbids. Only the *action* differs,
     // and that difference is this page's whole assignment.
-    val message = faultCopy(GymFault.StoreCorrupt).message
+    val message = faultCopy(GymFault.StoreCorrupt, s).message
 
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Column(
@@ -1149,13 +1175,13 @@ private fun HistoryLossPanel(onDismiss: () -> Unit) {
             Box(
                 Modifier
                     .sizeIn(minHeight = 48.dp)
-                    .clickable(onClick = onDismiss)
-                    .semantics { role = Role.Button; contentDescription = "とじる" }
+                    .pressable(TempoShapes.Word, role = Role.Button, onClick = onDismiss)
+                    .semantics { contentDescription = s.gymRecords.close }
                     .padding(vertical = 12.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = "とじる",
+                    text = s.gymRecords.close,
                     style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = 3.sp, color = c.accent),
                 )
             }

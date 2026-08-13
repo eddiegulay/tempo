@@ -1,5 +1,7 @@
 package io.eddiegulay.tempo.gym.cue
 
+import io.eddiegulay.tempo.i18n.Strings
+
 /**
  * One of the two haptics the platform draws itself, rather than one we describe in milliseconds.
  *
@@ -78,9 +80,14 @@ sealed interface TonePattern {
  * rows × three channels without executing anything. The engine then has no per-cue knowledge at all —
  * it schedules, and it plays whatever the row says.
  *
- * [speech] is the **fixed** phrase where §D.2 gives one, and null where the phrase is the exercise's
- * name and therefore cannot live in a constant. Every fixed phrase here is §D.2 verbatim; none is
- * invented, and the two dynamic rows deliberately hold null rather than a template, because a template
+ * [speaks] says whether §D.2 gives this row a **fixed** phrase; the phrase itself is [Cue.speech],
+ * resolved against the language in force. It is not a constructor argument, and that is the whole of
+ * `.planning/i18n/DECISIONS.md` §L3: an enum constant is initialised once, at class-init, so a phrase
+ * carried there would keep speaking the language the process started in for as long as the process
+ * lived. Every fixed phrase is still §D.2 verbatim in Japanese; none is invented.
+ *
+ * The two dynamic rows ([SESSION_START], [INTERVAL_END]) hold `speaks = false` for a different reason:
+ * their phrase is the *exercise's name*, which the catalogue supplies per segment. A template here
  * would be a string this file made up.
  *
  * *Rejected* — giving each row its trigger offset too. The offsets are functions of the segment
@@ -91,14 +98,14 @@ sealed interface TonePattern {
 enum class Cue(
     val haptic: HapticPattern?,
     val tone: TonePattern?,
-    val speech: String?,
+    val speaks: Boolean,
 ) {
 
     /** Fires at the **end** of 支度, not at its start — the session begins when the preparing stops. */
     SESSION_START(
         haptic = HapticPattern.OneShot(durationMs = 400, amplitude = 200),
         tone = TonePattern.Single(ToneId.ACK, durationMs = 300),
-        speech = null, // the exercise about to start; supplied per segment
+        speaks = false, // the exercise about to start; supplied per segment
     ),
 
     /**
@@ -111,13 +118,13 @@ enum class Cue(
             amplitudes = listOf(0, 120, 0, 120, 0, 120),
         ),
         tone = TonePattern.Repeat(ToneId.BEEP, durationMs = 80, count = 3, periodMs = 1000),
-        speech = null,
+        speaks = false,
     ),
 
     INTERVAL_END(
         haptic = HapticPattern.OneShot(durationMs = 400, amplitude = 255),
         tone = TonePattern.Single(ToneId.BEEP2, durationMs = 300),
-        speech = null, // the next exercise's name; supplied per segment
+        speaks = false, // the next exercise's name; supplied per segment
     ),
 
     HALFWAY(
@@ -126,7 +133,7 @@ enum class Cue(
             amplitudes = listOf(0, 90, 0, 90),
         ),
         tone = TonePattern.Single(ToneId.BEEP, durationMs = 60),
-        speech = "半分",
+        speaks = true,
     ),
 
     /** No tone: the round boundary is information, not an instruction, and the ring already moved. */
@@ -136,7 +143,7 @@ enum class Cue(
             amplitudes = listOf(0, 160, 0, 160),
         ),
         tone = null,
-        speech = "最後の巡",
+        speaks = true,
     ),
 
     /**
@@ -146,7 +153,7 @@ enum class Cue(
     REP_DONE(
         haptic = HapticPattern.Predefined(PredefinedHaptic.CLICK),
         tone = null,
-        speech = null,
+        speaks = false,
     ),
 
     EMOM_FAIL(
@@ -155,7 +162,7 @@ enum class Cue(
             amplitudes = listOf(0, 255, 0, 255, 0, 255), // §D.2: "full amp"
         ),
         tone = TonePattern.Single(ToneId.NACK, durationMs = 400),
-        speech = "時間切れ",
+        speaks = true,
     ),
 
     AMRAP_CAP(
@@ -165,29 +172,52 @@ enum class Cue(
         // (0 → +750ms) is 300 + 300 + the 150ms tail every other window in the table carries. Two
         // back-to-back 300ms tones is the only reading that closes the window it was given.
         tone = TonePattern.Repeat(ToneId.BEEP2, durationMs = 300, count = 2, periodMs = 300),
-        speech = "終わり",
+        speaks = true,
     ),
 
     /** Complete sessions only. A partial session gets [REP_DONE] alone — dignified, not punitive. */
     SESSION_COMPLETE(
         haptic = HapticPattern.OneShot(durationMs = 600, amplitude = 255),
         tone = TonePattern.Completion,
-        speech = "終わり",
+        speaks = true,
     ),
 
     EXTEND_ACK(
         haptic = HapticPattern.Predefined(PredefinedHaptic.TICK),
         tone = null,
-        speech = null,
+        speaks = false,
     ),
 
     SKIP_BACK_ARMED(
         haptic = HapticPattern.Predefined(PredefinedHaptic.TICK),
         tone = null,
-        speech = null,
+        speaks = false,
     ),
     ;
 
     /** True where §D.2 gives no audio-focus window, because the cue makes no sound of its own. */
-    val silent: Boolean get() = tone == null && speech == null
+    val silent: Boolean get() = tone == null && !speaks
+}
+
+/**
+ * The fixed phrase §D.2 gives this row, in the language in force — or null where the row has none.
+ *
+ * An extension taking [Strings] rather than a property on the enum, matching `Tier.label(strings)`:
+ * a constructor argument is resolved once at class-init and would keep speaking whatever language the
+ * process started in, which for a cue channel means a user who switches language mid-session keeps
+ * hearing the old one until they force-stop the app.
+ *
+ * Null is not a gap to be filled. [Cue.SESSION_START] and [Cue.INTERVAL_END] speak the exercise's
+ * name, supplied per segment from the catalogue; [Cue.COUNT_TICK] is **never** spoken by rule; and the
+ * three acknowledgement rows make no sound at all.
+ */
+fun Cue.speech(strings: Strings): String? = when (this) {
+    Cue.HALFWAY -> strings.gymCue.speakHalfway
+    Cue.LAST_ROUND -> strings.gymCue.speakLastRound
+    Cue.EMOM_FAIL -> strings.gymCue.speakTimeUp
+    Cue.AMRAP_CAP -> strings.gymCue.speakCapReached
+    Cue.SESSION_COMPLETE -> strings.gymCue.speakSessionEnd
+    Cue.SESSION_START, Cue.INTERVAL_END, Cue.COUNT_TICK,
+    Cue.REP_DONE, Cue.EXTEND_ACK, Cue.SKIP_BACK_ARMED,
+    -> null
 }

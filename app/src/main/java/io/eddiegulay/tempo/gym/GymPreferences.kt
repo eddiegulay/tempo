@@ -1,5 +1,6 @@
 package io.eddiegulay.tempo.gym
 
+import io.eddiegulay.tempo.i18n.Strings
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -7,19 +8,46 @@ import kotlinx.coroutines.flow.Flow
  * Phase 2 preset — the row ships early so it is not a schema-or-UI change later, and it promises
  * nothing it cannot do: it changes displayed distance only, never weights, which this app does not
  * track (`01-shell.md` §B, edge case 8).
+ *
+ * **Nothing on disk moved when this stopped carrying its label.** The value is persisted as
+ * `units.name` — `Metric` / `Imperial`, ASCII — by [GymPreferencesRepository]'s store, and read back by
+ * the same name, so the display word was never storage. That is the pattern `Tier` could not follow
+ * (`.planning/i18n/DECISIONS.md` §L3), and it is why this enum simply loses a property rather than
+ * gaining a `storageValue`.
  */
-enum class Units(val label: String) {
-    Metric("メートル法"),
-    Imperial("ヤード・ポンド法"),
+enum class Units {
+    Metric,
+    Imperial,
 }
 
 /**
- * Whether the device can actually speak Japanese. Probed once and cached — **not a preference**, and
- * the distinction matters: the stored 音声 flag stays `true` when a voice is uninstalled, so
- * reinstalling one restores speech without the user having to re-find the switch
- * (`01-shell.md` §B, edge case 4).
+ * The word a user reads for this unit system.
+ *
+ * An extension rather than a constructor argument, exactly as `Tier.label(Strings)` is: a label in a
+ * constructor is resolved once at class-init and would silently keep whichever language the app
+ * started in, so flipping the switch would leave 単位 reading メートル法 under an English page.
  */
-enum class SpeechAvailability { Available, NoJapaneseVoice, NoEngine }
+fun Units.label(strings: Strings): String = when (this) {
+    Units.Metric -> strings.gymSettings.unitsMetric
+    Units.Imperial -> strings.gymSettings.unitsImperial
+}
+
+/**
+ * Whether the device can actually speak the app's language. Probed once and cached — **not a
+ * preference**, and the distinction matters: the stored 音声 flag stays `true` when a voice is
+ * uninstalled, so reinstalling one restores speech without the user having to re-find the switch
+ * (`01-shell.md` §B, edge case 4).
+ *
+ * [NoVoiceForLanguage] was `NoJapaneseVoice` until the app spoke two languages, and the rename is the
+ * point rather than tidiness: the state means *no voice for the language the UI is currently in*, and
+ * under an English UI on a Japanese-market phone the old name described the wrong absence. The probe
+ * that produces it lives in `gym/cue/GymSpeech.kt` and asks `ttsLocale(lang)`, not a constant.
+ *
+ * The rename had to land atomically. `GymSettingsCopy.speechRowState` is an exhaustive `when`
+ * *expression* over this enum with no `else`, so there is no deprecated-alias bridge — a companion
+ * property is not an enum entry, and the `when` simply stops compiling.
+ */
+enum class SpeechAvailability { Available, NoVoiceForLanguage, NoEngine }
 
 /**
  * The stored preferences — exactly what is on disk, and exactly what `GYM.SETTINGS` renders.

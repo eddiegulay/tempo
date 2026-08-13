@@ -44,21 +44,44 @@ import java.time.LocalDate
  * All seven exist from schema v1 even though Phase 1 only compiles two (`00-plan.md` §6). The schema
  * is not phased, only the UI is, and an engine missing from the enum would make a Phase-2 seed row
  * unreadable by a Phase-1 build that has already stored it.
+ *
+ * The **display word** is not here, for the reason [Tier]'s KDoc gives at length: a label passed as a
+ * constructor argument is fixed at class-init and cannot be re-resolved when the user changes
+ * language. See [Engine.label].
  */
-enum class Engine(val label: String) {
-    INTERVAL_CIRCUIT("巡回"),
-    AMRAP("時間内"),
-    FOR_TIME("完走"),
-    FOR_TIME_WITH_REST("完走 ・ 休息あり"),
-    EMOM("毎分"),
-    EMOM_ASCENDING("毎分増"),
-    FIXED_SETS("段階"),
+enum class Engine {
+    INTERVAL_CIRCUIT,
+    AMRAP,
+    FOR_TIME,
+    FOR_TIME_WITH_REST,
+    EMOM,
+    EMOM_ASCENDING,
+    FIXED_SETS,
     ;
 
     companion object {
         /** Null rather than a throw: an unreadable row is a fault to report, not a crash. */
         fun fromStorage(raw: String?): Engine? = entries.firstOrNull { it.name == raw }
     }
+}
+
+/**
+ * The word a user reads for this engine.
+ *
+ * [Engine.FOR_TIME_WITH_REST] is a **composition**, not a literal: 完走 ・ 休息あり is `FOR_TIME`'s own
+ * word, the list separator, and a qualifier. The separator comes from [Strings.fmt] because it is
+ * ` ・ ` in Japanese and ` · ` in English — a label with the middle dot baked in would have carried CJK
+ * punctuation into the Latin table, and would also have let the two spellings of 完走 drift apart.
+ */
+fun Engine.label(strings: Strings): String = when (this) {
+    Engine.INTERVAL_CIRCUIT -> strings.gymShared.engineIntervalCircuit
+    Engine.AMRAP -> strings.gymShared.engineAmrap
+    Engine.FOR_TIME -> strings.gymShared.engineForTime
+    Engine.FOR_TIME_WITH_REST ->
+        strings.gymShared.engineForTime + strings.fmt.separator + strings.gymShared.engineWithRest
+    Engine.EMOM -> strings.gymShared.engineEmom
+    Engine.EMOM_ASCENDING -> strings.gymShared.engineEmomAscending
+    Engine.FIXED_SETS -> strings.gymShared.engineFixedSets
 }
 
 /**
@@ -73,19 +96,36 @@ enum class Engine(val label: String) {
  * the builder's adjacent-station warning — *wants* a ring row and a pull-up to collide, because they
  * load the same lats (§A.1).
  */
-enum class Pattern(val label: String) {
-    H_PUSH("押す"),
-    V_PULL("引く"),
-    SQUAT("しゃがむ"),
-    HINGE("股関節"),
-    CORE("体幹"),
-    LOCOMOTION("移動"),
-    PLYO("跳ぶ"),
+enum class Pattern {
+    H_PUSH,
+    V_PULL,
+    SQUAT,
+    HINGE,
+    CORE,
+    LOCOMOTION,
+    PLYO,
     ;
 
     companion object {
         fun fromStorage(raw: String?): Pattern? = entries.firstOrNull { it.name == raw }
     }
+}
+
+/**
+ * The word a user reads for this pattern — the station picker's section headings, and the exercise
+ * pages' meta line.
+ *
+ * The `when` is exhaustive rather than a map lookup so that adding an eighth pattern is a compile
+ * error here as well as in the table. A map with a `?: ""` default is how a heading ships blank.
+ */
+fun Pattern.label(strings: Strings): String = when (this) {
+    Pattern.H_PUSH -> strings.gymShared.patternHorizontalPush
+    Pattern.V_PULL -> strings.gymShared.patternVerticalPull
+    Pattern.SQUAT -> strings.gymShared.patternSquat
+    Pattern.HINGE -> strings.gymShared.patternHinge
+    Pattern.CORE -> strings.gymShared.patternCore
+    Pattern.LOCOMOTION -> strings.gymShared.patternLocomotion
+    Pattern.PLYO -> strings.gymShared.patternPlyo
 }
 
 /**
@@ -99,15 +139,22 @@ enum class Pattern(val label: String) {
  * マーフ's run legs are represented — a `DURATION` with a NULL seconds value is refused by the CHECK,
  * so an open-ended segment closed by 済 is the honest encoding (§F.5).
  */
-enum class Measure(val label: String) {
-    REPS("回数"),
-    DURATION("秒数"),
-    MAX_EFFORT("限界まで"),
+enum class Measure {
+    REPS,
+    DURATION,
+    MAX_EFFORT,
     ;
 
     companion object {
         fun fromStorage(raw: String?): Measure? = entries.firstOrNull { it.name == raw }
     }
+}
+
+/** The はかり方 chip's word. */
+fun Measure.label(strings: Strings): String = when (this) {
+    Measure.REPS -> strings.gymShared.measureReps
+    Measure.DURATION -> strings.gymShared.measureDuration
+    Measure.MAX_EFFORT -> strings.gymShared.measureMaxEffort
 }
 
 /**
@@ -214,15 +261,30 @@ enum class Phase {
  * perceived exertion, which is precisely why the month grid is drawn from active minutes instead
  * (§D.3).
  */
-enum class Rating(val cr10: Int, val label: String) {
-    EASY(4, "楽"),
-    JUST_RIGHT(7, "ちょうど"),
-    HARD(9, "きつい"),
+enum class Rating(val cr10: Int) {
+    EASY(4),
+    JUST_RIGHT(7),
+    HARD(9),
     ;
 
     companion object {
         fun fromStorage(raw: String?): Rating? = entries.firstOrNull { it.name == raw }
     }
+}
+
+/**
+ * どうでしたか's three answers.
+ *
+ * The label left the constructor; [Rating.cr10] did **not**, and must not. It is a frozen numeric
+ * mapping written onto `session.rating_cr10` at record time — a number, not a word, and nothing about
+ * language may move it.
+ *
+ * Note きつい is also `ScalingTier.HARD`'s word and they are unrelated concepts. Two keys, deliberately.
+ */
+fun Rating.label(strings: Strings): String = when (this) {
+    Rating.EASY -> strings.gymShared.ratingEasy
+    Rating.JUST_RIGHT -> strings.gymShared.ratingJustRight
+    Rating.HARD -> strings.gymShared.ratingHard
 }
 
 // ─── The catalogue ──────────────────────────────────────────────────────────────────────────────
@@ -987,7 +1049,18 @@ data class LastResult(
 data class RoutineCard(
     val routineId: String,
     val name: String,
-    val summary: String,
+    /**
+     * The pieces of the card's one-line shape, **not the sentence**.
+     *
+     * It used to be a rendered string, composed in `GymStore` because that is where the pieces are.
+     * That cannot survive a language switch: the feed re-emits on a *table* change, so every card
+     * would keep the sentence it was built with until something else wrote to the database. Copy
+     * belongs where it can be re-resolved — the card composable calls `routineCardSummary`.
+     */
+    val stationCount: Int,
+    val workSeconds: Int?,
+    val restBetweenStations: Int,
+    val estimatedDurationSeconds: Int,
     val timesDone: Int,
     val lastResult: LastResult?,
     val best: RoutineBest?,

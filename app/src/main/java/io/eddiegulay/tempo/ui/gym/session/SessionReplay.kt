@@ -3,6 +3,7 @@ package io.eddiegulay.tempo.ui.gym.session
 import io.eddiegulay.tempo.gym.Exercise
 import io.eddiegulay.tempo.gym.Phase
 import io.eddiegulay.tempo.gym.SegmentResult
+import io.eddiegulay.tempo.gym.displayName
 import io.eddiegulay.tempo.gym.cue.Cue
 import io.eddiegulay.tempo.gym.cue.CueEvent
 import io.eddiegulay.tempo.gym.cue.CueSegment
@@ -10,6 +11,7 @@ import io.eddiegulay.tempo.gym.session.Destination
 import io.eddiegulay.tempo.gym.session.Rule
 import io.eddiegulay.tempo.gym.session.SessionEffect
 import io.eddiegulay.tempo.gym.session.Timeline
+import io.eddiegulay.tempo.i18n.Strings
 
 /*
  * The host's arithmetic — everything it has to be right about that does not need a `Context`.
@@ -113,8 +115,17 @@ fun stationsCompletedOf(timeline: Timeline): Int = timeline.segments.count {
  * @param nextName resolved by the caller from the catalogue, because §D.2's `SESSION_START` and
  *   `INTERVAL_END` rows both speak the exercise that is *about to start* — the same string from both
  *   sides of a boundary.
+ * @param strings the language the movement is **spoken** in. It has to be the engine's own, not a
+ *   guess: a name resolved in one language and read by a voice bound to the other is mispronounced
+ *   whatever the string table says, which is why `SessionController` passes `cues.strings` and never
+ *   a table of its own.
  */
-fun cueSegmentFor(timeline: Timeline, ordinal: Int, lib: Map<String, Exercise>): CueSegment {
+fun cueSegmentFor(
+    timeline: Timeline,
+    ordinal: Int,
+    lib: Map<String, Exercise>,
+    strings: Strings,
+): CueSegment {
     val segment = timeline.segments[ordinal]
     val capAt = timeline.capMs?.takeIf { timeline.extensible }?.let { cap ->
         timeline.prepareMs + cap - segment.startMs
@@ -128,7 +139,7 @@ fun cueSegmentFor(timeline: Timeline, ordinal: Int, lib: Map<String, Exercise>):
         // which arrives as its own cue.
         isFinalSegment = ordinal == timeline.segments.lastIndex && !timeline.extensible,
         startsFinalRound = startsFinalRound(timeline, ordinal),
-        nextExerciseNameJa = nextExerciseName(timeline, ordinal, lib),
+        nextExerciseNameJa = nextExerciseName(timeline, ordinal, lib, strings),
         capAtMs = capAt,
         open = segment.open && !segment.closed,
         anchored = segment.anchored,
@@ -141,8 +152,12 @@ fun cueSegmentFor(timeline: Timeline, ordinal: Int, lib: Map<String, Exercise>):
  * It walks past rests to the next cell that names a movement, because 「次、休息 十五秒、そのあと
  * プランク」 is one sentence about one exercise and the rest is its adverb.
  */
-fun nextExerciseName(timeline: Timeline, ordinal: Int, lib: Map<String, Exercise>): String? =
-    nextExercise(timeline, ordinal, lib)?.nameJa
+fun nextExerciseName(
+    timeline: Timeline,
+    ordinal: Int,
+    lib: Map<String, Exercise>,
+    strings: Strings,
+): String? = nextExercise(timeline, ordinal, lib)?.displayName(strings)
 
 /** As [nextExerciseName], resolved. Null when the catalogue no longer knows the id, or nothing follows. */
 fun nextExercise(timeline: Timeline, ordinal: Int, lib: Map<String, Exercise>): Exercise? =
@@ -210,19 +225,28 @@ fun cueEventFor(rule: Rule, destination: Destination): CueEvent = when {
  * segment `stateAt` reports is already the new one — its own exercise is the one about to start, and
  * only when it is a rest does the answer lie further on.
  */
-fun cueSpeechFor(cue: Cue, timeline: Timeline, ordinal: Int, lib: Map<String, Exercise>): String? =
-    when (cue) {
-        Cue.SESSION_START, Cue.INTERVAL_END -> upcomingExerciseName(timeline, ordinal, lib)
-        else -> null
-    }
+fun cueSpeechFor(
+    cue: Cue,
+    timeline: Timeline,
+    ordinal: Int,
+    lib: Map<String, Exercise>,
+    strings: Strings,
+): String? = when (cue) {
+    Cue.SESSION_START, Cue.INTERVAL_END -> upcomingExerciseName(timeline, ordinal, lib, strings)
+    else -> null
+}
 
 /** The movement at or after [ordinal] — see [cueSpeechFor] for why "at" is included. */
-fun upcomingExerciseName(timeline: Timeline, ordinal: Int, lib: Map<String, Exercise>): String? =
-    timeline.segments.asSequence()
-        .drop(ordinal)
-        .mapNotNull { it.exerciseId }
-        .firstOrNull()
-        ?.let { lib[it]?.nameJa }
+fun upcomingExerciseName(
+    timeline: Timeline,
+    ordinal: Int,
+    lib: Map<String, Exercise>,
+    strings: Strings,
+): String? = timeline.segments.asSequence()
+    .drop(ordinal)
+    .mapNotNull { it.exerciseId }
+    .firstOrNull()
+    ?.let { lib[it]?.displayName(strings) }
 
 /**
  * Whether a transition's effects end the session — the one obligation `ui/gym/KeepAwake.kt` states it

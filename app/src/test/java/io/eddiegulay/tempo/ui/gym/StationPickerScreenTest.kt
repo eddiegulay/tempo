@@ -8,6 +8,8 @@ import io.eddiegulay.tempo.gym.RoutineDraft
 import io.eddiegulay.tempo.gym.StationDraft
 import io.eddiegulay.tempo.gym.allowedMeasures
 import io.eddiegulay.tempo.gym.paceEstimateSec
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -29,10 +31,11 @@ class StationPickerScreenTest {
         pattern: Pattern,
         difficulty: Double = 1.0,
         secondsPerRep: Double = 2.0,
+        nameEn: String = id,
     ) = Exercise(
         id = id,
         nameJa = name,
-        nameEn = id,
+        nameEn = nameEn,
         pattern = pattern,
         secondsPerRep = secondsPerRep,
         difficulty = difficulty,
@@ -43,9 +46,13 @@ class StationPickerScreenTest {
         archived = false,
     )
 
-    private val pushup = exercise("pushup", "腕立て伏せ", Pattern.H_PUSH)
-    private val dip = exercise("dip", "ディップス", Pattern.H_PUSH, difficulty = 1.2, secondsPerRep = 2.5)
-    private val squat = exercise("squat", "スクワット", Pattern.SQUAT, difficulty = 0.5, secondsPerRep = 1.8)
+    private val pushup = exercise("pushup", "腕立て伏せ", Pattern.H_PUSH, nameEn = "Push-up")
+    private val dip = exercise(
+        "dip", "ディップス", Pattern.H_PUSH, difficulty = 1.2, secondsPerRep = 2.5, nameEn = "Triceps dip",
+    )
+    private val squat = exercise(
+        "squat", "スクワット", Pattern.SQUAT, difficulty = 0.5, secondsPerRep = 1.8, nameEn = "Air squat",
+    )
     private val catalogue = mapOf(pushup.id to pushup, dip.id to dip, squat.id to squat)
 
     private fun draft(vararg ids: String, rounds: Int? = 1) = RoutineDraft(
@@ -66,48 +73,61 @@ class StationPickerScreenTest {
         index = index,
         exerciseId = exerciseId,
         pattern = { catalogue[it]?.pattern },
-        name = { catalogue[it]?.nameJa ?: UNKNOWN_EXERCISE },
+        name = { catalogue[it]?.nameJa ?: unknownExercise(StringsJa) },
+        StringsJa,
     )
 
     // ─── The words ──────────────────────────────────────────────────────────────────────────────
 
     @Test
     fun `a disabled save says what it is waiting for`() {
-        assertEquals("保存", pickerSaveSemantics(canSave = true))
-        assertEquals("保存、種目をえらんでください", pickerSaveSemantics(canSave = false))
+        assertEquals("保存", pickerSaveSemantics(canSave = true, StringsJa))
+        assertEquals("保存、種目をえらんでください", pickerSaveSemantics(canSave = false, StringsJa))
+        assertEquals("Save", pickerSaveSemantics(canSave = true, StringsEn))
+        assertEquals("Save, choose an exercise first", pickerSaveSemantics(canSave = false, StringsEn))
     }
 
     @Test
     fun `a row announces its movement, its pattern and its difficulty`() {
-        assertEquals("腕立て伏せ、押す、難度 一.〇", exerciseSemantics(pushup))
-        assertEquals("スクワット、しゃがむ、難度 〇.五", exerciseSemantics(squat))
+        assertEquals("腕立て伏せ、押す、難度 一.〇", exerciseSemantics(pushup, StringsJa))
+        assertEquals("スクワット、しゃがむ、難度 〇.五", exerciseSemantics(squat, StringsJa))
+        // The row's own English column, drawn — and read — for the first time.
+        assertEquals("Push-up, Push, Difficulty 1.0", exerciseSemantics(pushup, StringsEn))
+        assertEquals("Air squat, Squat, Difficulty 0.5", exerciseSemantics(squat, StringsEn))
     }
 
     @Test
     fun `a disabled chip carries its reason and an enabled one carries nothing`() {
         // §3: 「秒数、この方式では使えません」 — 完走 is scored in reps, so a station that ends on a
         // timer is not part of the thing being measured.
-        val forTime = allowedMeasures(Engine.FOR_TIME).associateBy { it.measure }
-        assertEquals("秒数、この方式では使えません", measureSemantics(forTime.getValue(Measure.DURATION)))
-        assertEquals("回数", measureSemantics(forTime.getValue(Measure.REPS)))
+        val forTime = allowedMeasures(Engine.FOR_TIME, StringsJa).associateBy { it.measure }
+        assertEquals("秒数、この方式では使えません", measureSemantics(forTime.getValue(Measure.DURATION), StringsJa))
+        assertEquals("回数", measureSemantics(forTime.getValue(Measure.REPS), StringsJa))
 
         // 毎分 is defined by a fixed rep count inside a fixed window, so an open set has no window.
-        val emom = allowedMeasures(Engine.EMOM).associateBy { it.measure }
-        assertEquals("限界まで、この方式では使えません", measureSemantics(emom.getValue(Measure.MAX_EFFORT)))
+        val emom = allowedMeasures(Engine.EMOM, StringsJa).associateBy { it.measure }
+        assertEquals("限界まで、この方式では使えません", measureSemantics(emom.getValue(Measure.MAX_EFFORT), StringsJa))
     }
 
     @Test
     fun `the pace is labelled 目安 every time it appears`() {
         // §3 picker edge case 5: it never advances anything, and the label is what says so.
-        assertEquals("目安 四十秒", paceLine(paceEstimateSec(StationDraft("pushup", Measure.REPS, 20, null), pushup)))
-        assertEquals("目安 一分三十秒", paceLine(90))
+        val forty = paceEstimateSec(StationDraft("pushup", Measure.REPS, 20, null), pushup)
+
+        assertEquals("目安 四十秒", paceLine(forty, StringsJa))
+        assertEquals("目安 一分三十秒", paceLine(90, StringsJa))
+        assertEquals("About 40s", paceLine(forty, StringsEn))
+        assertEquals("About 1m 30s", paceLine(90, StringsEn))
     }
 
     @Test
     fun `限界まで has no pace at all`() {
         // The wheel is replaced by できるところまで and the line disappears — there is nothing to
         // estimate, and a number here would be the app deciding what "to your limit" means.
-        assertNull(paceLine(paceEstimateSec(StationDraft("run", Measure.MAX_EFFORT, null, null), null)))
+        val open = paceEstimateSec(StationDraft("run", Measure.MAX_EFFORT, null, null), null)
+
+        assertNull(paceLine(open, StringsJa))
+        assertNull("the hole stays a hole in English", paceLine(open, StringsEn))
     }
 
     // ─── The list ───────────────────────────────────────────────────────────────────────────────
@@ -252,5 +272,25 @@ class StationPickerScreenTest {
         assertEquals(Measure.MAX_EFFORT, seededMeasure(Engine.FOR_TIME, Measure.MAX_EFFORT))
         // ＋ 加える has nothing to correct and lands on the first allowed chip — 回数 for every engine.
         assertEquals(Measure.REPS, seededMeasure(Engine.EMOM, null))
+    }
+
+    // ─── The rest of the page's words ───────────────────────────────────────────────────────────
+
+    @Test
+    fun `the picker's own copy reads in both languages`() {
+        // できるところまで is the whole `MaxEffortSelected` state and 該当する種目はありません is a claim
+        // about the *query* — never about the catalogue, which has no empty state at all.
+        assertEquals("種目をえらぶ", StringsJa.gymExercise.pickerTitle)
+        assertEquals("できるところまで", StringsJa.gymExercise.openEnded)
+        assertEquals("はかり方", StringsJa.gymExercise.measureLabel)
+        assertEquals("該当する種目はありません", StringsJa.gymExercise.noMatch)
+        assertEquals("削除", StringsJa.gymExercise.remove)
+        assertEquals("選択中", StringsJa.gymExercise.selected)
+        assertEquals("やめる", StringsJa.gymExercise.cancel)
+
+        assertEquals("Choose an exercise", StringsEn.gymExercise.pickerTitle)
+        assertEquals("As far as you can", StringsEn.gymExercise.openEnded)
+        assertEquals("Measure", StringsEn.gymExercise.measureLabel)
+        assertEquals("No matching exercise", StringsEn.gymExercise.noMatch)
     }
 }

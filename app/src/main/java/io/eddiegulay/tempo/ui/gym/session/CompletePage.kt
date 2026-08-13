@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.eddiegulay.tempo.gym.SessionOutcome
 import io.eddiegulay.tempo.gym.session.CompletionReason
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.HeaderAction
 import io.eddiegulay.tempo.ui.gym.RecordMode
 import io.eddiegulay.tempo.ui.gym.RecordSummary
@@ -66,6 +67,7 @@ fun CompletePage(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val data = remember(state.outcome, state.reason) { recordData(state.outcome, state.reason) }
 
     // No `statusBarsPadding`: `GymRoute.Session` is immersive and the shell hands immersive routes the
@@ -80,8 +82,8 @@ fun CompletePage(
             // 閉じる, not とじる. `04` §6's generic close word belongs to the historical page; `03` §A
             // writes this one in kanji and it is the only way back into the shell from here.
             HeaderAction(
-                label = "閉じる",
-                description = "閉じる",
+                label = s.gymSession.completeClose,
+                description = s.gymSession.completeClose,
                 color = c.inkSoft,
                 onClick = actions::onCloseRecord,
             )

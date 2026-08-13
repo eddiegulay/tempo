@@ -37,10 +37,14 @@ data class CueSettings(
  * TalkBack off. Both failures are unrecoverable by the user, because in both the switch and the
  * behaviour disagree.
  *
- * A missing Japanese voice is a third state again, not a preference: §D.6 says to fall back silently
- * to tones and **never prompt for a voice download mid-workout**. So availability disarms the channel
- * here and says nothing; `GYM.SETTINGS` is where the reason is shown, at a moment the user is not
- * mid-plank.
+ * A missing voice is a third state again, not a preference: §D.6 says to fall back silently to tones
+ * and **never prompt for a voice download mid-workout**. So availability disarms the channel here and
+ * says nothing; `GYM.SETTINGS` is where the reason is shown, at a moment the user is not mid-plank.
+ *
+ * **"A voice" now means "a voice for the language in force"** — see [SpeechSink.setLanguage]. That
+ * widens who reaches this branch rather than narrowing it: a Japanese-market device almost always has
+ * a Japanese voice and may well have no English one, so an English UI on the same phone lands here for
+ * the first time. The behaviour is unchanged and that is the point; only the population is new.
  */
 fun armCues(
     prefs: EffectiveGymPreferences,

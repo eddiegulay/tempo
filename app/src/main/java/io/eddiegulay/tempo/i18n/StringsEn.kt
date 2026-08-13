@@ -92,6 +92,25 @@ object StringsEn : Strings {
         // different string with a different key, and the two must not be merged.
         override val dismiss = "Cancel"
 
+
+        override val eventCreate = object : WriteConfirmStrings {
+            override val heading = "Add this event?"
+            override val confirm = "Add"
+            override val consequence = "It will appear on your other devices too."
+        }
+
+        override val eventUpdate = object : WriteConfirmStrings {
+            override val heading = "Change this event?"
+            override val confirm = "Change"
+            override val consequence = "The change reaches your other devices too."
+        }
+
+        override val eventDelete = object : WriteConfirmStrings {
+            override val heading = "Delete this event?"
+            override val confirm = "Delete"
+            override val consequence = "It disappears from your other devices too, and cannot be brought back."
+        }
+
         override val languageTitle = "Language"
     }
 

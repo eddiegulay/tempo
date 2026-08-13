@@ -1,6 +1,6 @@
 package io.eddiegulay.tempo.gym
 
-import io.eddiegulay.tempo.data.JapaneseDate
+import io.eddiegulay.tempo.i18n.Strings
 import java.time.YearMonth
 
 /*
@@ -70,15 +70,20 @@ data class HistoryMonth(
  *
  * Input order is preserved as-is. The store returns `(started_at, id) DESC` and [mergePage] keeps it
  * that way; re-sorting here would hide a paging bug rather than surface it.
+ *
+ * **[HistoryMonth.header] is a month *name*** — 六月, the word — so it goes through `fmt.monthName`
+ * and never through `fmt.months(n)`, which is a *count* of months. Japanese spells both 六月, so the
+ * wrong one is invisible in the language being migrated away from and renders `6 months` over a
+ * month's rows in the one being migrated to. `InkDensity.kt` carries the same note over the same word.
  */
-fun groupByMonth(sessions: List<SessionSummary>): List<HistoryMonth> =
+fun groupByMonth(sessions: List<SessionSummary>, strings: Strings): List<HistoryMonth> =
     sessions
         .groupByTo(LinkedHashMap()) { YearMonth.from(it.localDate) }
         .map { (month, rows) ->
             HistoryMonth(
                 month = month,
-                header = JapaneseDate.kanji(month.monthValue) + "月",
-                countLabel = JapaneseDate.kanjiExtended(rows.size) + "回",
+                header = strings.fmt.monthName(month.monthValue),
+                countLabel = strings.fmt.times(rows.size),
                 sessions = rows,
             )
         }

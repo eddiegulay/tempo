@@ -61,7 +61,7 @@ class RecordsPrAndChartsStructureTest {
         // affordance for an action that does not exist is a bug."
         listOf("fun BarCanvas(", "fun LineCanvas(", "fun VolumeCanvas(").forEach { header ->
             val body = declarationBody(charts, header)
-            assertTrue("$header must not be clickable", !body.contains("clickable"))
+            assertTrue("$header must not be clickable", !body.contains("clickable") && !body.contains("pressable"))
             assertTrue("$header must not carry a click label", !body.contains("onClick"))
             assertTrue("$header must not claim to be a button", !body.contains("Role.Button"))
             assertTrue("$header is an image with a spoken summary", body.contains("Role.Image"))
@@ -128,12 +128,13 @@ class RecordsPrAndChartsStructureTest {
 
     @Test
     fun `the empty sentence exists once per page and is never a loading branch`() {
-        // One constant, one site — counted as a *literal*, since the sentence is discussed in prose
-        // wherever it is explained. A second literal is how a state's wording drifts from the state it
-        // was written for.
-        val literal = Regex.escape("\"まだ 記録はありません\"")
-        assertEquals(1, Regex(literal).findAll(pr).count())
-        assertEquals(1, Regex(literal).findAll(charts).count())
+        // One key, one site. The sentence itself moved into `GymRecordsStrings`, so what is counted is
+        // the reference rather than the literal — a second reference is a second state that could say
+        // it, which is the drift this rule was written for. 動きごと's tab is the exception the spec
+        // draws: `PrMovementsEmpty` says it beside its explanation, so the PR page has two.
+        val key = Regex.escape("gymRecords.recordsEmpty")
+        assertEquals(2, Regex(key).findAll(pr).count())
+        assertEquals(1, Regex(key).findAll(charts).count())
         assertTrue(pr.contains("Loadable.Loading -> PrLoading()"))
     }
 
@@ -235,8 +236,12 @@ class RecordsPrAndChartsStructureTest {
         // TalkBack."
         val card = declarationBody(pr, "fun PrRoutineCard(")
         assertTrue(card.contains("customActions = listOf("))
-        assertTrue(card.contains("CustomAccessibilityAction(ACTION_SESSION)"))
-        assertTrue(card.contains("CustomAccessibilityAction(ACTION_HISTORY)"))
+        // The two labels are `gymRecords.actionSession` and `gymRecords.seeHistory`, read into locals
+        // above the modifier because a `semantics {}` block is not a composable scope.
+        assertTrue(card.contains("CustomAccessibilityAction(actionSession)"))
+        assertTrue(card.contains("CustomAccessibilityAction(actionHistory)"))
+        assertTrue(card.contains("s.gymRecords.actionSession"))
+        assertTrue(card.contains("s.gymRecords.seeHistory"))
 
         val fragment = declarationBody(pr, "fun PrFragment(")
         assertTrue("a fragment contributes nothing to the tree", fragment.contains("clearAndSetSemantics {}"))

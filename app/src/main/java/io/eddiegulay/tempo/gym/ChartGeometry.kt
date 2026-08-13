@@ -1,6 +1,6 @@
 package io.eddiegulay.tempo.gym
 
-import io.eddiegulay.tempo.data.JapaneseDate
+import io.eddiegulay.tempo.i18n.Strings
 import java.time.LocalDate
 import kotlin.math.roundToInt
 
@@ -37,18 +37,26 @@ import kotlin.math.roundToInt
  * "一年 = 52 bars", which settles it.
  *
  * The labels are the strings, not derived from [weeks]: 一年 is not 五十二週, and computing the chip
- * text from the count would produce exactly that.
+ * text from the count would produce exactly that. They come from the table rather than a constructor
+ * argument for §L3's reason — a label fixed at class-init cannot follow a language switch.
  */
-enum class ChartRange(val label: String, val weeks: Int) {
-    TWELVE("十二週", 12),
-    TWENTY_SIX("二十六週", 26),
-    YEAR("一年", 52),
+enum class ChartRange(val weeks: Int) {
+    TWELVE(12),
+    TWENTY_SIX(26),
+    YEAR(52),
     ;
 
     companion object {
         /** The range a freshly opened page shows. §4: *back … range resets to 十二週*. */
         val Default: ChartRange = TWELVE
     }
+}
+
+/** 十二週 / 二十六週 / 一年 — the chip's word. Never derived from [ChartRange.weeks]. */
+fun ChartRange.label(strings: Strings): String = when (this) {
+    ChartRange.TWELVE -> strings.gymRecords.rangeTwelveWeeks
+    ChartRange.TWENTY_SIX -> strings.gymRecords.rangeTwentySixWeeks
+    ChartRange.YEAR -> strings.gymRecords.rangeYear
 }
 
 /** How many weekly points a range asks the repository for — `weeklySeries(rangeWeeks(range))`. */
@@ -74,8 +82,14 @@ const val VOLUME_MIN_HISTORY_DAYS: Int = 28
  * a boolean because the suppressed state **renders a sentence** — the chart does not silently vanish,
  * which would leave the user wondering whether it broke.
  */
-fun chartSuppressionCopy(historyDays: Int): String? =
-    if (historyDays >= VOLUME_MIN_HISTORY_DAYS) null else "二十八日ぶん たまると 出ます"
+fun chartSuppressionCopy(historyDays: Int, strings: Strings): String? =
+    if (historyDays >= VOLUME_MIN_HISTORY_DAYS) {
+        null
+    } else {
+        // The threshold reaches the sentence through the formatter, so 二十八日 and the constant above
+        // it cannot drift: there is one 28 on this page and it is [VOLUME_MIN_HISTORY_DAYS].
+        strings.gymRecords.volumeSuppressed(strings.fmt.days(VOLUME_MIN_HISTORY_DAYS))
+    }
 
 // ─── Geometry ───────────────────────────────────────────────────────────────────────────────────
 
@@ -245,10 +259,17 @@ fun isDense(count: Int, width: Float, minSlotPx: Float): Boolean {
 // ─── Captions and spoken summaries ──────────────────────────────────────────────────────────────
 
 /** Which of the three charts a caption or summary is for. */
-enum class ChartKind(val heading: String) {
-    WEEKLY_SESSIONS("週ごとの回数"),
-    ACTIVE_MINUTES("活動時間"),
-    VOLUME("積み上げ"),
+enum class ChartKind {
+    WEEKLY_SESSIONS,
+    ACTIVE_MINUTES,
+    VOLUME,
+}
+
+/** 週ごとの回数 / 活動時間 / 積み上げ — a chart's name, from the table (§L3). */
+fun ChartKind.heading(strings: Strings): String = when (this) {
+    ChartKind.WEEKLY_SESSIONS -> strings.gymRecords.chartWeeklySessions
+    ChartKind.ACTIVE_MINUTES -> strings.gymRecords.activeTime
+    ChartKind.VOLUME -> strings.gymRecords.chartVolume
 }
 
 /**
@@ -257,8 +278,14 @@ enum class ChartKind(val heading: String) {
  * §4 edge case 4's exact string. Only the bar chart can change renderer, so [dense] is ignored by the
  * other two rather than silently producing 活動時間（折れ線） for a chart that was always a line.
  */
-fun chartHeading(kind: ChartKind, dense: Boolean = false): String =
-    if (kind == ChartKind.WEEKLY_SESSIONS && dense) kind.heading + "（折れ線）" else kind.heading
+fun chartHeading(kind: ChartKind, strings: Strings, dense: Boolean = false): String {
+    val heading = kind.heading(strings)
+    return if (kind == ChartKind.WEEKLY_SESSIONS && dense) {
+        strings.gymRecords.chartAsLine(heading)
+    } else {
+        heading
+    }
+}
 
 /**
  * **The mean that the current week is not allowed to drag down.**
@@ -308,21 +335,29 @@ fun meanExcludingPartial(values: List<Double>): Double? {
  * @param values the plotted series. Sessions and minutes per week for the first two; ignored for
  *   `VOLUME`, whose caption states its method rather than its numbers.
  */
-fun chartCaption(kind: ChartKind, values: List<Double>): String = when (kind) {
-    ChartKind.VOLUME -> "日ごとの積み上げと 七日平均 ・ 目安"
+fun chartCaption(kind: ChartKind, values: List<Double>, strings: Strings): String {
+    val copy = strings.gymRecords
+    val separator = strings.fmt.separator
+    return when (kind) {
+        ChartKind.VOLUME -> copy.volumeMethod + separator + copy.estimateNote
 
-    ChartKind.WEEKLY_SESSIONS -> {
-        val max = values.maxOrNull() ?: 0.0
-        val mean = meanExcludingPartial(values)
-        val head = "いちばん多い週 " + JapaneseDate.kanjiExtended(max.roundToInt()) + "回"
-        if (mean == null) head else head + " ・ ならして " + coefficientLabel(mean) + "回"
-    }
+        ChartKind.WEEKLY_SESSIONS -> {
+            val max = values.maxOrNull() ?: 0.0
+            val mean = meanExcludingPartial(values)
+            val head = copy.busiestWeek(strings.fmt.count(max.roundToInt()))
+            if (mean == null) head else head + separator + copy.weeklyAverage(strings.fmt.coefficient(mean))
+        }
 
-    ChartKind.ACTIVE_MINUTES -> {
-        val total = values.sum()
-        val mean = meanExcludingPartial(values)
-        val head = "合計 " + JapaneseDate.kanjiExtended(total.roundToInt()) + "分"
-        if (mean == null) head else head + " ・ ならして " + JapaneseDate.kanjiExtended(mean.roundToInt()) + "分/週"
+        ChartKind.ACTIVE_MINUTES -> {
+            val total = values.sum()
+            val mean = meanExcludingPartial(values)
+            val head = copy.totalMinutes(strings.fmt.minutes(total.roundToInt()))
+            if (mean == null) {
+                head
+            } else {
+                head + separator + copy.weeklyAverageMinutes(strings.fmt.minutes(mean.roundToInt()))
+            }
+        }
     }
 }
 
@@ -344,21 +379,24 @@ fun chartCaption(kind: ChartKind, values: List<Double>): String = when (kind) {
  * And there is no click label anywhere in here: the charts are not tappable (no tooltips, no
  * scrubbing), and an a11y affordance for an action that does not exist is a bug.
  */
-fun chartSemantics(kind: ChartKind, range: ChartRange, values: List<Double>): String {
-    val head = kind.heading + "、直近" + range.label
+fun chartSemantics(kind: ChartKind, range: ChartRange, values: List<Double>, strings: Strings): String {
+    val copy = strings.gymRecords
+    val listSeparator = strings.fmt.listSeparator
+    val head = kind.heading(strings) + listSeparator + copy.overLast(range.label(strings))
     if (values.isEmpty()) return head
     return when (kind) {
         ChartKind.WEEKLY_SESSIONS -> {
             val max = values.maxOrNull() ?: 0.0
             val mean = meanExcludingPartial(values)
-            buildString {
-                append(head)
-                append("、いちばん多い週は ").append(JapaneseDate.kanjiExtended(max.roundToInt())).append("回")
-                if (mean != null) append("、ならして ").append(coefficientLabel(mean)).append("回")
-                append("、今週は ").append(JapaneseDate.kanjiExtended(values.last().roundToInt())).append("回")
-            }
+            listOfNotNull(
+                head,
+                copy.busiestWeekSpoken(strings.fmt.count(max.roundToInt())),
+                mean?.let { copy.weeklyAverage(strings.fmt.coefficient(it)) },
+                copy.thisWeekSpoken(strings.fmt.count(values.last().roundToInt())),
+            ).joinToString(listSeparator)
         }
-        ChartKind.ACTIVE_MINUTES, ChartKind.VOLUME -> head + "、" + chartCaption(kind, values)
+        ChartKind.ACTIVE_MINUTES, ChartKind.VOLUME ->
+            head + listSeparator + chartCaption(kind, values, strings)
     }
 }
 
@@ -374,7 +412,7 @@ fun chartSemantics(kind: ChartKind, range: ChartRange, values: List<Double>): St
  * (`weekStartOf`), never a formatted SQL date — `strftime` is UTC and would name the wrong Monday
  * for anyone east of Greenwich (`00-plan.md` §2 row 14).
  */
-fun chartAxisLabels(weekStarts: List<LocalDate>): Pair<String, String>? {
+fun chartAxisLabels(weekStarts: List<LocalDate>, strings: Strings): Pair<String, String>? {
     val first = weekStarts.firstOrNull() ?: return null
-    return JapaneseDate.monthDay(first.atStartOfDay()) to "今週"
+    return strings.fmt.monthDay(first.atStartOfDay()) to strings.gymRecords.thisWeek
 }

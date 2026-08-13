@@ -21,6 +21,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.FaultStrip
 import io.eddiegulay.tempo.ui.faultCopy
 import io.eddiegulay.tempo.ui.theme.Gothic
@@ -41,9 +42,11 @@ import io.eddiegulay.tempo.ui.theme.Mincho
  * and an unhandled arm in `GymPage` is a blank screen in the middle of a workout — strictly the worst
  * of the three outcomes. The Phase 1 wiring agent disclosed the debt: the page belonged next to the
  * sheet, and the arming window and its two sentences belonged in one place rather than two. Both are
- * now done, with **no change to behaviour and no change to copy** — `DISCARD_ARMED_LABEL`,
- * `DISCARD_ARMED_DESCRIPTION`, `DISCARD_DESCRIPTION` and the 3s window are `QuitSheet.kt`'s, and this
- * page reads them.
+ * now done, with **no change to behaviour and no change to copy** — the arming window is
+ * `QuitSheet.kt`'s and the two sentences are `strings.gymSession.quitArmed` /
+ * `quitArmedDescription` / `quitDiscardDescription`, which is where "one place" ended up once the copy
+ * had to exist in two languages. The three sentences this page used to declare as literals of its own
+ * are the sheet's own keys and not new ones.
  *
  * **つづける is removed, and that is the whole difference from the sheet.** There is nothing to continue
  * — the stored results cannot be landed on the recompiled timeline — so offering the escape would be
@@ -66,7 +69,9 @@ fun SessionUnrecoverablePage(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalTempoColors.current
-    val options = quitOptions(state.resultsWritten)
+    val strings = LocalStrings.current
+    val s = strings.gymSession
+    val options = quitOptions(strings, state.resultsWritten)
     val arm = rememberDiscardArm()
 
     // Which write failed, so もう一度 retries the one the user asked for. A failed **discard** has no
@@ -85,13 +90,13 @@ fun SessionUnrecoverablePage(
         )
         Spacer(Modifier.height(10.dp))
         Text(
-            text = "鍛錬を終えますか",
+            text = s.quitTitle,
             style = TextStyle(fontFamily = Mincho, fontSize = 16.sp, letterSpacing = 2.sp, color = c.inkSoft),
         )
         if (options.subtitleIsWarning) {
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "まだ 記録するものがありません",
+                text = s.quitNothingToSave,
                 style = TextStyle(fontFamily = Gothic, fontSize = 13.sp, color = c.inkFaint),
             )
         }
@@ -100,8 +105,8 @@ fun SessionUnrecoverablePage(
 
         if (options.canRecord) {
             PlayerSheetRow(
-                label = "ここまでを記録する",
-                description = "ここまでを記録する",
+                label = s.quitSave,
+                description = s.quitSave,
                 color = c.accent,
                 enabled = !state.saving,
                 onClick = {
@@ -113,8 +118,8 @@ fun SessionUnrecoverablePage(
         }
 
         PlayerSheetRow(
-            label = if (arm.armed) DISCARD_ARMED_LABEL else options.discardLabel,
-            description = if (arm.armed) DISCARD_ARMED_DESCRIPTION else DISCARD_DESCRIPTION,
+            label = if (arm.armed) s.quitArmed else options.discardLabel,
+            description = if (arm.armed) s.quitArmedDescription else s.quitDiscardDescription,
             color = c.inkFaint,
             enabled = !state.saving,
             assertive = arm.armed,
@@ -132,7 +137,7 @@ fun SessionUnrecoverablePage(
                 FaultStrip(fault, onRecover = actions::onRetryFinish)
             } else {
                 Text(
-                    text = faultCopy(fault).message,
+                    text = faultCopy(fault, LocalStrings.current).message,
                     style = TextStyle(fontFamily = Gothic, fontSize = 13.sp, color = c.accent),
                 )
             }

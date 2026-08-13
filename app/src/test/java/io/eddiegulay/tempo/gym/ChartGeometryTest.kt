@@ -1,5 +1,7 @@
 package io.eddiegulay.tempo.gym
 
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -163,10 +165,10 @@ class ChartGeometryTest {
 
     @Test
     fun `a dense bar chart says so in its heading`() {
-        assertEquals("週ごとの回数（折れ線）", chartHeading(ChartKind.WEEKLY_SESSIONS, dense = true))
-        assertEquals("週ごとの回数", chartHeading(ChartKind.WEEKLY_SESSIONS, dense = false))
+        assertEquals("週ごとの回数（折れ線）", chartHeading(ChartKind.WEEKLY_SESSIONS, StringsJa, dense = true))
+        assertEquals("週ごとの回数", chartHeading(ChartKind.WEEKLY_SESSIONS, StringsJa, dense = false))
         // Only the bars can change renderer. 活動時間 was always a line and must not gain the note.
-        assertEquals("活動時間", chartHeading(ChartKind.ACTIVE_MINUTES, dense = true))
+        assertEquals("活動時間", chartHeading(ChartKind.ACTIVE_MINUTES, StringsJa, dense = true))
     }
 
     @Test
@@ -180,11 +182,25 @@ class ChartGeometryTest {
     }
 
     @Test
+    fun `a range chip is labelled, never computed from its week count`() {
+        // 一年 is fifty-two weeks and is not spelled 五十二週; deriving the chip text from [weeks]
+        // would produce exactly that, in either language.
+        assertEquals(
+            listOf("十二週", "二十六週", "一年"),
+            ChartRange.entries.map { it.label(StringsJa) },
+        )
+        assertEquals(
+            listOf("12 weeks", "26 weeks", "1 year"),
+            ChartRange.entries.map { it.label(StringsEn) },
+        )
+    }
+
+    @Test
     fun `the load chart stays suppressed below twenty-eight days and says why`() {
         // Design §7.4: a weighted-volume trend over six days is noise presented as insight. The
         // suppressed chart renders a sentence rather than vanishing, so nobody wonders if it broke.
-        assertEquals("二十八日ぶん たまると 出ます", chartSuppressionCopy(27))
-        assertNull(chartSuppressionCopy(28))
+        assertEquals("二十八日ぶん たまると 出ます", chartSuppressionCopy(27, StringsJa))
+        assertNull(chartSuppressionCopy(28, StringsJa))
     }
 
     // ─── captions (§6) ──────────────────────────────────────────────────────────────────────────
@@ -194,7 +210,7 @@ class ChartGeometryTest {
         // §6's string, on numbers that produce it: the first five weeks average 3.4, the sixth is
         // this week and is excluded from ならして but not from いちばん多い週.
         val weeks = listOf(6.0, 4.0, 3.0, 2.0, 2.0, 2.0)
-        assertEquals("いちばん多い週 六回 ・ ならして 三.四回", chartCaption(ChartKind.WEEKLY_SESSIONS, weeks))
+        assertEquals("いちばん多い週 六回 ・ ならして 三.四回", chartCaption(ChartKind.WEEKLY_SESSIONS, weeks, StringsJa))
     }
 
     @Test
@@ -203,7 +219,7 @@ class ChartGeometryTest {
         // holding one: ならして is four, not 3.4.
         val weeks = listOf(4.0, 4.0, 4.0, 4.0, 1.0)
         assertEquals(4.0, meanExcludingPartial(weeks)!!, 1e-9)
-        assertEquals("いちばん多い週 四回 ・ ならして 四.〇回", chartCaption(ChartKind.WEEKLY_SESSIONS, weeks))
+        assertEquals("いちばん多い週 四回 ・ ならして 四.〇回", chartCaption(ChartKind.WEEKLY_SESSIONS, weeks, StringsJa))
     }
 
     @Test
@@ -211,14 +227,14 @@ class ChartGeometryTest {
         // 〇回 as an average is a claim about a period the user has not finished living. The fragment
         // is omitted and the total still stands.
         assertNull(meanExcludingPartial(listOf(3.0)))
-        assertEquals("いちばん多い週 三回", chartCaption(ChartKind.WEEKLY_SESSIONS, listOf(3.0)))
+        assertEquals("いちばん多い週 三回", chartCaption(ChartKind.WEEKLY_SESSIONS, listOf(3.0), StringsJa))
     }
 
     @Test
     fun `the minutes caption totals every week and averages the finished ones`() {
         assertEquals(
             "合計 二千四百分 ・ ならして 二百分/週",
-            chartCaption(ChartKind.ACTIVE_MINUTES, List(12) { 200.0 }),
+            chartCaption(ChartKind.ACTIVE_MINUTES, List(12) { 200.0 }, StringsJa),
         )
     }
 
@@ -228,9 +244,9 @@ class ChartGeometryTest {
         // approximation, so the number is an estimate wearing a total's clothes.
         assertEquals(
             "日ごとの積み上げと 七日平均 ・ 目安",
-            chartCaption(ChartKind.VOLUME, listOf(120.0, 80.0)),
+            chartCaption(ChartKind.VOLUME, listOf(120.0, 80.0), StringsJa),
         )
-        assertTrue(chartCaption(ChartKind.VOLUME, emptyList()).endsWith("目安"))
+        assertTrue(chartCaption(ChartKind.VOLUME, emptyList(), StringsJa).endsWith("目安"))
     }
 
     // ─── spoken summaries ───────────────────────────────────────────────────────────────────────
@@ -239,7 +255,7 @@ class ChartGeometryTest {
     fun `the bar chart speaks §4's sentence verbatim`() {
         assertEquals(
             "週ごとの回数、直近十二週、いちばん多い週は 六回、ならして 三.四回、今週は 二回",
-            chartSemantics(ChartKind.WEEKLY_SESSIONS, ChartRange.TWELVE, listOf(6.0, 4.0, 3.0, 2.0, 2.0, 2.0)),
+            chartSemantics(ChartKind.WEEKLY_SESSIONS, ChartRange.TWELVE, listOf(6.0, 4.0, 3.0, 2.0, 2.0, 2.0), StringsJa),
         )
     }
 
@@ -247,11 +263,11 @@ class ChartGeometryTest {
     fun `the other two charts reuse the same skeleton rather than inventing sentences`() {
         assertEquals(
             "活動時間、直近二十六週、合計 二千四百分 ・ ならして 二百分/週",
-            chartSemantics(ChartKind.ACTIVE_MINUTES, ChartRange.TWENTY_SIX, List(12) { 200.0 }),
+            chartSemantics(ChartKind.ACTIVE_MINUTES, ChartRange.TWENTY_SIX, List(12) { 200.0 }, StringsJa),
         )
         assertEquals(
             "積み上げ、直近一年、日ごとの積み上げと 七日平均 ・ 目安",
-            chartSemantics(ChartKind.VOLUME, ChartRange.YEAR, listOf(1.0)),
+            chartSemantics(ChartKind.VOLUME, ChartRange.YEAR, listOf(1.0), StringsJa),
         )
     }
 
@@ -259,13 +275,39 @@ class ChartGeometryTest {
     fun `an empty series says what chart it is and stops`() {
         // The Empty state has its own composable; this is a defence, not a surface. It must not read
         // as いちばん多い週 〇回, which would be a claim about a user with no history.
-        assertEquals("週ごとの回数、直近十二週", chartSemantics(ChartKind.WEEKLY_SESSIONS, ChartRange.TWELVE, emptyList()))
+        assertEquals("週ごとの回数、直近十二週", chartSemantics(ChartKind.WEEKLY_SESSIONS, ChartRange.TWELVE, emptyList(), StringsJa))
     }
 
     @Test
     fun `the bar chart's footer names the first week and the last`() {
-        val labels = chartAxisLabels(listOf(LocalDate.of(2026, 3, 30), LocalDate.of(2026, 4, 6)))
+        val labels = chartAxisLabels(listOf(LocalDate.of(2026, 3, 30), LocalDate.of(2026, 4, 6)), StringsJa)
         assertEquals("三月三十日" to "今週", labels)
-        assertNull(chartAxisLabels(emptyList()))
+        assertNull(chartAxisLabels(emptyList(), StringsJa))
+    }
+
+    // ─── English ────────────────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `the captions are sentences in English rather than transliterated fragments`() {
+        // ならして circumfixes its counter (ならして 三.四回) and English has none, which is why the
+        // average is a whole member on the table rather than a prefix glued to a formatted number.
+        assertEquals(
+            "Busiest week 6 · averaging 3.4",
+            chartCaption(ChartKind.WEEKLY_SESSIONS, listOf(6.0, 4.0, 3.0, 2.0, 2.0, 2.0), StringsEn),
+        )
+        assertEquals(
+            "2400m total · averaging 200m a week",
+            chartCaption(ChartKind.ACTIVE_MINUTES, List(12) { 200.0 }, StringsEn),
+        )
+        assertEquals(
+            "Daily build-up and a 7-day mean · approx.",
+            chartCaption(ChartKind.VOLUME, listOf(120.0, 80.0), StringsEn),
+        )
+    }
+
+    @Test
+    fun `the suppression sentence carries the threshold, not a spelled-out number`() {
+        assertEquals("Appears once 28 days have built up", chartSuppressionCopy(27, StringsEn))
+        assertNull(chartSuppressionCopy(28, StringsEn))
     }
 }

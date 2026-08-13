@@ -1,9 +1,6 @@
 package io.eddiegulay.tempo.ui.gym
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,7 +16,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -35,7 +31,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -55,7 +50,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.calendar.Loadable
 import io.eddiegulay.tempo.data.GymFault
-import io.eddiegulay.tempo.data.JapaneseDate
 import io.eddiegulay.tempo.data.TempoFault
 import io.eddiegulay.tempo.gym.GymRoute
 import io.eddiegulay.tempo.gym.GymViewModel
@@ -70,12 +64,17 @@ import io.eddiegulay.tempo.gym.mergePage
 import io.eddiegulay.tempo.gym.nextCursor
 import io.eddiegulay.tempo.gym.sessionRowLines
 import io.eddiegulay.tempo.gym.shouldPrefetch
+import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.i18n.Strings
 import io.eddiegulay.tempo.ui.FaultPanel
 import io.eddiegulay.tempo.ui.FaultStrip
 import io.eddiegulay.tempo.ui.HeaderAction
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.combinedPressable
+import io.eddiegulay.tempo.ui.theme.pressable
 import java.time.YearMonth
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -150,8 +149,12 @@ fun historyPageState(headLoaded: Boolean, headFault: TempoFault?, rows: Int): Hi
  * `GYM.RECORDS.INDEX`, arrives with a 型をえらぶ action beside it, and §4 gives this page its own
  * shorter form. Two pages, two rows of the table, no borrowing.
  */
-fun historyEmptyCopy(routineId: String?): String =
-    if (routineId == null) "記録はありません" else "この型は まだ やっていません"
+fun historyEmptyCopy(routineId: String?, strings: Strings): String =
+    if (routineId == null) {
+        strings.gymRecords.historyEmpty
+    } else {
+        strings.gymRecords.historyEmptyFiltered
+    }
 
 /**
  * The footer under the last row: nothing, 読み込み中, もう一度, or 40.dp of air.
@@ -254,16 +257,26 @@ fun historySubtitleOrNull(
     routineName: String?,
     sessionCount: Int?,
     lifetime: LifetimeSummary?,
+    strings: Strings,
 ): String? {
     if (routineId != null) {
         if (routineName == null || sessionCount == null) return null
         // `totalActiveMs` is unread by the filtered branch of `historySubtitle` — §4 writes the filtered
         // subtitle as 「七分間」十四回 and nothing else — so passing zero states no minutes rather than
         // claiming zero of them.
-        return historySubtitle(sessions = sessionCount, totalActiveMs = 0L, routineName = routineName)
+        return historySubtitle(
+            sessions = sessionCount,
+            totalActiveMs = 0L,
+            strings = strings,
+            routineName = routineName,
+        )
     }
     if (lifetime == null) return null
-    return historySubtitle(sessions = lifetime.sessions, totalActiveMs = lifetime.totalActiveMs)
+    return historySubtitle(
+        sessions = lifetime.sessions,
+        totalActiveMs = lifetime.totalActiveMs,
+        strings = strings,
+    )
 }
 
 /**
@@ -398,22 +411,23 @@ fun historyRetry(load: HistoryLoad): HistoryLoad =
  * `sessionRowLines.detail`, because that line has already dropped the month and re-parsing a rendered
  * string to recover its parts is how the two forms start disagreeing.
  */
-fun historyRowSemantics(summary: SessionSummary): String {
-    val lines = sessionRowLines(summary)
+fun historyRowSemantics(summary: SessionSummary, strings: Strings): String {
+    val lines = sessionRowLines(summary, strings)
     return listOfNotNull(
+        // Frozen at write time and never retranslated (§L10).
         summary.routineName,
-        JapaneseDate.monthDay(summary.localDate.atStartOfDay()),
+        strings.fmt.monthDay(summary.localDate.atStartOfDay()),
         lines.duration,
-        JapaneseDate.kanjiExtended(summary.roundsCompleted).takeIf { summary.roundsCompleted > 0 }
-            ?.plus("巡"),
-        JapaneseDate.kanjiExtended(summary.totalReps).takeIf { summary.totalReps > 0 }?.plus("回"),
+        strings.fmt.rounds(summary.roundsCompleted).takeIf { summary.roundsCompleted > 0 },
+        strings.fmt.reps(summary.totalReps).takeIf { summary.totalReps > 0 },
         lines.rating,
         lines.chip,
-    ).joinToString("、")
+    ).joinToString(strings.fmt.listSeparator)
 }
 
 /** `六月、十二回` — the month header as one node (§4: "Month header one node"). */
-fun historyMonthSemantics(month: HistoryMonth): String = month.header + "、" + month.countLabel
+fun historyMonthSemantics(month: HistoryMonth, strings: Strings): String =
+    month.header + strings.fmt.listSeparator + month.countLabel
 
 /**
  * The two items behind a long press, as values rather than as composables.
@@ -426,12 +440,23 @@ fun historyMonthSemantics(month: HistoryMonth): String = month.header + "、" + 
  * its denormalised `routine_name` and *"この型を見る still works and lands on the archived detail"*. A
  * purged routine cannot be the other case, because `purgeRoutine` is offered only at zero sessions.
  */
-enum class HistoryMenuItem(val label: String) {
-    Delete("記録を削除"),
-    OpenRoutine("この型を見る"),
+enum class HistoryMenuItem {
+    Delete,
+    OpenRoutine,
 }
 
 val HISTORY_MENU_ITEMS: List<HistoryMenuItem> = HistoryMenuItem.entries
+
+/**
+ * 記録を削除 / この型を見る — the menu's words, from the table (§L3).
+ *
+ * この型を見る is **not** `SessionDetailScreen`'s 型を見る (§H8): this one is reached from a row in a
+ * list of many and names *which* routine, and that distinction is deliberate in both languages.
+ */
+fun HistoryMenuItem.label(strings: Strings): String = when (this) {
+    HistoryMenuItem.Delete -> strings.gymRecords.deleteRecord
+    HistoryMenuItem.OpenRoutine -> strings.gymRecords.openThisRoutine
+}
 
 /**
  * 記録を削除's confirmation, from §6's own row: `この記録を削除しますか` / `元に戻せません。`
@@ -452,18 +477,16 @@ data class SessionDeleteCopy(
     val dismiss: String,
 )
 
-fun sessionDeleteCopy(): SessionDeleteCopy = SessionDeleteCopy(
-    title = "この記録を削除しますか",
-    body = "元に戻せません。",
-    confirm = "削除",
-    dismiss = "やめる",
+fun sessionDeleteCopy(strings: Strings): SessionDeleteCopy = SessionDeleteCopy(
+    title = strings.gymRecords.deleteConfirmTitle,
+    body = strings.gymRecords.deleteConfirmBody,
+    confirm = strings.gymRecords.deleteConfirm,
+    dismiss = strings.gymRecords.deleteDismiss,
 )
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The page
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-
-private const val PAGE_TITLE = "これまで"
 
 /**
  * これまで — every finished session, newest first, month by month.
@@ -504,6 +527,7 @@ fun RecordsHistoryScreen(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val repository = gym.repository
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
@@ -518,7 +542,7 @@ fun RecordsHistoryScreen(
     var failedDelete by remember(routineId) { mutableStateOf<SessionSummary?>(null) }
     var pendingDelete by remember { mutableStateOf<SessionSummary?>(null) }
 
-    val months = remember(load.loaded) { groupByMonth(load.loaded) }
+    val months = remember(load.loaded, s) { groupByMonth(load.loaded, s) }
     val items = remember(months) { historyItems(months) }
 
     /*
@@ -642,7 +666,13 @@ fun RecordsHistoryScreen(
 
     Column(modifier.fillMaxSize()) {
         HistoryHeader(
-            subtitle = historySubtitleOrNull(routineId, filteredName, sessionCount, lifetime.valueOrNull()),
+            subtitle = historySubtitleOrNull(
+                routineId,
+                filteredName,
+                sessionCount,
+                lifetime.valueOrNull(),
+                s,
+            ),
             onClose = { if (gym.stack.value.size > 1) gym.onBack() },
         )
 
@@ -711,7 +741,7 @@ fun RecordsHistoryScreen(
     }
 
     pendingDelete?.let { target ->
-        val copy = sessionDeleteCopy()
+        val copy = sessionDeleteCopy(s)
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
             containerColor = c.bgSolid,
@@ -753,6 +783,7 @@ fun RecordsHistoryScreen(
 @Composable
 private fun HistoryHeader(subtitle: String?, onClose: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Column(Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -763,7 +794,7 @@ private fun HistoryHeader(subtitle: String?, onClose: () -> Unit) {
         ) {
             Column(Modifier.weight(1f, fill = true)) {
                 Text(
-                    text = PAGE_TITLE,
+                    text = s.gymRecords.historyTitle,
                     modifier = Modifier.semantics { heading() },
                     style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
                 )
@@ -780,7 +811,12 @@ private fun HistoryHeader(subtitle: String?, onClose: () -> Unit) {
                     )
                 }
             }
-            HeaderAction(label = "とじる", description = "とじる", color = c.inkFaint, onClick = onClose)
+            HeaderAction(
+                label = s.gymRecords.close,
+                description = s.gymRecords.close,
+                color = c.inkFaint,
+                onClick = onClose,
+            )
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.hair))
     }
@@ -825,13 +861,14 @@ private fun HistoryList(
 @Composable
 private fun MonthHeader(month: HistoryMonth) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 4.dp, end = 4.dp, top = 18.dp, bottom = 6.dp)
             .clearAndSetSemantics {
                 heading()
-                contentDescription = historyMonthSemantics(month)
+                contentDescription = historyMonthSemantics(month, s)
             },
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -858,7 +895,6 @@ private fun MonthHeader(month: HistoryMonth) {
  * **Swipe-to-dismiss is deliberately not used** (§4 edge case 5), unlike `NotificationsScreen`:
  * dismissing a notification is local and undoable, deleting a training record is neither.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SessionCard(
     summary: SessionSummary,
@@ -868,10 +904,13 @@ private fun SessionCard(
     val c = LocalTempoColors.current
     var menuOpen by remember { mutableStateOf(false) }
 
-    val lines = remember(summary) { sessionRowLines(summary) }
-    val description = remember(summary) { historyRowSemantics(summary) }
-    val actions = remember(onMenu) {
-        HISTORY_MENU_ITEMS.map { item -> CustomAccessibilityAction(label = item.label) { onMenu(item); true } }
+    val s = LocalStrings.current
+    val lines = remember(summary, s) { sessionRowLines(summary, s) }
+    val description = remember(summary, s) { historyRowSemantics(summary, s) }
+    val actions = remember(onMenu, s) {
+        HISTORY_MENU_ITEMS.map { item ->
+            CustomAccessibilityAction(label = item.label(s)) { onMenu(item); true }
+        }
     }
 
     Box {
@@ -879,14 +918,18 @@ private fun SessionCard(
             Modifier
                 .fillMaxWidth()
                 .padding(vertical = 5.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(c.card)
-                .combinedClickable(onClick = onOpen, onLongClick = { menuOpen = true })
+                .background(c.card, TempoShapes.Card)
+                .combinedPressable(
+                    shape = TempoShapes.Card,
+                    onLongClickLabel = s.gymRecords.menuA11y,
+                    onLongClick = { menuOpen = true },
+                    onClick = onOpen,
+                )
                 .clearAndSetSemantics {
                     contentDescription = description
                     role = Role.Button
                     onClick { onOpen(); true }
-                    onLongClick(label = "メニュー") { menuOpen = true; true }
+                    onLongClick(label = s.gymRecords.menuA11y) { menuOpen = true; true }
                     customActions = actions
                 },
         ) {
@@ -961,7 +1004,7 @@ private fun SessionCard(
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             HISTORY_MENU_ITEMS.forEach { item ->
                 DropdownMenuItem(
-                    text = { Text(item.label, style = TextStyle(fontFamily = Mincho, color = c.ink)) },
+                    text = { Text(item.label(s), style = TextStyle(fontFamily = Mincho, color = c.ink)) },
                     onClick = {
                         menuOpen = false
                         onMenu(item)
@@ -985,6 +1028,7 @@ private fun SessionCard(
 @Composable
 private fun HistoryFooterRow(footer: HistoryFooter, onRetry: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     when (footer) {
         HistoryFooter.None -> Spacer(Modifier.height(8.dp))
         HistoryFooter.End -> Spacer(Modifier.height(40.dp))
@@ -992,27 +1036,31 @@ private fun HistoryFooterRow(footer: HistoryFooter, onRetry: () -> Unit) {
             Modifier
                 .fillMaxWidth()
                 .height(56.dp)
-                .semantics { liveRegion = LiveRegionMode.Polite; contentDescription = "読み込み中" },
+                .semantics {
+                    liveRegion = LiveRegionMode.Polite
+                    contentDescription = s.gymRecords.loading
+                },
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = "読み込み中",
+                text = s.gymRecords.loading,
                 style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = 4.sp, color = c.inkFaint),
             )
         }
 
+        // `s.fault.retry`, and this is the one もう一度 in the records scope that genuinely is one: the
+        // page fetch failed and tapping asks the store again. `RecordSummary`'s もう一度 is the same
+        // Japanese word for a different act — *do the workout again* — and has its own key.
         HistoryFooter.Retry -> Box(
             Modifier
                 .fillMaxWidth()
                 .height(56.dp)
-                .sizeIn(minHeight = 48.dp)
-                .semantics { role = Role.Button; contentDescription = "もう一度" }
-                .clip(RoundedCornerShape(14.dp))
-                .clickable(onClick = onRetry),
+                .semantics { contentDescription = s.fault.retry }
+                .pressable(TempoShapes.Word, role = Role.Button, onClick = onRetry),
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = "もう一度",
+                text = s.fault.retry,
                 style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = 2.sp, color = c.accent),
             )
         }
@@ -1031,7 +1079,7 @@ private fun HistoryLoading() {
     val c = LocalTempoColors.current
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
-            text = "読み込み中",
+            text = LocalStrings.current.gymRecords.loading,
             style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
         )
     }
@@ -1053,7 +1101,7 @@ private fun HistoryEmptyAll() {
     val c = LocalTempoColors.current
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
-            text = historyEmptyCopy(routineId = null),
+            text = historyEmptyCopy(routineId = null, strings = LocalStrings.current),
             style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
         )
     }
@@ -1068,7 +1116,7 @@ private fun HistoryEmptyFiltered(routineId: String) {
     val c = LocalTempoColors.current
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
-            text = historyEmptyCopy(routineId),
+            text = historyEmptyCopy(routineId, LocalStrings.current),
             style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
         )
     }

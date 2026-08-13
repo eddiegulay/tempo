@@ -166,12 +166,35 @@ interface DialogStrings {
     val dismiss: String
 
     /**
+     * The three calendar-write confirmations: heading, button, and the consequence.
+     *
+     * Grouped as a triple per operation rather than as nine flat keys, because the three lines of one
+     * dialog have to agree with each other and a mismatched set is invisible in review — a heading
+     * that asks about deleting over a button that says "add" compiles perfectly.
+     *
+     * **The consequence line is the point of the dialog.** The user knows they pressed save; what they
+     * may not have in mind is that a calendar is not private state — this reaches every device they
+     * own and, for an event with guests, other people's inboxes, and a deletion cannot be withdrawn.
+     * Translate the *consequence*, never soften it.
+     */
+    val eventCreate: WriteConfirmStrings
+    val eventUpdate: WriteConfirmStrings
+    val eventDelete: WriteConfirmStrings
+
+    /**
      * The language picker's own copy.
      *
      * Deliberately thin: the two rows name themselves in their own language and are *not* translated
      * (§L6). A row reading "Japanese" under an English UI is useless to the person who needs it.
      */
     val languageTitle: String
+}
+
+/** One calendar-write confirmation: what it asks, what the button says, and what will happen. */
+interface WriteConfirmStrings {
+    val heading: String
+    val confirm: String
+    val consequence: String
 }
 
 /**

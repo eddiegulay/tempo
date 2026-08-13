@@ -1,6 +1,7 @@
 package io.eddiegulay.tempo.gym.cue
 
 import io.eddiegulay.tempo.gym.Phase
+import io.eddiegulay.tempo.i18n.Strings
 
 /**
  * Everything the cue schedule needs to know about one compiled segment — and nothing else.
@@ -132,28 +133,32 @@ fun focusSpanFor(cue: Cue, atMs: Long): FocusSpan? = when (cue) {
  * The exception is an **anchored** open segment — REPS state 5, the EMOM minute window, where the
  * estimate is replaced by the minute remaining, "overrun is impossible; the boundary decides". There
  * the clock is real, so the countdown and the boundary cue are real too.
+ *
+ * @param strings the language in force, which the fixed phrases are resolved against here rather than
+ *   carried on the enum (§L3). Still pure — [Strings] is a plain object with no `Context` in it, which
+ *   is what keeps this file on the JVM.
  */
-fun cueSchedule(segment: CueSegment): List<ScheduledCue> {
+fun cueSchedule(segment: CueSegment, strings: Strings): List<ScheduledCue> {
     val out = mutableListOf<ScheduledCue>()
     val planned = segment.plannedMs
 
     // Self-paced: ends on 済, not on a clock. An anchored open cell is on a grid and so is exempt.
     val selfPaced = segment.open && !segment.anchored
 
-    if (segment.startsFinalRound) out += scheduled(Cue.LAST_ROUND, 0L)
+    if (segment.startsFinalRound) out += scheduled(Cue.LAST_ROUND, 0L, strings)
 
     if (segment.phase == Phase.WORK && planned >= HALFWAY_MIN_SEGMENT_MS) {
-        out += scheduled(Cue.HALFWAY, planned / 2)
+        out += scheduled(Cue.HALFWAY, planned / 2, strings)
     }
 
     // §A, WORK edge case 1: a 2s station suppresses the 3-2-1 entirely rather than firing it late.
     if (!selfPaced && planned >= COUNT_TICK_MIN_SEGMENT_MS) {
-        out += scheduled(Cue.COUNT_TICK, planned - COUNT_TICK_LEAD_MS)
+        out += scheduled(Cue.COUNT_TICK, planned - COUNT_TICK_LEAD_MS, strings)
     }
 
     // The cap survives on a self-paced segment: it is a hard boundary the user agreed to, not an
     // estimate, and §A REPS names the AMRAP cap as one of the two things that can end an open segment.
-    segment.capAtMs?.let { cap -> if (cap in 0..planned) out += scheduled(Cue.AMRAP_CAP, cap) }
+    segment.capAtMs?.let { cap -> if (cap in 0..planned) out += scheduled(Cue.AMRAP_CAP, cap, strings) }
 
     val terminal = when {
         segment.isFinalSegment -> null
@@ -161,13 +166,18 @@ fun cueSchedule(segment: CueSegment): List<ScheduledCue> {
         selfPaced -> null
         else -> Cue.INTERVAL_END
     }
-    if (terminal != null) out += scheduled(terminal, planned, segment.nextExerciseNameJa)
+    if (terminal != null) out += scheduled(terminal, planned, strings, segment.nextExerciseNameJa)
 
     return out.sortedBy { it.atMs }
 }
 
-private fun scheduled(cue: Cue, atMs: Long, dynamicSpeech: String? = null) =
-    ScheduledCue(cue = cue, atMs = atMs, speech = cue.speech ?: dynamicSpeech, focus = focusSpanFor(cue, atMs))
+private fun scheduled(cue: Cue, atMs: Long, strings: Strings, dynamicSpeech: String? = null) =
+    ScheduledCue(
+        cue = cue,
+        atMs = atMs,
+        speech = cue.speech(strings) ?: dynamicSpeech,
+        focus = focusSpanFor(cue, atMs),
+    )
 
 /**
  * The focus windows a schedule actually needs, overlapping ones merged into one request.

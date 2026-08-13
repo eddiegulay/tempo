@@ -72,8 +72,37 @@ class BuilderScreenStructureTest {
         val row = declarationBody(builder, "private fun StationRow(")
 
         assertTrue(row.contains("customActions = actions"))
-        for (label in listOf("上へ動かす", "下へ動かす", "編集", "削除")) {
-            assertTrue("the row owes a $label action", row.contains("CustomAccessibilityAction(\"$label\")"))
+        // Named by their table members rather than by their words: 上へ動かす / 下へ動かす / 編集 / 削除
+        // now come from `Strings`, and a structural test that still pinned the Japanese would be
+        // asserting the migration had not happened. `BuilderScreenTest` holds the words themselves.
+        for (member in listOf("actionMoveUp", "actionMoveDown", "actionEdit", "actionDelete")) {
+            assertTrue(
+                "the row owes a $member action",
+                row.contains("CustomAccessibilityAction(s.gymBuilder.$member)"),
+            )
+        }
+    }
+
+    @Test
+    fun `the engine rows are dispatched on a kind and never on their words`() {
+        // The bug this page shipped with, pinned so it cannot come back. `engineRows`' three dialable
+        // rows used to be recognised by matching their **Japanese labels** against three private
+        // constants here, which is correct in exactly one language: translate the labels and all three
+        // arms miss, the station rest, the round rest and 巡数 quietly become read-only lines, and
+        // nothing — not the compiler, not an exception, not a test — says so.
+        val body = declarationBody(builder, "private fun BuilderBody(")
+
+        assertTrue(
+            "the dispatch must read the row's kind",
+            body.contains("when (builderRowControl(row.kind, draft.engine))"),
+        )
+        assertTrue(
+            "no branch may compare a row's label",
+            !Regex("""when\s*\(\s*row\.label\s*\)""").containsMatchIn(builder),
+        )
+        // …and the labels themselves are only ever drawn, never re-declared here to match against.
+        for (label in listOf("種目の間の休息", "巡の間の休息", "巡数")) {
+            assertTrue("$label belongs to gymShared, not to this page", !builder.contains("\"$label\""))
         }
     }
 

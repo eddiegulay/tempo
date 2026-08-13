@@ -11,6 +11,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -36,6 +37,7 @@ import io.eddiegulay.tempo.gym.GymViewModelFactory
 import io.eddiegulay.tempo.ui.gym.GymShell
 import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.i18n.stringsFor
+import io.eddiegulay.tempo.ui.theme.InkPress
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.PaperColors
 import io.eddiegulay.tempo.ui.theme.SumiColors
@@ -151,6 +153,13 @@ fun TempoApp(
     CompositionLocalProvider(
         LocalTempoColors provides colors,
         LocalStrings provides stringsFor(lang),
+        // Tempo sets no Material 3 `ColorScheme` — the palette above *is* the theme — so Material's
+        // default indication had no house colour to fall back on and painted every un-styled
+        // `clickable` an M3 grey rectangle. Replacing it here fixes the colour for all 79 press sites
+        // at once, migrated or not; `Modifier.pressable` then fixes the *bounds* one call site at a
+        // time. The instance is a constant because it reads [LocalTempoColors] at draw time, so it
+        // serves Paper and Sumi alike and a theme switch invalidates nothing.
+        LocalIndication provides InkPress.Default,
     ) {
         Box(Modifier.fillMaxSize().tempoBackground(colors)) {
             when (layer) {

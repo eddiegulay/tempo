@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
+import io.eddiegulay.tempo.ui.theme.TempoShapes
 
 /**
  * The bottom dock: an iOS-style floating pill holding Home / Search / Notifications / 鍛錬, the
@@ -98,6 +99,15 @@ fun Dock(
     }
 }
 
+/**
+ * One dock tab.
+ *
+ * **No indication, and it must stay that way.** The dock is a floating capsule barely wider than its
+ * four glyphs, so a press wash inside a tab would draw a tile *inside* the pill — a rectangle in a
+ * capsule, which is the exact fault the house press indication was written to remove. The tint moving
+ * to vermillion is the feedback, and it is the only one this control needs: every tab changes the
+ * whole page under it.
+ */
 @Composable
 private fun DockButton(
     paths: List<String>,
@@ -111,7 +121,7 @@ private fun DockButton(
         modifier = Modifier
             // 48dp meets the minimum accessible touch target while the glyph stays 23dp.
             .size(48.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(TempoShapes.Glyph)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,

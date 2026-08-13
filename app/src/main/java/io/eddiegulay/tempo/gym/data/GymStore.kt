@@ -2057,35 +2057,21 @@ internal class GymStore private constructor(
     )
 
     /**
-     * The card's one-line shape — 「十二種目 ・ 三十秒 / 十秒 ・ 約八分」, §A.3's own sample line.
+     * The card, carrying the **pieces** of §A.3's sample line rather than the line itself.
      *
-     * Composed here because [RoutineCard.summary] is a rendered string and the feed is the only place
-     * that has the pieces. It uses `JapaneseDate.kanjiExtended` and nothing else: `Numerals.kt`'s
-     * `durationKanji` belongs to the library track and a second formatter is the divergence bug
-     * `DECISIONS.md` §Q7 warns about, so **when that function lands this should call it**.
+     * This used to compose 「十二種目 ・ 三十秒 / 十秒 ・ 約八分」 right here, because this is the only
+     * place that has all four numbers. It cannot: the feed re-emits on a *table* change, so after a
+     * language switch every card would keep its stale sentence until the next write. `GymHomeCopy`
+     * builds it now, from these fields, where `LocalStrings` can re-resolve it.
      */
     private fun RoutineSummary.toCard(last: LastResult?, workSeconds: Int?): RoutineCard {
-        val parts = buildList {
-            add(JapaneseDate.kanjiExtended(stationCount) + "種目")
-            if (workSeconds != null) {
-                add(
-                    JapaneseDate.kanjiExtended(workSeconds) + "秒" +
-                        if (restBetweenStations > 0) {
-                            " / " + JapaneseDate.kanjiExtended(restBetweenStations) + "秒"
-                        } else {
-                            ""
-                        },
-                )
-            }
-            if (estimatedDurationSeconds > 0) {
-                val minutes = (estimatedDurationSeconds / 60.0).roundToInt().coerceAtLeast(1)
-                add("約" + JapaneseDate.kanjiExtended(minutes) + "分")
-            }
-        }
         return RoutineCard(
             routineId = routineId,
             name = name,
-            summary = parts.joinToString(" ・ "),
+            stationCount = stationCount,
+            workSeconds = workSeconds,
+            restBetweenStations = restBetweenStations,
+            estimatedDurationSeconds = estimatedDurationSeconds,
             timesDone = timesDone,
             lastResult = last,
             best = best,

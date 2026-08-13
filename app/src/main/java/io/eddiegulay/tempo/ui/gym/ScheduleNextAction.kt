@@ -3,7 +3,6 @@ package io.eddiegulay.tempo.ui.gym
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,8 +47,8 @@ import io.eddiegulay.tempo.calendar.hasCalendarAccess
 import io.eddiegulay.tempo.calendar.openAccountSettings
 import io.eddiegulay.tempo.calendar.rememberCalendarPermissionState
 import io.eddiegulay.tempo.data.TempoFault
-import io.eddiegulay.tempo.gym.SCHEDULE_ACTION_LABEL
 import io.eddiegulay.tempo.gym.scheduleDraft
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.EventConfirmDialog
 import io.eddiegulay.tempo.ui.FaultStrip
 import io.eddiegulay.tempo.ui.HeaderAction
@@ -59,6 +58,8 @@ import io.eddiegulay.tempo.ui.draftSummary
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 import kotlinx.coroutines.launch
 
 /*
@@ -123,6 +124,15 @@ fun ScheduleNextAction(
 ) {
     val c = LocalTempoColors.current
     val context = LocalContext.current
+    // Read from the table rather than a `const` — a compile-time constant is the one kind of label
+    // that cannot be re-resolved on a language change at all.
+    //
+    // **Every other word on this panel is `s.calendar`'s.** This is the composer's flow narrowed to
+    // one field, not a second one, and やめる / 保存 / 保存中 / 設定を開く are the words the 予定 page
+    // already uses for the same buttons — `EventComposeScreen` and `CalendarScreen.AccessPrompt`. A
+    // private set here would be a second calendar vocabulary to keep in step with the first.
+    val s = LocalStrings.current
+    val scheduleNext = s.gymShared.scheduleNext
     val scope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -233,7 +243,7 @@ fun ScheduleNextAction(
             modifier = Modifier
                 .fillMaxWidth()
                 .sizeIn(minHeight = 48.dp)
-                .clickable(enabled = done == null) {
+                .pressable(TempoShapes.Row, enabled = done == null) {
                     expanded = !expanded
                     // Ask at the moment the user reaches for the calendar, which is the only moment
                     // the request has a reason the user can see.
@@ -241,16 +251,16 @@ fun ScheduleNextAction(
                 }
                 .semantics {
                     role = Role.Button
-                    contentDescription = SCHEDULE_ACTION_LABEL
+                    contentDescription = scheduleNext
                     if (done != null) {
                         disabled()
-                        stateDescription = draftSummary(done).when_
+                        stateDescription = draftSummary(done, s).when_
                     }
                 },
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = SCHEDULE_ACTION_LABEL,
+                text = scheduleNext,
                 style = TextStyle(
                     fontFamily = Mincho,
                     fontSize = 15.sp,
@@ -264,7 +274,7 @@ fun ScheduleNextAction(
 
         if (done != null) {
             Spacer(Modifier.height(8.dp))
-            WhenLine(draftSummary(done).when_)
+            WhenLine(draftSummary(done, s).when_)
             return@Column
         }
 
@@ -279,7 +289,7 @@ fun ScheduleNextAction(
                 // back is Settings, and `CalendarScreen.AccessPrompt` already has the word for that —
                 // *"a tap that silently throws the user into Settings with no warning reads as a bug"*,
                 // which is `CalendarPermissionState.permanentlyDenied`'s own KDoc.
-                action = "設定を開く".takeIf {
+                action = s.calendar.accessOpenSettings.takeIf {
                     current == CalendarFault.PermissionLost && permission.permanentlyDenied
                 },
             )
@@ -292,7 +302,7 @@ fun ScheduleNextAction(
         if (!granted || ready.isNullOrEmpty()) return@Column
 
         Spacer(Modifier.height(14.dp))
-        WhenLine(draftSummary(draft).when_)
+        WhenLine(draftSummary(draft, s).when_)
         TempoDateTimeWheel(current = start, allDay = false, onChange = { start = it })
 
         Row(
@@ -301,15 +311,17 @@ fun ScheduleNextAction(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             HeaderAction(
-                label = "やめる",
-                description = "やめる",
+                label = s.calendar.cancel,
+                description = s.calendar.cancel,
                 color = c.inkFaint,
                 enabled = !writing,
                 onClick = { expanded = false },
             )
             HeaderAction(
-                label = if (writing) "保存中" else "保存",
-                description = "保存",
+                label = if (writing) s.calendar.saving else s.calendar.save,
+                // The description stays 保存 while the label says 保存中: the button's *name* does not
+                // change when its state does.
+                description = s.calendar.save,
                 color = if (writing) c.inkFaint else c.accent,
                 enabled = !writing,
                 // Proposes only. `EventConfirmDialog` commits, as it does for every other write.

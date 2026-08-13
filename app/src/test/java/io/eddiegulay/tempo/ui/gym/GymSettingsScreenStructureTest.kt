@@ -3,6 +3,7 @@ package io.eddiegulay.tempo.ui.gym
 import io.eddiegulay.tempo.gym.GymPreferences
 import io.eddiegulay.tempo.gym.GymViewModel
 import io.eddiegulay.tempo.gym.SpeechAvailability
+import io.eddiegulay.tempo.i18n.StringsJa
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -129,8 +130,35 @@ class GymSettingsScreenStructureTest {
         assertTrue("children must not compose it in visual order", !row.contains("mergeDescendants"))
         assertTrue(
             "and it is assembled by the one helper the spec string is pinned against",
-            row.contains("contentDescription = settingsRowDescription(row.label, word, state.subtitle)"),
+            row.contains("contentDescription = settingsRowDescription(s, row.label(s), word, state.subtitle)"),
         )
+    }
+
+    @Test
+    fun `no page word is a literal any more`() {
+        // The migration's own postcondition for this unit, checked where a return value cannot express
+        // it: neither page may carry a Japanese copy literal. Comments and KDoc keep theirs — they are
+        // the record of *why* a string reads as it does and are not drawn — so the scan is of quoted
+        // strings only.
+        for ((name, source) in listOf("GymSettingsScreen" to settings, "GymSafetyScreen" to safety)) {
+            for (literal in Regex("\"([^\"\\n]*)\"").findAll(stripComments(source)).map { it.groupValues[1] }) {
+                assertTrue(
+                    name + " still draws a Japanese literal: " + literal,
+                    literal.none { it.code in 0x3000..0x9FFF },
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `the speech probe asks for the language the app is speaking`() {
+        // Hazard H6: the probe hard-coded Locale.JAPANESE while the row it gates says a voice is
+        // missing. Under an English UI that greys 音声 on a device with a good English voice. The enum
+        // The enum case is `NoVoiceForLanguage`, renamed from `NoJapaneseVoice`: the state means no
+        // voice for whichever language the UI is in, and the old name described the wrong absence.
+        val probe = declarationBody(settings, "private fun probeResult(")
+        assertTrue("no hard-coded language", !probe.contains("Locale.JAPANESE"))
+        assertTrue("the app's own language instead", probe.contains("Locale.forLanguageTag(lang.tag)"))
     }
 
     @Test
@@ -154,19 +182,26 @@ class GymSettingsScreenStructureTest {
     fun `the disabled speech row assembles §B's sentence from the values the row is wired with`() {
         // The value half of the test above: the three arguments the composable passes, run through the
         // same helper, must be §B's string exactly — label, state, reason.
+        val s = StringsJa
         val state = settingsRowStates(
+            strings = s,
             prefs = GymPreferences(),
-            speech = SpeechAvailability.NoJapaneseVoice,
+            speech = SpeechAvailability.NoVoiceForLanguage,
             sessionLive = false,
         )[SettingRow.Speech]!!
 
         assertEquals(
             "音声、切、日本語の音声が入っていません",
-            settingsRowDescription(SettingRow.Speech.label, toggleWord(false), state.subtitle),
+            settingsRowDescription(s, SettingRow.Speech.label(s), toggleWord(s, false), state.subtitle),
         )
     }
 
     // ─── reading the source ─────────────────────────────────────────────────────────────────────
+
+    /** Line and block comments removed, so a scan for literals never trips over prose about them. */
+    private fun stripComments(source: String): String = source
+        .replace(Regex("(?s)/\\*.*?\\*/"), "")
+        .replace(Regex("//[^\\n]*"), "")
 
     /** The declaration's body, brace-matched from its header — `LibraryIndexScreenStructureTest`'s. */
     private fun declarationBody(source: String, header: String): String {

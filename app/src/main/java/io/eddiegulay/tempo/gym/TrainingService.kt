@@ -15,6 +15,11 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import io.eddiegulay.tempo.MainActivity
 import io.eddiegulay.tempo.R
+import io.eddiegulay.tempo.data.ThemeRepository
+import io.eddiegulay.tempo.i18n.Lang
+import io.eddiegulay.tempo.i18n.Strings
+import io.eddiegulay.tempo.i18n.StringsJa
+import io.eddiegulay.tempo.i18n.stringsFor
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -154,7 +159,7 @@ class TrainingService : Service() {
                     stopNow()
                     return START_NOT_STICKY
                 }
-                startForegroundOrStop(notice)
+                startForegroundOrStop(notice, intent.toStrings())
                 return START_NOT_STICKY
             }
 
@@ -192,8 +197,8 @@ class TrainingService : Service() {
      * `startForeground` is killed with an ANR by the framework's own five-second timer, which would
      * turn a missing notification into a crash in the middle of a workout.
      */
-    private fun startForegroundOrStop(notice: TrainingNotice) {
-        val notification = buildNotification(notice)
+    private fun startForegroundOrStop(notice: TrainingNotice, strings: Strings) {
+        val notification = buildNotification(notice, strings)
         try {
             ServiceCompat.startForeground(
                 this,
@@ -233,12 +238,12 @@ class TrainingService : Service() {
      * - `setOngoing(true)`. It is a live workout; it should not be swipeable into nothing while the
      *   clock runs.
      */
-    private fun buildNotification(notice: TrainingNotice): Notification {
-        ensureChannel()
+    private fun buildNotification(notice: TrainingNotice, strings: Strings): Notification {
+        ensureChannel(strings)
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_training_notice)
             .setContentTitle(noticeTitle(notice))
-            .setContentText(noticeText(notice))
+            .setContentText(noticeText(notice, strings))
             .setContentIntent(openPlayerIntent())
             .setOngoing(true)
             .setSilent(true)
@@ -246,7 +251,7 @@ class TrainingService : Service() {
             .setShowWhen(false)
             .setCategory(NotificationCompat.CATEGORY_WORKOUT)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .addAction(controlAction(noticeControl(notice)))
+            .addAction(controlAction(noticeControl(notice), strings))
             .build()
     }
 
@@ -267,7 +272,7 @@ class TrainingService : Service() {
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
-    private fun controlAction(control: TrainingControl): NotificationCompat.Action {
+    private fun controlAction(control: TrainingControl, strings: Strings): NotificationCompat.Action {
         val action = when (control) {
             TrainingControl.PAUSE -> ACTION_PAUSE
             TrainingControl.RESUME -> ACTION_RESUME
@@ -281,7 +286,7 @@ class TrainingService : Service() {
         // No icon: NotificationCompat.Action requires the parameter, and every surface that still
         // renders one (pre-Nougat) is below minSdk. Passing 0 draws the label alone, which is what
         // this app's own buttons are — words, never glyphs, outside the player's own control bar.
-        return NotificationCompat.Action.Builder(0, noticeControlLabel(control), intent).build()
+        return NotificationCompat.Action.Builder(0, noticeControlLabel(control, strings), intent).build()
     }
 
     /**
@@ -291,13 +296,35 @@ class TrainingService : Service() {
      * dialog and the shell's first tab use (`00-plan.md` §3.2). Created on every post rather than in
      * `onCreate`: channel creation is idempotent and cheap, and doing it at the point of use means a
      * user who cleared the channel between sessions gets it back.
+     *
+     * **That per-post creation is also the whole of what makes the name follow a language change.**
+     * Android stores the name against the channel id; `createNotificationChannel` on an id that already
+     * exists updates the name (importance it will only ever lower). So the channel's name catches up
+     * **at the start of the next session and not before** — a user who switches language and then opens
+     * Android's own notification settings without training again sees the old word there. That is not a
+     * bug we can fix from here without posting a notification nobody asked for, and it is the reason
+     * this call is not hoisted into `onCreate` where it would look tidier.
      */
-    private fun ensureChannel() {
+    private fun ensureChannel(strings: Strings) {
         val manager = getSystemService(NotificationManager::class.java) ?: return
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_LOW),
+            NotificationChannel(CHANNEL_ID, strings.gymCue.channelName, NotificationManager.IMPORTANCE_LOW),
         )
     }
+
+    /**
+     * The language the sender was showing, or Japanese if the extra is missing.
+     *
+     * It travels on the intent rather than being read here because **this end has no good moment to
+     * read it**: a `Service` has no lifecycle scope, and `loadInitialSettings`' `runBlocking` on
+     * `onStartCommand`'s main thread would be a disk read on every phase transition. [sync] runs in the
+     * app process, where the value is already resolved and where one read is cheap.
+     *
+     * A missing extra means a sender older than this field, which cannot happen inside one process —
+     * so the fallback is the app's original language rather than an error path.
+     */
+    private fun Intent.toStrings(): Strings =
+        stringsFor(Lang.fromTag(getStringExtra(EXTRA_LANG)) ?: Lang.Ja)
 
     private fun Intent.toNotice(): TrainingNotice? {
         val routine = getStringExtra(EXTRA_ROUTINE) ?: return null
@@ -312,7 +339,6 @@ class TrainingService : Service() {
 
     companion object {
         private const val CHANNEL_ID = "gym_session"
-        private const val CHANNEL_NAME = "鍛錬"
         private const val NOTIFICATION_ID = 0x936D
         private const val REQUEST_OPEN = 1
         private const val REQUEST_CONTROL = 2
@@ -325,6 +351,7 @@ class TrainingService : Service() {
         private const val EXTRA_PHASE = "phase"
         private const val EXTRA_PAUSED = "paused"
         private const val EXTRA_EXERCISE = "exercise"
+        private const val EXTRA_LANG = "lang"
 
         /**
          * The whole API: **one idempotent call**, non-null to start or update, null to stop.
@@ -352,7 +379,25 @@ class TrainingService : Service() {
             intent.putExtra(EXTRA_PHASE, notice.phase.name)
             intent.putExtra(EXTRA_PAUSED, notice.paused)
             intent.putExtra(EXTRA_EXERCISE, notice.exerciseName)
+            intent.putExtra(EXTRA_LANG, languageTag(app))
             runCatching { ContextCompat.startForegroundService(app, intent) }
         }
+
+        /**
+         * The stored UI language, read on the app side so the service never has to.
+         *
+         * `runCatching` because this is a disk read on the caller's thread and a notification is not
+         * worth a crash: `loadInitialSettings` is the same synchronous read `LauncherViewModel` already
+         * makes at cold start, so by the time a session is running DataStore has the value in memory,
+         * but a corrupt preferences file must lose the translation and not the workout.
+         *
+         * Read per call rather than cached: a notice is re-synced on phase transitions, pauses and
+         * station changes — a handful of times a minute — and caching would pin the notification to
+         * whatever language the process started in, which is the bug this whole namespace is fixing.
+         */
+        private fun languageTag(context: Context): String =
+            runCatching { ThemeRepository(context).loadInitialSettings().lang }
+                .getOrDefault(StringsJa.lang)
+                .tag
     }
 }

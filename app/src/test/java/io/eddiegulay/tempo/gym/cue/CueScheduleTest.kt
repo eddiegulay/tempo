@@ -1,7 +1,11 @@
 package io.eddiegulay.tempo.gym.cue
 
 import io.eddiegulay.tempo.gym.Phase
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -15,6 +19,9 @@ import org.junit.Test
  * a cue. None of them fails a build and none of them shows in a screenshot.
  */
 class CueScheduleTest {
+
+    /** The schedule resolves fixed phrases against a table now; Japanese is what these tests pin. */
+    private fun cueSchedule(segment: CueSegment) = cueSchedule(segment, StringsJa)
 
     private fun work(
         plannedMs: Long,
@@ -245,6 +252,49 @@ class CueScheduleTest {
         // enforced by the ROW being null rather than by a branch in the engine, so there is nothing to
         // get wrong at runtime and nothing to test at runtime either. Engine latency is variable and
         // speech would drift audibly against a haptic that does not.
-        assertNull(Cue.COUNT_TICK.speech)
+        assertFalse("§D.2 gives the 3-2-1 no speech column", Cue.COUNT_TICK.speaks)
+        assertNull(Cue.COUNT_TICK.speech(StringsJa))
+        assertNull(Cue.COUNT_TICK.speech(StringsEn))
+    }
+
+    @Test
+    fun `every row that says it speaks has a phrase in both languages, and no row that says it does not`() {
+        // `speaks` and `speech(strings)` are two statements of one fact, and they are made in two
+        // places: the enum's constructor argument and a `when` over every case. A row added with
+        // `speaks = true` and forgotten in the `when` would be silent for a reason nothing reports —
+        // the engine simply passes null to `play` and moves on.
+        Cue.entries.forEach { cue ->
+            assertEquals(cue.name, cue.speaks, cue.speech(StringsJa) != null)
+            assertEquals(cue.name, cue.speaks, cue.speech(StringsEn) != null)
+        }
+    }
+
+    @Test
+    fun `the two 終わり stay two strings, because English does not spell them the same`() {
+        // The survey kept two keys for one Japanese word on purpose: the AMRAP cap is a clock landing
+        // on an effort still in progress, and the session end is the whole thing being over. A merge is
+        // easy to make and impossible to undo once every call site reads the same key.
+        assertEquals(Cue.AMRAP_CAP.speech(StringsJa), Cue.SESSION_COMPLETE.speech(StringsJa))
+        assertNotEquals(Cue.AMRAP_CAP.speech(StringsEn), Cue.SESSION_COMPLETE.speech(StringsEn))
+    }
+
+    @Test
+    fun `the schedule speaks the language it is given, not the one the process started in`() {
+        val ja = cueSchedule(work(30_000, startsFinalRound = true), StringsJa)
+        val en = cueSchedule(work(30_000, startsFinalRound = true), StringsEn)
+
+        assertEquals("最後の巡", ja.first { it.cue == Cue.LAST_ROUND }.speech)
+        assertEquals("Last round", en.first { it.cue == Cue.LAST_ROUND }.speech)
+        // Only the words move. A cue table that changed shape with the language would be a second
+        // specification.
+        assertEquals(ja.map { it.cue to it.atMs }, en.map { it.cue to it.atMs })
+    }
+
+    @Test
+    fun `an exercise name passes through whatever the language is, because it is not ours to translate`() {
+        // The catalogue owns nameJa/nameEn and a user-authored routine's name is their data. Whatever
+        // arrives here is spoken verbatim in both tables.
+        val en = cueSchedule(work(30_000, nextExerciseNameJa = "腕立て伏せ"), StringsEn)
+        assertEquals("腕立て伏せ", en.single { it.cue == Cue.INTERVAL_END }.speech)
     }
 }

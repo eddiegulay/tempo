@@ -5,6 +5,8 @@ import android.os.Handler
 import android.os.Looper
 import io.eddiegulay.tempo.gym.EffectiveGymPreferences
 import io.eddiegulay.tempo.gym.SpeechAvailability
+import io.eddiegulay.tempo.i18n.Strings
+import io.eddiegulay.tempo.i18n.StringsJa
 
 /**
  * The cue engine of `03-player.md` §D: one object that turns a compiled segment into vibration, tone
@@ -38,6 +40,8 @@ import io.eddiegulay.tempo.gym.SpeechAvailability
  *
  * @param onSpeechAvailabilityChanged fired once the TTS engine answers. See [arm] for why the engine
  *   cannot simply be asked.
+ * @param strings the language in force at construction. Kept current by [setLanguage]; see it for why
+ *   this is a mutable field on the engine rather than an argument to [enterSegment].
  */
 class CueEngine(
     private val haptics: HapticSink,
@@ -45,10 +49,24 @@ class CueEngine(
     private val speech: SpeechSink,
     private val poster: CuePoster = HandlerCuePoster(),
     private val onSpeechAvailabilityChanged: (SpeechAvailability) -> Unit = {},
+    strings: Strings = StringsJa,
 ) {
+
+    /**
+     * The table every fixed phrase is resolved from, and the language the voice is probed for.
+     *
+     * **One field, two consumers, and that is the point.** The phrase and the voice have to be the same
+     * language or the channel reads English words in a Japanese voice; holding them apart would make
+     * that a state the type permits. [setLanguage] moves both or neither.
+     */
+    var strings: Strings = strings
+        private set
 
     init {
         speech.onAvailabilityChanged = { onSpeechAvailabilityChanged(it) }
+        // The sink is constructed with this language by the factory below; the call is here for the
+        // constructor a test uses, where the sink cannot have been told.
+        speech.setLanguage(this.strings.lang)
     }
 
     /**
@@ -94,6 +112,30 @@ class CueEngine(
     }
 
     /**
+     * Points the whole channel at another language: the phrases, and the voice that reads them.
+     *
+     * **A field on the engine rather than an argument threaded through [enterSegment] and [fire].** The
+     * two are not equivalent. A language change has to reach the *voice* as well as the words, and the
+     * voice is a bound `TextToSpeech` in another process that must be re-probed — which is an event,
+     * not a parameter. Passing [Strings] per call would have moved the words on the next segment and
+     * left the voice on the old language until something happened to re-bind it.
+     *
+     * Re-probing may find no voice for the new language, which is the failure this whole change exists
+     * to make visible: a Japanese-market device almost always has a Japanese voice and may well have no
+     * English one. That answer arrives through [onSpeechAvailabilityChanged], the owner re-arms, and
+     * §D.6's silent fallback to tones takes it from there. Nothing prompts for a download.
+     *
+     * The current segment's schedule is **not** recomputed. Its cues were placed on the segment's clock
+     * when it was entered and re-deriving them here would re-fire the ones already past; the next
+     * segment picks up the new language, which is at most one station away.
+     */
+    fun setLanguage(strings: Strings) {
+        if (this.strings.lang == strings.lang) return
+        this.strings = strings
+        speech.setLanguage(strings.lang)
+    }
+
+    /**
      * Arms from the in-force preferences, resolving [CueSettings] against what this device can do.
      *
      * The overload that call sites should prefer: it reads `wantsSpeech` off the same object `armCues`
@@ -128,7 +170,7 @@ class CueEngine(
         // second window under an id it already holds.
         val key = "s${segment.ordinal}#${fireCounter++}"
 
-        val schedule = cueSchedule(segment)
+        val schedule = cueSchedule(segment, strings)
         for (item in schedule) {
             val delay = item.atMs - elapsedInSegmentMs
             if (delay < 0L) continue
@@ -166,7 +208,7 @@ class CueEngine(
             tones.openWindow()
             tones.closeWindow(span.closeAtMs.coerceAtLeast(0L))
         }
-        play(cue, speechText ?: cue.speech, key = "f${fireCounter++}")
+        play(cue, speechText ?: cue.speech(strings), key = "f${fireCounter++}")
     }
 
     /**
@@ -252,6 +294,7 @@ class CueEngine(
          */
         operator fun invoke(
             context: Context,
+            strings: Strings = StringsJa,
             onSpeechAvailabilityChanged: (SpeechAvailability) -> Unit = {},
         ): CueEngine {
             val tones = GymTones(context)
@@ -262,8 +305,10 @@ class CueEngine(
                     context = context,
                     onWindowOpen = { tones.openWindow() },
                     onWindowClose = { tones.closeWindow(0L) },
+                    language = strings.lang,
                 ),
                 onSpeechAvailabilityChanged = onSpeechAvailabilityChanged,
+                strings = strings,
             )
         }
     }

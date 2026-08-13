@@ -76,7 +76,7 @@ class LibraryIndexScreenStructureTest {
             .substringBefore('}')
 
         assertTrue("SectionHeading must declare heading() inside clearAndSetSemantics", semantics.contains("heading()"))
-        assertTrue(semantics.contains("sectionSemantics(label, count)"))
+        assertTrue(semantics.contains("sectionSemantics(label, count, s)"))
     }
 
     @Test

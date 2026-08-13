@@ -7,6 +7,8 @@ import io.eddiegulay.tempo.gym.Rating
 import io.eddiegulay.tempo.gym.SessionSummary
 import io.eddiegulay.tempo.gym.groupByMonth
 import io.eddiegulay.tempo.gym.shouldPrefetch
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import io.eddiegulay.tempo.ui.gym.HISTORY_MENU_ITEMS
 import io.eddiegulay.tempo.ui.gym.HistoryFooter
 import io.eddiegulay.tempo.ui.gym.HistoryItem
@@ -27,6 +29,7 @@ import io.eddiegulay.tempo.ui.gym.historyPageWanted
 import io.eddiegulay.tempo.ui.gym.historyRetry
 import io.eddiegulay.tempo.ui.gym.historyRowSemantics
 import io.eddiegulay.tempo.ui.gym.historySubtitleOrNull
+import io.eddiegulay.tempo.ui.gym.label
 import io.eddiegulay.tempo.ui.gym.rowsThrough
 import io.eddiegulay.tempo.ui.gym.sessionDeleteCopy
 import java.io.File
@@ -96,20 +99,20 @@ class RecordsHistoryScreenTest {
 
     @Test
     fun `an unfiltered empty history says 記録はありません`() {
-        assertEquals("記録はありません", historyEmptyCopy(routineId = null))
+        assertEquals("記録はありません", historyEmptyCopy(routineId = null, strings = StringsJa))
     }
 
     @Test
     fun `a filtered empty history says この型は まだ やっていません`() {
         // A claim about one routine, not about the store. §4's `Empty (filtered)`.
-        assertEquals("この型は まだ やっていません", historyEmptyCopy(routineId = "r_seven"))
+        assertEquals("この型は まだ やっていません", historyEmptyCopy(routineId = "r_seven", strings = StringsJa))
     }
 
     @Test
     fun `neither empty sentence can be mistaken for the unreadable one`() {
         // 記録を読めません is `DECISIONS.md` §Q6's, and the property that keeps the promise is that it
         // contains no ありません-as-emptiness. Pinned from this side too.
-        listOf(historyEmptyCopy(null), historyEmptyCopy("r_seven")).forEach { sentence ->
+        listOf(historyEmptyCopy(null, StringsJa), historyEmptyCopy("r_seven", StringsJa)).forEach { sentence ->
             assertNotEquals("記録を読めません", sentence)
             assertFalse(sentence.contains("読めません"))
         }
@@ -157,7 +160,7 @@ class RecordsHistoryScreenTest {
     fun `months flatten to a header then its rows, with §4's keys`() {
         val june = session(sessionId = 2L, date = LocalDate.of(2026, 6, 17))
         val may = session(sessionId = 1L, date = LocalDate.of(2026, 5, 3))
-        val items = historyItems(groupByMonth(listOf(june, may)))
+        val items = historyItems(groupByMonth(listOf(june, may), StringsJa))
 
         assertEquals(
             listOf("month:2026-06", "2", "month:2026-05", "1"),
@@ -176,7 +179,7 @@ class RecordsHistoryScreenTest {
         val may = session(sessionId = 1L, date = LocalDate.of(2026, 5, 3))
         val after = listOf(june, may).filterNot { it.sessionId == 1L }
 
-        assertEquals(listOf("month:2026-06", "2"), historyItems(groupByMonth(after)).map { it.key })
+        assertEquals(listOf("month:2026-06", "2"), historyItems(groupByMonth(after, StringsJa)).map { it.key })
     }
 
     @Test
@@ -190,6 +193,7 @@ class RecordsHistoryScreenTest {
                     session(sessionId = 2L, date = LocalDate.of(2026, 5, 9)),
                     session(sessionId = 1L, date = LocalDate.of(2026, 4, 2)),
                 ),
+                StringsJa,
             ),
         )
         // header, row, header, row, header, row
@@ -211,6 +215,7 @@ class RecordsHistoryScreenTest {
                     session(sessionId = 2L, date = LocalDate.of(2026, 6, 17)),
                     session(sessionId = 1L, date = LocalDate.of(2026, 5, 3)),
                 ),
+                StringsJa,
             ),
         )
         assertEquals(2, anchorHeaderIndex(items, YearMonth.of(2026, 5)))
@@ -219,7 +224,7 @@ class RecordsHistoryScreenTest {
     @Test
     fun `an anchor month that is not loaded yet resolves to nothing`() {
         // Null is what keeps the caller paging (§4 edge case 7) rather than scrolling to a guess.
-        val items = historyItems(groupByMonth(listOf(session(date = LocalDate.of(2026, 6, 17)))))
+        val items = historyItems(groupByMonth(listOf(session(date = LocalDate.of(2026, 6, 17))), StringsJa))
         assertNull(anchorHeaderIndex(items, YearMonth.of(2026, 3)))
         assertNull(anchorHeaderIndex(items, null))
     }
@@ -230,7 +235,13 @@ class RecordsHistoryScreenTest {
     fun `a filtered history names its routine and counts it`() {
         assertEquals(
             "「七分間」十四回",
-            historySubtitleOrNull(routineId = "r_seven", routineName = "七分間", sessionCount = 14, lifetime = null),
+            historySubtitleOrNull(
+                routineId = "r_seven",
+                routineName = "七分間",
+                sessionCount = 14,
+                lifetime = null,
+                strings = StringsJa,
+            ),
         )
     }
 
@@ -246,6 +257,7 @@ class RecordsHistoryScreenTest {
                 routineName = null,
                 sessionCount = null,
                 lifetime = LifetimeSummary(sessions = 86, totalActiveMs = 2_400L * 60_000L),
+                strings = StringsJa,
             ),
         )
     }
@@ -254,7 +266,15 @@ class RecordsHistoryScreenTest {
     fun `an unread lifetime omits the subtitle rather than printing 〇回 ・ 〇分`() {
         // `summary()` is a `Loadable` for exactly this reason: 〇回 over a store that has not answered —
         // or over a quarantined one — is a claim about the user's life that nobody can sanity-check.
-        assertNull(historySubtitleOrNull(routineId = null, routineName = null, sessionCount = null, lifetime = null))
+        assertNull(
+            historySubtitleOrNull(
+                routineId = null,
+                routineName = null,
+                sessionCount = null,
+                lifetime = null,
+                strings = StringsJa,
+            ),
+        )
     }
 
     @Test
@@ -268,6 +288,7 @@ class RecordsHistoryScreenTest {
                 routineName = null,
                 sessionCount = 14,
                 lifetime = LifetimeSummary(sessions = 86, totalActiveMs = 2_400L * 60_000L),
+                strings = StringsJa,
             ),
         )
     }
@@ -275,7 +296,13 @@ class RecordsHistoryScreenTest {
     @Test
     fun `an unread count omits the subtitle rather than printing 〇回`() {
         assertNull(
-            historySubtitleOrNull(routineId = "r_seven", routineName = "七分間", sessionCount = null, lifetime = null),
+            historySubtitleOrNull(
+                routineId = "r_seven",
+                routineName = "七分間",
+                sessionCount = null,
+                lifetime = null,
+                strings = StringsJa,
+            ),
         )
     }
 
@@ -427,6 +454,7 @@ class RecordsHistoryScreenTest {
                 totalReps = 320,
                 personalBest = true,
             ),
+            StringsJa,
         )
         assertEquals("七分間、六月十七日、六分十四秒、三巡、三百二十回、きつい、自己最高", spoken)
     }
@@ -434,7 +462,7 @@ class RecordsHistoryScreenTest {
     @Test
     fun `an unrated row simply ends after its numbers`() {
         // §4 edge case 8: the rating fragment is absent, not blank and not a placeholder.
-        val spoken = historyRowSemantics(session(rating = null, roundsCompleted = 3, totalReps = 320))
+        val spoken = historyRowSemantics(session(rating = null, roundsCompleted = 3, totalReps = 320), StringsJa)
         assertEquals("七分間、六月十七日、六分十四秒、三巡、三百二十回", spoken)
     }
 
@@ -444,6 +472,7 @@ class RecordsHistoryScreenTest {
         // chip, and no 自己最高 in any engine (§4 edge case 1).
         val spoken = historyRowSemantics(
             session(complete = false, stationsCompleted = 2, stationsPlanned = 3, personalBest = true),
+            StringsJa,
         )
         assertTrue(spoken.endsWith("途中まで ・ 三種目中 二"))
         assertFalse(spoken.contains("自己最高"))
@@ -451,7 +480,7 @@ class RecordsHistoryScreenTest {
 
     @Test
     fun `a zero rounds or zero reps fragment is omitted, never spoken as 〇`() {
-        val spoken = historyRowSemantics(session(roundsCompleted = 0, totalReps = 0))
+        val spoken = historyRowSemantics(session(roundsCompleted = 0, totalReps = 0), StringsJa)
         assertEquals("七分間、六月十七日、六分十四秒", spoken)
     }
 
@@ -462,8 +491,9 @@ class RecordsHistoryScreenTest {
                 session(sessionId = 2L, date = LocalDate.of(2026, 6, 17)),
                 session(sessionId = 1L, date = LocalDate.of(2026, 6, 3)),
             ),
+            StringsJa,
         ).single()
-        assertEquals("六月、二回", historyMonthSemantics(month))
+        assertEquals("六月、二回", historyMonthSemantics(month, StringsJa))
     }
 
     // ─── the long press and the confirm ─────────────────────────────────────────────────────────
@@ -472,13 +502,17 @@ class RecordsHistoryScreenTest {
     fun `the long-press menu is §6's two items, and both are always offered`() {
         // §4 edge case 4: a session whose routine was archived still shows its denormalised name and
         // この型を見る still works, landing on the archived detail. There is no conditional item.
-        assertEquals(listOf("記録を削除", "この型を見る"), HISTORY_MENU_ITEMS.map { it.label })
+        assertEquals(listOf("記録を削除", "この型を見る"), HISTORY_MENU_ITEMS.map { it.label(StringsJa) })
+        assertEquals(
+            listOf("Delete record", "See this routine"),
+            HISTORY_MENU_ITEMS.map { it.label(StringsEn) },
+        )
         assertEquals(HistoryMenuItem.entries.size, HISTORY_MENU_ITEMS.size)
     }
 
     @Test
     fun `the delete confirm is §6's own two sentences`() {
-        val copy = sessionDeleteCopy()
+        val copy = sessionDeleteCopy(StringsJa)
         assertEquals("この記録を削除しますか", copy.title)
         assertEquals("元に戻せません。", copy.body)
         assertEquals("削除", copy.confirm)

@@ -1,7 +1,6 @@
 package io.eddiegulay.tempo.ui.gym.session
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,30 +36,29 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.faultCopy
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
 import kotlinx.coroutines.delay
 
 /** How long 記録せずに終える stays armed after the first tap — §A QUIT_SHEET's second ask. */
 private const val DISCARD_ARM_MS = 3_000L
 
-/**
- * 本当に消しますか — the armed row's word, and its announcement.
+/*
+ * 本当に消しますか — the armed row's word, its announcement, and the discard row's consequence.
  *
- * `internal` and here rather than at each call site because **two screens ask this question**: this
- * sheet, and [SessionUnrecoverablePage], which is the same two outcomes with つづける removed. Both are
- * §A QUIT_SHEET's copy; a second literal is how one of them ends up asking a slightly different
- * question than the one the user answered a moment ago on the other screen.
+ * They were three `internal const val` here because **two screens ask this question**: this sheet, and
+ * [SessionUnrecoverablePage], which is the same two outcomes with つづける removed. A second literal is
+ * how one of them ends up asking a slightly different question than the one the user answered a moment
+ * ago on the other screen.
+ *
+ * That argument is unchanged and the constants are gone: `strings.gymSession.quitArmed`,
+ * `quitArmedDescription` and `quitDiscardDescription` are now the one place, which is what a string
+ * table is for. Sharing them through a `const` would have pinned them to one language.
  */
-internal const val DISCARD_ARMED_LABEL = "本当に消しますか"
-
-/** Assertive on purpose: a destructive confirmation is the one place interrupting the user is right. */
-internal const val DISCARD_ARMED_DESCRIPTION = "本当に消しますか、もう一度 押すと消えます"
-
-/** 「これまでの記録は消えます」 is the whole reason this row is not the accent one. */
-internal const val DISCARD_DESCRIPTION = "記録せずに終える、これまでの記録は消えます"
 
 /**
  * The three-second window that makes 記録せずに終える ask twice.
@@ -154,7 +152,9 @@ fun QuitSheet(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalTempoColors.current
-    val options = quitOptions(state.resultsWritten)
+    val strings = LocalStrings.current
+    val s = strings.gymSession
+    val options = quitOptions(strings, state.resultsWritten)
     val titleFocus = remember { FocusRequester() }
 
     val arm = rememberDiscardArm()
@@ -178,16 +178,16 @@ fun QuitSheet(
         dismissable = !quit.saving,
     ) {
         Text(
-            text = "鍛錬を終えますか",
+            text = s.quitTitle,
             modifier = Modifier.focusRequester(titleFocus).focusable(),
             style = TextStyle(fontFamily = Mincho, fontSize = 16.sp, letterSpacing = 2.sp, color = c.inkSoft),
         )
         Spacer(Modifier.height(4.dp))
         Text(
             text = if (options.subtitleIsWarning) {
-                "まだ 記録するものがありません"
+                s.quitNothingToSave
             } else {
-                quitSummaryLine(state.activeMs, state.stationsCompleted, state.stationsPlanned)
+                quitSummaryLine(strings, state.activeMs, state.stationsCompleted, state.stationsPlanned)
             },
             style = TextStyle(fontFamily = Gothic, fontSize = 13.sp, color = c.inkFaint),
         )
@@ -196,8 +196,8 @@ fun QuitSheet(
 
         if (options.canRecord) {
             PlayerSheetRow(
-                label = "ここまでを記録する",
-                description = "ここまでを記録する",
+                label = s.quitSave,
+                description = s.quitSave,
                 color = c.accent,
                 enabled = !quit.saving,
                 onClick = {
@@ -209,8 +209,8 @@ fun QuitSheet(
         }
 
         PlayerSheetRow(
-            label = if (arm.armed) DISCARD_ARMED_LABEL else options.discardLabel,
-            description = if (arm.armed) DISCARD_ARMED_DESCRIPTION else DISCARD_DESCRIPTION,
+            label = if (arm.armed) s.quitArmed else options.discardLabel,
+            description = if (arm.armed) s.quitArmedDescription else s.quitDiscardDescription,
             color = c.inkFaint,
             enabled = !quit.saving,
             assertive = arm.armed,
@@ -226,8 +226,8 @@ fun QuitSheet(
         SheetDivider()
 
         PlayerSheetRow(
-            label = "つづける",
-            description = "つづける",
+            label = s.quitContinue,
+            description = s.quitContinue,
             color = c.inkSoft,
             enabled = !quit.saving,
             onClick = actions::onQuitDismissed,
@@ -244,7 +244,7 @@ fun QuitSheet(
                 // host exposes no equivalent of `onRetryFinish` for it (reported as a gap). Stating
                 // the fault with no button is honest; a もう一度 that silently did nothing is not.
                 Text(
-                    text = faultCopy(fault).message,
+                    text = faultCopy(fault, LocalStrings.current).message,
                     style = TextStyle(fontFamily = Gothic, fontSize = 13.sp, color = c.accent),
                 )
             }
@@ -256,27 +256,34 @@ fun QuitSheet(
 @Composable
 private fun SaveFailedLine(onRetry: () -> Unit, enabled: Boolean) {
     val c = LocalTempoColors.current
+    val strings = LocalStrings.current
+    val s = strings.gymSession
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "記録できませんでした",
+            text = s.quitSaveFailed,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             style = TextStyle(fontFamily = Gothic, fontSize = 13.sp, color = c.inkSoft),
         )
         Text(
-            text = " ・ ",
+            // Its own node between the message and the retry, so the separator is punctuation the
+            // layout owns rather than part of either sentence — and it is locale-dependent.
+            text = strings.fmt.separator,
             style = TextStyle(fontFamily = Gothic, fontSize = 13.sp, color = c.inkFaint),
         )
         Text(
-            text = "もう一度",
+            text = s.quitRetry,
             modifier = Modifier
-                .sizeIn(minHeight = 44.dp)
-                .clickable(enabled = enabled, onClick = onRetry)
+                // 44.dp was below the floor — and this is the one control on the screen that a user
+                // reaches for *after* something already went wrong, so it is the worst place to make
+                // a thumb aim. 48, and the lozenge every bare accent word takes.
+                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                .playerPressable(TempoShapes.Word, enabled = enabled, onClick = onRetry)
                 .clearAndSetSemantics {
-                    contentDescription = "もう一度"
+                    contentDescription = s.quitRetry
                     role = Role.Button
                     if (!enabled) disabled()
                 }
@@ -307,7 +314,11 @@ internal fun PlayerSheetRow(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 56.dp)
-            .clickable(enabled = enabled, onClick = onClick)
+            // A row, not a word: this spans the sheet's width and is separated from its neighbours by
+            // a hairline, which is exactly what `Row` is for. Its wash runs edge to edge between the
+            // dividers, so a thumb that lands anywhere on the row can see it landed on *this* one —
+            // the three answers to 鍛錬を終えますか are 56.dp apart and one of them discards a session.
+            .playerPressable(TempoShapes.Row, enabled = enabled, onClick = onClick)
             .clearAndSetSemantics {
                 contentDescription = description
                 role = Role.Button

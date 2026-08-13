@@ -1,20 +1,17 @@
 package io.eddiegulay.tempo.ui.gym.session
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -24,12 +21,16 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.eddiegulay.tempo.gym.Phase
+import io.eddiegulay.tempo.gym.displayName
+import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
 
 /**
  * 休止 — the session frozen, honestly (`03-player.md` §A GYM.SESSION.PAUSED).
@@ -67,13 +68,15 @@ fun PausedPage(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     val inPrepare = state.prepare != null || state.phase == Phase.PREPARE
     val resumeFocus = remember { FocusRequester() }
 
     // Frozen at entry. The clock is stopped, so these do not move — but reading them through
-    // `remember` says so, and it is what keeps the single announcement single.
-    val announcement = remember {
-        pausedAnnouncement(state.activeMs, state.stationsCompleted)
+    // `remember` says so, and it is what keeps the single announcement single. Keyed on the language
+    // so a switch while paused re-says it rather than leaving the previous one on the node.
+    val announcement = remember(s.lang) {
+        pausedAnnouncement(s, state.activeMs, state.stationsCompleted)
     }
 
     LaunchedEffect(Unit) {
@@ -93,17 +96,18 @@ fun PausedPage(
         announcement = announcement,
         ringContent = {
             Text(
-                text = "休止",
+                text = s.gymSession.pausedTitle,
                 style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = 6.sp, color = c.inkFaint),
             )
             Spacer(Modifier.height(4.dp))
+            // 「残り 二十三秒、休止中」 spoken against `0:23` drawn — §Q4's sharpest case in Japanese,
+            // and one string in English (§L7).
+            val spoken = pausedNumeralDescription(s, state.remainingMs)
             Text(
-                text = formatCountdown(state.remainingMs),
+                text = formatCountdown(s, state.remainingMs),
                 softWrap = false,
                 maxLines = 1,
-                modifier = Modifier.clearAndSetSemantics {
-                    contentDescription = pausedNumeralDescription(state.remainingMs)
-                },
+                modifier = Modifier.clearAndSetSemantics { contentDescription = spoken },
                 style = TextStyle(
                     fontFamily = Mincho,
                     fontSize = heroSize(88.sp),
@@ -112,10 +116,13 @@ fun PausedPage(
                     color = c.inkSoft,
                 ),
             )
-            state.exercise?.nameJa?.let { name ->
+            state.exercise?.displayName(s)?.let { name ->
                 Text(
                     text = name,
                     maxLines = 1,
+                    // Catalogue content on one line: ellipsised rather than cut mid-glyph, the same
+                    // treatment `ExerciseHeading` takes and for the same reason.
+                    overflow = TextOverflow.Ellipsis,
                     style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 2.sp, color = c.inkFaint),
                 )
             }
@@ -124,10 +131,10 @@ fun PausedPage(
             // §A PAUSED `PausedDuringPrepare`: nothing has elapsed, so nothing claims to have.
             if (!inPrepare) {
                 Text(
-                    text = elapsedLine(state.activeMs),
+                    text = elapsedLine(s, state.activeMs),
                     style = TextStyle(fontFamily = Gothic, fontSize = 13.sp, color = c.inkSoft),
                 )
-                accruedLine(state.stationsCompleted, state.roundsCompleted)?.let { line ->
+                accruedLine(s, state.stationsCompleted, state.roundsCompleted)?.let { line ->
                     Text(
                         text = line,
                         style = TextStyle(fontFamily = Gothic, fontSize = 11.sp, color = c.inkFaint),
@@ -140,7 +147,7 @@ fun PausedPage(
                 // The guard fired rather than the user tapping ┃┃. Said plainly, and nothing is saved
                 // on the strength of it.
                 Text(
-                    text = "長い間 動きがありません",
+                    text = s.gymSession.pausedStalled,
                     style = TextStyle(fontFamily = Gothic, fontSize = 12.sp, color = c.inkFaint),
                 )
                 Spacer(Modifier.height(8.dp))
@@ -169,29 +176,31 @@ private fun ResumeButton(
     onResume: () -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
+    val description = if (needsPrepare) resumeLongDescription(s) else s.gymSession.pausedResume
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(NEXT_UP_SLOT)
-            .clip(RoundedCornerShape(18.dp))
-            .background(c.card)
+            .background(c.card, TempoShapes.Card)
             .focusRequester(focusRequester)
-            .clickable(onClick = onResume)
+            .playerPressable(TempoShapes.Card, onClick = onResume)
             .clearAndSetSemantics {
-                contentDescription = if (needsPrepare) "続ける、三秒の支度から" else "続ける"
+                contentDescription = description
                 role = Role.Button
             },
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = "続ける",
+                text = s.gymSession.pausedResume,
                 textAlign = TextAlign.Center,
                 style = TextStyle(fontFamily = Mincho, fontSize = 20.sp, letterSpacing = 4.sp, color = c.accent),
             )
             if (needsPrepare) {
                 Text(
-                    text = "三秒の支度から",
+                    text = resumePrepareNote(s),
+                    textAlign = TextAlign.Center,
                     style = TextStyle(fontFamily = Gothic, fontSize = 11.sp, color = c.inkFaint),
                 )
             }
@@ -214,7 +223,11 @@ private fun pausedControls(
     val live = liveControls(state, actions)
     return live.copy(
         back = live.back.copy(state = if (inPrepare) ControlState.Hidden else live.back.state),
-        middle = BarControl(glyph = "▶", description = "続ける", onClick = actions::onResume),
+        middle = BarControl(
+            glyph = "▶",
+            description = LocalStrings.current.gymSession.pausedResume,
+            onClick = actions::onResume,
+        ),
     )
 }
 

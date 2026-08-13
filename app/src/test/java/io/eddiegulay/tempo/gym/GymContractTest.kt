@@ -1,6 +1,8 @@
 package io.eddiegulay.tempo.gym
 
 import io.eddiegulay.tempo.data.GymFault
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -68,8 +70,42 @@ class GymContractTest {
         // while others work — the one thing the ACSM circuit forbids reordering.
         assertEquals(
             listOf("押す", "引く", "しゃがむ", "股関節", "体幹", "移動", "跳ぶ"),
-            Pattern.entries.map { it.label },
+            Pattern.entries.map { it.label(StringsJa) },
         )
+    }
+
+    @Test
+    fun `the vocabulary the whole feature shares is transcribed, not reworded`() {
+        // The words these four enums used to carry as constructor arguments, asserted where they now
+        // come from. Japanese is unchanged — that is the point of the move, and this is the assertion
+        // that catches a transcription slip.
+        assertEquals(
+            listOf("巡回", "時間内", "完走", "完走 ・ 休息あり", "毎分", "毎分増", "段階"),
+            Engine.entries.map { it.label(StringsJa) },
+        )
+        assertEquals(listOf("回数", "秒数", "限界まで"), Measure.entries.map { it.label(StringsJa) })
+        assertEquals(listOf("楽", "ちょうど", "きつい"), Rating.entries.map { it.label(StringsJa) })
+    }
+
+    @Test
+    fun `完走 ・ 休息あり is composed, so its separator follows the language`() {
+        // The one engine label that is not a word but a phrase. Baking ` ・ ` into it would have put a
+        // CJK middle dot in the English table and let the two spellings of 完走 drift apart; the
+        // separator is `fmt.separator`, which is ` · ` in English.
+        assertEquals(
+            StringsJa.gymShared.engineForTime + StringsJa.fmt.separator + StringsJa.gymShared.engineWithRest,
+            Engine.FOR_TIME_WITH_REST.label(StringsJa),
+        )
+        assertEquals("Finish · with rest", Engine.FOR_TIME_WITH_REST.label(StringsEn))
+        assertTrue(Engine.FOR_TIME_WITH_REST.label(StringsEn).startsWith(Engine.FOR_TIME.label(StringsEn)))
+    }
+
+    @Test
+    fun `a rating's CR10 number did not move with its word`() {
+        // The label left the constructor; the number did not, and must not — it is written onto
+        // `session.rating_cr10` and frozen there. Nothing about language may touch it.
+        assertEquals(listOf(4, 7, 9), Rating.entries.map { it.cr10 })
+        assertEquals(listOf("Easy", "Just right", "Hard"), Rating.entries.map { it.label(StringsEn) })
     }
 
     @Test

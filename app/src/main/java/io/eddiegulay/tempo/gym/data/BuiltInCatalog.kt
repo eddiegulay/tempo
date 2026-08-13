@@ -27,6 +27,20 @@ import kotlin.math.floor
  * so rewriting that step's numbers retroactively changes what a past session prescribed. If a
  * transcription is ever corrected, add a new program id (`p_recon_ron_v2`) and leave the old rows
  * alone (§A.5).
+ *
+ * **The text below is Japanese in every language, and must stay that way.** These are the strings that
+ * go into the tables; the user's language is applied when a row is *read*, by `CatalogDisplay.kt`
+ * against `strings.catalog`, keyed on the ids in this file. Translating a value here — or worse,
+ * selecting one by locale — would be a data change rather than a display change: the built-in routine
+ * pass is content-addressed over the routine's name and every station note
+ * (`GymMath.structuralHashOf`), so a name that varied with the selected language would insert a fresh
+ * `routine_version` on every flip of the toggle, on every install, forever
+ * (`.planning/i18n/DECISIONS.md` §L1, and the seeded-content survey's hazard 2). The `name_en` column
+ * is the one exception and it is not an exception to the rule — it is a second *stored* value, seeded
+ * unconditionally in both languages, and it does not vary by locale either.
+ *
+ * The ids are therefore append-only for text as well as for numbers: `strings.catalog` translates by
+ * id, so a built-in renamed in place would keep the old translation under the new name.
  */
 
 /** One row of `exercise`. */

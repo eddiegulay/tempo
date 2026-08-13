@@ -24,8 +24,18 @@ import java.time.LocalDateTime
  * the same claim made without asking.
  */
 
-/** The one word this hand-off puts on screen (`03-player.md` §A COMPLETE's mock, `04` §4 row 8). */
-const val SCHEDULE_ACTION_LABEL: String = "予定に入れる"
+/*
+ * **The one word this hand-off puts on screen is not here any more.** It was `SCHEDULE_ACTION_LABEL`,
+ * a `const val` holding 予定に入れる (`03-player.md` §A COMPLETE's mock, `04` §4 row 8) — and a `const`
+ * is resolved at compile time, which is the strongest possible version of the problem every label in
+ * this feature had: it cannot be re-resolved when the user changes language, and it cannot even be
+ * made to by a getter. It is `strings.gymShared.scheduleNext`.
+ *
+ * Nothing else in this file is copy. `scheduleDraft` sets the event's title to the routine's own name
+ * and its location to the empty string, and neither is ours to translate — the title is user or
+ * catalogue data, and it leaves the app for the device calendar, where no toggle of ours reaches it
+ * (`.planning/i18n/DECISIONS.md` §L10).
+ */
 
 /*
  * **There is deliberately no opening-time rule in this file.** `03-player.md` §A COMPLETE's hand-off

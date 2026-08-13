@@ -2,13 +2,15 @@ package io.eddiegulay.tempo.ui.gym
 
 import io.eddiegulay.tempo.calendar.Loadable
 import io.eddiegulay.tempo.data.GymFault
-import io.eddiegulay.tempo.data.JapaneseDate
 import io.eddiegulay.tempo.gym.DayLoad
 import io.eddiegulay.tempo.gym.Engine
 import io.eddiegulay.tempo.gym.Rating
 import io.eddiegulay.tempo.gym.SessionSummary
 import io.eddiegulay.tempo.gym.Streak
 import io.eddiegulay.tempo.gym.WeekPoint
+import io.eddiegulay.tempo.i18n.Strings
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -126,7 +128,12 @@ class RecordsIndexScreenTest {
 
     @Test
     fun `the tiles are labelled 今月 活動時間 これまで`() {
-        val tiles = recordsTiles(monthSessions = 12, monthActiveMs = 240 * 60_000L, lifetimeSessions = 86)
+        val tiles = recordsTiles(
+            monthSessions = 12,
+            monthActiveMs = 240 * 60_000L,
+            lifetimeSessions = 86,
+            strings = StringsJa,
+        )
 
         assertEquals(listOf("今月", "活動時間", "これまで"), tiles.map { it.label })
         assertEquals(listOf("十二回", "二百四十分", "八十六回"), tiles.map { it.value })
@@ -134,9 +141,9 @@ class RecordsIndexScreenTest {
 
     @Test
     fun `a tile reads label-first`() {
-        val tiles = recordsTiles(12, 240 * 60_000L, 86)
+        val tiles = recordsTiles(12, 240 * 60_000L, 86, StringsJa)
 
-        assertEquals("今月、十二回", recordsTileSemantics(tiles.first()))
+        assertEquals("今月、十二回", recordsTileSemantics(tiles.first(), StringsJa))
     }
 
     @Test
@@ -144,7 +151,7 @@ class RecordsIndexScreenTest {
         // `summary()` exists now (`DECISIONS.md` §Q22) and null means what a `Loadable` means: the read
         // has not answered, or it failed. An absent tile says nothing; 〇回 over a quarantined store
         // would be a claim, on the page whose whole subject is honest records.
-        val tiles = recordsTiles(12, 240 * 60_000L, lifetimeSessions = null)
+        val tiles = recordsTiles(12, 240 * 60_000L, lifetimeSessions = null, strings = StringsJa)
 
         assertEquals(listOf("今月", "活動時間"), tiles.map { it.label })
     }
@@ -152,7 +159,7 @@ class RecordsIndexScreenTest {
     @Test
     fun `minutes truncate`() {
         // 59 seconds is not a minute, exactly as `historySubtitle` counts them.
-        val tiles = recordsTiles(1, 119_000L, null)
+        val tiles = recordsTiles(1, 119_000L, null, StringsJa)
 
         assertEquals("一分", tiles[1].value)
     }
@@ -161,7 +168,7 @@ class RecordsIndexScreenTest {
     fun `a month with nothing in it still counts, in zeroes`() {
         // The tiles are only ever drawn over a history that exists, so 〇回 here is a fact about June
         // and not a wall of zeroes over a first-run page — that page is `RecordsBody.Empty`.
-        val tiles = recordsTiles(0, 0L, null)
+        val tiles = recordsTiles(0, 0L, null, StringsJa)
 
         assertEquals(listOf("〇回", "〇分"), tiles.map { it.value })
     }
@@ -170,7 +177,7 @@ class RecordsIndexScreenTest {
 
     @Test
     fun `a recent row leads with the month, unlike a history row`() {
-        val copy = recentRowCopy(session())
+        val copy = recentRowCopy(session(), StringsJa)
 
         assertEquals("六月十七日", copy.date)
         assertEquals("七分間", copy.name)
@@ -180,7 +187,7 @@ class RecordsIndexScreenTest {
     @Test
     fun `an unrated session simply ends after the duration`() {
         // §4 edge case 8, and the reason `rating` is nullable rather than defaulted to ちょうど.
-        val copy = recentRowCopy(session(rating = null))
+        val copy = recentRowCopy(session(rating = null), StringsJa)
 
         assertNull(copy.rating)
         assertEquals("六月十七日、七分間、六分十四秒", copy.semantics)
@@ -190,7 +197,7 @@ class RecordsIndexScreenTest {
     fun `a partial session says so here too`() {
         // `00-plan.md` §4.1 rule 2: the same treatment wherever it appears. Without the chip this row
         // would present an abandoned circuit exactly as it presents a finished one.
-        val copy = recentRowCopy(session(complete = false, stationsCompleted = 2, stationsPlanned = 3))
+        val copy = recentRowCopy(session(complete = false, stationsCompleted = 2, stationsPlanned = 3), StringsJa)
 
         assertEquals("途中まで ・ 三種目中 二", copy.partial)
         assertTrue(copy.semantics.endsWith("途中まで ・ 三種目中 二"))
@@ -198,7 +205,7 @@ class RecordsIndexScreenTest {
 
     @Test
     fun `a finished session carries no partial chip`() {
-        assertNull(recentRowCopy(session()).partial)
+        assertNull(recentRowCopy(session(), StringsJa).partial)
     }
 
     // ─── the pager ──────────────────────────────────────────────────────────────────────────────
@@ -230,8 +237,8 @@ class RecordsIndexScreenTest {
     fun `the pager labels its month and the subtitle carries the year`() {
         val june = YearMonth.of(2026, 6)
 
-        assertEquals("六月", monthPagerLabel(june, current = june))
-        assertEquals("令和八年 ・ 六月", recordsSubtitle(LocalDateTime.of(2026, 6, 17, 9, 0)))
+        assertEquals("六月", monthPagerLabel(june, current = june, strings = StringsJa))
+        assertEquals("令和八年 ・ 六月", recordsSubtitle(LocalDateTime.of(2026, 6, 17, 9, 0), StringsJa))
     }
 
     @Test
@@ -242,7 +249,7 @@ class RecordsIndexScreenTest {
         // grid between them: two different Junes rendered identically.
         assertEquals(
             "令和七年 ・ 六月",
-            monthPagerLabel(YearMonth.of(2025, 6), current = YearMonth.of(2026, 6)),
+            monthPagerLabel(YearMonth.of(2025, 6), current = YearMonth.of(2026, 6), strings = StringsJa),
         )
     }
 
@@ -251,38 +258,65 @@ class RecordsIndexScreenTest {
         // `DECISIONS.md` §Q7's rule: one formatter is authoritative and the other delegates, so the
         // pager and the subtitle cannot spell a year two ways.
         assertEquals(
-            recordsSubtitle(LocalDateTime.of(2025, 6, 1, 0, 0)),
-            monthPagerLabel(YearMonth.of(2025, 6), current = YearMonth.of(2026, 6)),
+            recordsSubtitle(LocalDateTime.of(2025, 6, 1, 0, 0), StringsJa),
+            monthPagerLabel(YearMonth.of(2025, 6), current = YearMonth.of(2026, 6), strings = StringsJa),
         )
     }
 
     @Test
-    fun `every month of the displayed year stays bare`() {
+    fun `every month of the displayed year is named, never counted`() {
         // The mock is unchanged for the user who never leaves this year, which is the common case and
         // the one §4 drew: 「‹ 六月 ›」, with the year two lines above it in the subtitle.
+        //
+        // The label is `fmt.monthName`, and the reason it is asserted in both languages is that
+        // `fmt.months` — a *count* of months — spells 六月 identically in Japanese. Only an English
+        // build can tell 「June」 from 「6 months」, so only an English assertion can catch the swap.
         val current = YearMonth.of(2026, 6)
         (1..12).forEach { m ->
             assertEquals(
-                JapaneseDate.kanji(m) + "月",
-                monthPagerLabel(YearMonth.of(2026, m), current = current),
+                StringsJa.fmt.monthName(m),
+                monthPagerLabel(YearMonth.of(2026, m), current = current, strings = StringsJa),
+            )
+            assertEquals(
+                StringsEn.fmt.monthName(m),
+                monthPagerLabel(YearMonth.of(2026, m), current = current, strings = StringsEn),
             )
         }
+        assertEquals("June", monthPagerLabel(YearMonth.of(2026, 6), current, StringsEn))
+        assertEquals("Reiwa 7 · June", monthPagerLabel(YearMonth.of(2025, 6), current, StringsEn))
     }
 
     // ─── the weekday header ─────────────────────────────────────────────────────────────────────
 
     @Test
-    fun `the weekday letters are Sunday-first and agree with JapaneseDate`() {
-        // The letters are §4's mock, but they must stay in lockstep with the app's own DOW table:
-        // `monthCells` computes `leadingBlank` Sunday-first from `dayOfWeek.value % 7`, so a header
-        // that started on Monday would shift every dot one column and nothing would look broken.
+    fun `the weekday letters are Sunday-first and are each their own day's initial`() {
+        // The header used to be seven Japanese literals on this page, pinned against
+        // `JapaneseDate.dayOfWeek` by stripping 「曜日」 off its output — a test reaching into the
+        // spelling of a formatter it does not own, and an assertion that could only ever be about
+        // Japanese. The letters are `fmt.weekdayInitials()` now, so the property is restated per
+        // language: **seven entries, Sunday first, each one the opening of that day's own name.**
+        //
+        // Sunday-first is what `monthCells` computes `leadingBlank` from (`dayOfWeek.value % 7`), in
+        // both languages: a header that started on Monday would shift every dot one column and nothing
+        // would look broken. `EnFormats` keeps the Japanese grid's week start deliberately (H-21).
         val sunday = LocalDate.of(2026, 6, 7)
-        val fromJapaneseDate = (0..6).map {
-            JapaneseDate.dayOfWeek(sunday.plusDays(it.toLong()).atStartOfDay()).removeSuffix("曜日")
+        listOf<Strings>(StringsJa, StringsEn).forEach { strings ->
+            val initials = strings.fmt.weekdayInitials()
+            assertEquals(7, initials.size)
+            (0..6).forEach { offset ->
+                val day = sunday.plusDays(offset.toLong()).atStartOfDay()
+                assertTrue(
+                    "${initials[offset]} must open ${strings.fmt.dayOfWeek(day)}",
+                    strings.fmt.dayOfWeek(day).startsWith(initials[offset]),
+                )
+            }
         }
 
-        assertEquals(listOf("日", "月", "火", "水", "木", "金", "土"), RECORDS_WEEKDAYS)
-        assertEquals(fromJapaneseDate, RECORDS_WEEKDAYS)
+        // The Japanese seven, transcribed, so the migration stayed behaviour-neutral for the language
+        // that shipped them. English's S M T W T F S collides on two pairs and that is accepted: the
+        // cell is 20.dp, which is one CJK glyph or about three Latin characters.
+        assertEquals(listOf("日", "月", "火", "水", "木", "金", "土"), StringsJa.fmt.weekdayInitials())
+        assertEquals(listOf("S", "M", "T", "W", "T", "F", "S"), StringsEn.fmt.weekdayInitials())
     }
 
     // ─── the sparkline ──────────────────────────────────────────────────────────────────────────

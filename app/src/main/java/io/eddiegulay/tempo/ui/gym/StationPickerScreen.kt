@@ -4,7 +4,6 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,18 +64,26 @@ import io.eddiegulay.tempo.gym.adjacentPatternClashes
 import io.eddiegulay.tempo.gym.allowedMeasures
 import io.eddiegulay.tempo.gym.canAddStation
 import io.eddiegulay.tempo.gym.clashCopy
-import io.eddiegulay.tempo.gym.coefficientLabel
 import io.eddiegulay.tempo.gym.defaultPrescription
-import io.eddiegulay.tempo.gym.durationKanji
+import io.eddiegulay.tempo.gym.displayCue
+import io.eddiegulay.tempo.gym.displayName
+import io.eddiegulay.tempo.gym.label
 import io.eddiegulay.tempo.gym.matchExercise
+import io.eddiegulay.tempo.gym.measureAllowed
 import io.eddiegulay.tempo.gym.paceEstimateSec
 import io.eddiegulay.tempo.gym.repOptions
+import io.eddiegulay.tempo.gym.repWheelValueLabel
 import io.eddiegulay.tempo.gym.secondOptions
+import io.eddiegulay.tempo.gym.secondWheelValueLabel
+import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.i18n.Strings
 import io.eddiegulay.tempo.ui.HeaderAction
 import io.eddiegulay.tempo.ui.TempoValueWheel
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 import kotlinx.coroutines.delay
 
 /*
@@ -103,21 +110,39 @@ import kotlinx.coroutines.delay
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** 「保存、種目をえらんでください」 — §3's rule that a disabled word says why (accessibility). */
-internal fun pickerSaveSemantics(canSave: Boolean): String =
-    if (canSave) "保存" else "保存、種目をえらんでください"
+internal fun pickerSaveSemantics(canSave: Boolean, strings: Strings): String =
+    if (canSave) {
+        strings.gymExercise.save
+    } else {
+        strings.gymExercise.save + strings.fmt.listSeparator + strings.gymExercise.savePickFirst
+    }
 
-/** 「腕立て伏せ、押す、難度 一.〇」 — §3's exercise row description, verbatim. */
-internal fun exerciseSemantics(exercise: Exercise): String =
-    exercise.nameJa + "、" + exercise.pattern.label + "、難度 " + coefficientLabel(exercise.difficulty)
+/**
+ * 「腕立て伏せ、押す、難度 一.〇」 — §3's exercise row description, verbatim.
+ *
+ * The coefficient goes through `fmt` **unguarded**, unlike [exerciseCoefficient]: this page draws the
+ * catalogue's difficulty column as a number for every row including 走る's, which is what it has always
+ * done, and narrowing it here would be a change to the picker rather than a translation of it.
+ */
+internal fun exerciseSemantics(exercise: Exercise, strings: Strings): String =
+    listOf(
+        exercise.displayName(strings),
+        exercise.pattern.label(strings),
+        strings.gymExercise.difficulty(strings.fmt.coefficient(exercise.difficulty)),
+    ).joinToString(strings.fmt.listSeparator)
 
 /**
  * 「秒数、この方式では使えません」 — a disabled chip carries its reason in its description (§3).
  *
  * An enabled chip is its own label and nothing more; there is no documented word for "available", and
  * a chip that announced one would be describing the absence of a problem.
+ *
+ * The reason arrives already resolved on [MeasureOption] — `gymBuilder.measureUnavailable`, filled by
+ * `allowedMeasures` — so this namespace does not hold a second copy of the sentence. One refusal, one
+ * owner; the two places it is drawn cannot disagree.
  */
-internal fun measureSemantics(option: MeasureOption): String =
-    listOfNotNull(option.measure.label, option.reason).joinToString("、")
+internal fun measureSemantics(option: MeasureOption, strings: Strings): String =
+    listOfNotNull(option.measure.label(strings), option.reason).joinToString(strings.fmt.listSeparator)
 
 /**
  * 目安 — what this station is expected to take, and **labelled 目安 every single time it appears**
@@ -126,14 +151,15 @@ internal fun measureSemantics(option: MeasureOption): String =
  * Null for `MAX_EFFORT`: `paceEstimateSec` returns null because there is nothing to estimate, and §3's
  * `MaxEffortSelected` state removes the line rather than printing a guess beside できるところまで.
  *
- * The duration is rendered through [durationKanji] — 四十秒, 一分三十秒 — because this is a duration the
- * **app computed**, which is the half of `DECISIONS.md` §Q10 that `durationKanji` owns. The wheel above
- * it is the other half and stays on bare seconds. §3's mock draws this line as 「目安 〇:四十」, a
+ * The duration is rendered through [Formats.duration] — 四十秒, 一分三十秒 — because this is a duration
+ * the **app computed**, which is the half of `DECISIONS.md` §Q10 that `durationKanji` owns. The wheel
+ * above it is the other half and stays on bare seconds. §3's mock draws this line as 「目安 〇:四十」, a
  * kanji-digit clock form that no formatter in this app produces and that §6's numerals note does not
  * describe; the two documented forms are `durationKanji` and the arabic `clockDuration` of the
  * breakdown rows, and an estimate is read rather than watched. Disclosed rather than transcribed.
  */
-internal fun paceLine(seconds: Int?): String? = seconds?.let { "目安 " + durationKanji(it) }
+internal fun paceLine(seconds: Int?, strings: Strings): String? =
+    seconds?.let { strings.gymExercise.paceEstimate(strings.fmt.duration(it)) }
 
 /**
  * The catalogue as the picker draws it: grouped by pattern, in [Pattern]'s declaration order, with the
@@ -174,6 +200,7 @@ internal fun prospectiveClash(
     exerciseId: String,
     pattern: (String) -> Pattern?,
     name: (String) -> String,
+    strings: Strings,
 ): String? {
     // Only the exercise id matters to a pattern clash, so the measure and its value are placeholders
     // and deliberately not the prescription being edited: a warning about fatigue does not depend on
@@ -191,6 +218,7 @@ internal fun prospectiveClash(
     return clashCopy(
         name(stations[clash.firstIndex].exerciseId),
         name(stations[clash.secondIndex].exerciseId),
+        strings,
     )
 }
 
@@ -244,14 +272,9 @@ internal fun carriedNote(existing: StationDraft?, exerciseId: String): String? =
  *
  * One helper, called from the seed and from the selection, so the two cannot drift apart.
  */
-internal fun seededMeasure(engine: Engine, requested: Measure?): Measure {
-    val allowed = allowedMeasures(engine)
-    return allowed.firstOrNull { it.measure == requested && it.enabled }?.measure
-        ?: allowed.first { it.enabled }.measure
-}
-
-/** できるところまで — §6's word for the wheel that is not there, and the whole `MaxEffortSelected` state. */
-private const val OPEN_ENDED = "できるところまで"
+internal fun seededMeasure(engine: Engine, requested: Measure?): Measure =
+    requested?.takeIf { measureAllowed(engine, it) }
+        ?: Measure.entries.first { measureAllowed(engine, it) }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The page
@@ -360,6 +383,7 @@ fun StationPickerScreen(gym: GymViewModel, index: Int?, modifier: Modifier = Mod
 @Composable
 private fun PickerHeader(canSave: Boolean, onCancel: () -> Unit, onSave: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -368,15 +392,20 @@ private fun PickerHeader(canSave: Boolean, onCancel: () -> Unit, onSave: () -> U
         verticalAlignment = Alignment.Top,
     ) {
         Text(
-            text = "種目をえらぶ",
+            text = s.gymExercise.pickerTitle,
             modifier = Modifier.semantics { heading() },
             style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-            HeaderAction(label = "やめる", description = "やめる", color = c.inkFaint, onClick = onCancel)
             HeaderAction(
-                label = "保存",
-                description = pickerSaveSemantics(canSave),
+                label = s.gymExercise.cancel,
+                description = s.gymExercise.cancel,
+                color = c.inkFaint,
+                onClick = onCancel,
+            )
+            HeaderAction(
+                label = s.gymExercise.save,
+                description = pickerSaveSemantics(canSave, s),
                 color = if (canSave) c.accent else c.inkFaint,
                 enabled = canSave,
                 onClick = onSave,
@@ -435,7 +464,7 @@ private fun PickerBody(
             NoMatchState()
         } else {
             groups.forEach { (pattern, exercises) ->
-                PatternHeading(pattern.label)
+                PatternHeading(pattern.label(LocalStrings.current))
                 exercises.forEach { exercise ->
                     ExerciseRow(
                         exercise = exercise,
@@ -476,19 +505,20 @@ private const val UNFOLD_MILLIS = 220L
 @Composable
 private fun SearchField(query: String, onQuery: (String) -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     BasicTextField(
         value = query,
         onValueChange = onQuery,
         singleLine = true,
         textStyle = TextStyle(fontFamily = Mincho, fontSize = 18.sp, color = c.ink),
         cursorBrush = SolidColor(c.accent),
-        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "さがす" },
+        modifier = Modifier.fillMaxWidth().semantics { contentDescription = s.gymExercise.searchPlaceholder },
         decorationBox = { inner ->
             Column {
                 Box(Modifier.padding(vertical = 10.dp)) {
                     if (query.isEmpty()) {
                         Text(
-                            text = "さがす",
+                            text = s.gymExercise.searchPlaceholder,
                             style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, color = c.inkFaint),
                         )
                     }
@@ -525,16 +555,18 @@ private fun PatternHeading(label: String) {
 @Composable
 private fun ExerciseRow(exercise: Exercise, selected: Boolean, onClick: () -> Unit) {
     val c = LocalTempoColors.current
-    val description = exerciseSemantics(exercise)
+    val s = LocalStrings.current
+    val description = exerciseSemantics(exercise, s)
+    val selectedLabel = s.gymExercise.selected
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 48.dp)
-            .clickable(onClick = onClick)
+            .pressable(TempoShapes.Row, onClick = onClick)
             .clearAndSetSemantics {
                 role = Role.RadioButton
                 contentDescription = description
-                if (selected) stateDescription = "選択中"
+                if (selected) stateDescription = selectedLabel
             }
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -544,14 +576,14 @@ private fun ExerciseRow(exercise: Exercise, selected: Boolean, onClick: () -> Un
         }
         Spacer(Modifier.size(8.dp))
         Text(
-            text = exercise.nameJa,
+            text = exercise.displayName(s),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f, fill = true).padding(end = 12.dp),
             style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, color = c.ink),
         )
         Text(
-            text = coefficientLabel(exercise.difficulty),
+            text = s.fmt.coefficient(exercise.difficulty),
             style = TextStyle(fontFamily = Gothic, fontSize = 11.sp, color = c.inkFaint),
         )
     }
@@ -584,31 +616,33 @@ private fun PrescriptionBlock(
     onRemove: (() -> Unit)?,
 ) {
     val c = LocalTempoColors.current
-    val measures = remember(engine) { allowedMeasures(engine) }
+    val s = LocalStrings.current
+    val measures = remember(engine, s) { allowedMeasures(engine, s) }
     val station = remember(exercise.id, measure, reps, seconds) {
         stationOf(exercise.id, measure, reps, seconds)
     }
-    val pace = remember(station, exercise) { paceLine(paceEstimateSec(station, exercise)) }
-    val clash = remember(draft, index, exercise.id) {
+    val pace = remember(station, exercise, s) { paceLine(paceEstimateSec(station, exercise), s) }
+    val clash = remember(draft, index, exercise.id, s) {
         prospectiveClash(
             draft = draft,
             index = index,
             exerciseId = exercise.id,
             pattern = { ExerciseCatalog.byId(it)?.pattern },
-            name = { ExerciseCatalog.byId(it)?.nameJa ?: UNKNOWN_EXERCISE },
+            name = { ExerciseCatalog.byId(it)?.displayName(s) ?: unknownExercise(s) },
+            strings = s,
         )
     }
 
     Spacer(Modifier.height(18.dp))
     Box(Modifier.fillMaxWidth().height(1.dp).background(c.hair))
     Text(
-        text = exercise.nameJa,
+        text = exercise.displayName(s),
         modifier = Modifier
             .padding(top = 16.dp)
             .semantics { liveRegion = LiveRegionMode.Polite },
         style = TextStyle(fontFamily = Mincho, fontSize = 20.sp, color = c.ink),
     )
-    exercise.cue?.let { cue ->
+    exercise.displayCue(s)?.let { cue ->
         Text(
             text = cue,
             modifier = Modifier.padding(top = 4.dp),
@@ -622,7 +656,7 @@ private fun PrescriptionBlock(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "はかり方",
+            text = s.gymExercise.measureLabel,
             style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 3.sp, color = c.inkFaint),
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -633,12 +667,14 @@ private fun PrescriptionBlock(
             }
         }
     }
-    // The reason, once, under the chips that carry it. Each disabled chip already announces its own
-    // (「秒数、この方式では使えません」); repeating the sentence per chip would draw it twice on an
-    // engine that refuses two measures, and §6 gives exactly one string for the refusal.
-    if (measures.any { !it.enabled }) {
+    // The reason, once, under the chips that carry it — read off a chip rather than restated, so the
+    // line under the row and the sentence inside each disabled chip's description are literally the
+    // same string. Each disabled chip already announces its own (「秒数、この方式では使えません」);
+    // drawing it per chip would print it twice on an engine that refuses two measures, and §6 gives
+    // exactly one string for the refusal.
+    measures.firstNotNullOfOrNull { it.reason }?.let { reason ->
         Text(
-            text = "この方式では使えません",
+            text = reason,
             modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
             style = TextStyle(fontFamily = Gothic, fontSize = 12.sp, lineHeight = 18.sp, color = c.inkFaint),
         )
@@ -648,19 +684,23 @@ private fun PrescriptionBlock(
         // §3's `MaxEffortSelected`: the wheel is replaced and the 目安 line disappears — there is
         // nothing to estimate, and a number here would be the app deciding what "to your limit" means.
         Text(
-            text = OPEN_ENDED,
+            text = s.gymExercise.openEnded,
             modifier = Modifier.fillMaxWidth().padding(vertical = 22.dp),
             style = TextStyle(fontFamily = Mincho, fontSize = 20.sp, color = c.ink),
         )
     } else {
-        val options = if (measure == Measure.REPS) repOptions() else secondOptions()
+        val options = if (measure == Measure.REPS) repOptions(s) else secondOptions(s)
         ValueWheel(
             options = options,
             selected = if (measure == Measure.REPS) reps else seconds,
-            label = measure.label,
+            label = measure.label(s),
             // 回数's wheel is 1..100 and マーフ has stations at 200 and 300, so the value being edited
             // is not always on its own wheel — [mergedWheelOptions] puts it there (`DECISIONS.md` §Q21).
-            labelFor = if (measure == Measure.REPS) ::repWheelValueLabel else ::secondWheelValueLabel,
+            labelFor = if (measure == Measure.REPS) {
+                { repWheelValueLabel(it, s) }
+            } else {
+                { secondWheelValueLabel(it, s) }
+            },
             onSelect = if (measure == Measure.REPS) onReps else onSeconds,
         )
         pace?.let {
@@ -690,13 +730,13 @@ private fun PrescriptionBlock(
             modifier = Modifier
                 .fillMaxWidth()
                 .sizeIn(minHeight = 48.dp)
-                .clickable(onClick = remove)
-                .semantics { role = Role.Button; contentDescription = "削除" }
+                .pressable(TempoShapes.Word, role = Role.Button, onClick = remove)
+                .semantics { contentDescription = s.gymExercise.remove }
                 .padding(vertical = 12.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = "削除",
+                text = s.gymExercise.remove,
                 style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 2.sp, color = c.accent),
             )
         }
@@ -707,21 +747,25 @@ private fun PrescriptionBlock(
 @Composable
 private fun MeasureChip(option: MeasureOption, selected: Boolean, onClick: () -> Unit) {
     val c = LocalTempoColors.current
-    val description = measureSemantics(option)
+    val s = LocalStrings.current
+    val description = measureSemantics(option, s)
+    val selectedLabel = s.gymExercise.selected
     Box(
         modifier = Modifier
-            .sizeIn(minHeight = 48.dp)
-            .clickable(enabled = option.enabled, onClick = onClick)
+            // 回数 is two glyphs. `minWidth` grows the chip into its 10.dp gutter so the target is a
+            // target, and the lozenge is the shape a bare word with no fill takes.
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .pressable(TempoShapes.Word, enabled = option.enabled, onClick = onClick)
             .clearAndSetSemantics {
                 role = Role.RadioButton
                 contentDescription = description
-                if (selected) stateDescription = "選択中"
+                if (selected) stateDescription = selectedLabel
             }
             .padding(horizontal = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = option.measure.label,
+            text = option.measure.label(s),
             style = TextStyle(
                 fontFamily = Mincho,
                 fontSize = 13.sp,
@@ -782,9 +826,10 @@ private fun ValueWheel(
 @Composable
 private fun NoMatchState() {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
-            text = "該当する種目はありません",
+            text = s.gymExercise.noMatch,
             style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
         )
     }

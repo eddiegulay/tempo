@@ -5,6 +5,8 @@ import io.eddiegulay.tempo.data.GymFault
 import io.eddiegulay.tempo.gym.DayVolume
 import io.eddiegulay.tempo.gym.TrainingLoad
 import io.eddiegulay.tempo.gym.WeekPoint
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -28,12 +30,12 @@ class RecordsChartsCopyTest {
         // The trap this closes: collapsing an in-flight read into "suppressed" puts
         // 二十八日ぶん たまると 出ます in front of a user with two years of training for as long as the
         // query takes — a claim about their history assembled out of a pending read.
-        assertEquals(VolumeGate.Loading, volumeGate(Loadable.Loading, trained))
+        assertEquals(VolumeGate.Loading, volumeGate(Loadable.Loading, trained, StringsJa))
     }
 
     @Test
     fun `a failed gate reports the store, never the suppression sentence`() {
-        val gate = volumeGate(Loadable.Failed(GymFault.StoreCorrupt), trained)
+        val gate = volumeGate(Loadable.Failed(GymFault.StoreCorrupt), trained, StringsJa)
         assertTrue(gate is VolumeGate.Failed)
         assertEquals(GymFault.StoreCorrupt, (gate as VolumeGate.Failed).fault)
     }
@@ -42,13 +44,13 @@ class RecordsChartsCopyTest {
     fun `below twenty-eight days the chart is suppressed with §6's own sentence`() {
         // Design §7.4: load surfaces stay suppressed until 28 days, because a weighted-volume trend
         // over six days is noise presented as insight.
-        val gate = volumeGate(Loadable.Ready(load(historyDays = 27)), trained)
+        val gate = volumeGate(Loadable.Ready(load(historyDays = 27)), trained, StringsJa)
         assertEquals("二十八日ぶん たまると 出ます", (gate as VolumeGate.Suppressed).message)
     }
 
     @Test
     fun `twenty-eight days exactly opens the gate`() {
-        assertEquals(VolumeGate.Open, volumeGate(Loadable.Ready(load(historyDays = 28)), trained))
+        assertEquals(VolumeGate.Open, volumeGate(Loadable.Ready(load(historyDays = 28)), trained, StringsJa))
     }
 
     @Test
@@ -59,13 +61,13 @@ class RecordsChartsCopyTest {
         // 二十八日ぶん たまると 出ます — false for them, and it hid sessions `volumeSeries` had already
         // fetched (it queries 83 days back). A finished session exists and none of it is in the last
         // 28 days, therefore the first one is at least 28 days old: the gate is earned, provably.
-        assertEquals(VolumeGate.Open, volumeGate(Loadable.Ready(null), Loadable.Ready(true)))
+        assertEquals(VolumeGate.Open, volumeGate(Loadable.Ready(null), Loadable.Ready(true), StringsJa))
     }
 
     @Test
     fun `a user who has never trained keeps the suppression sentence`() {
         // The other half of the null case, and the one the sentence is true for.
-        val gate = volumeGate(Loadable.Ready(null), Loadable.Ready(false))
+        val gate = volumeGate(Loadable.Ready(null), Loadable.Ready(false), StringsJa)
         assertEquals("二十八日ぶん たまると 出ます", (gate as VolumeGate.Suppressed).message)
     }
 
@@ -73,10 +75,18 @@ class RecordsChartsCopyTest {
     fun `an unresolved everTrained is a wait, never a verdict about the user`() {
         // The gate's four states exist so an unknown answer is never rendered as a claim. An unread
         // feed waits; an unreadable one reports the store, which is what `VolumeGate.Failed` is for.
-        assertEquals(VolumeGate.Loading, volumeGate(Loadable.Ready(null), Loadable.Loading))
+        assertEquals(VolumeGate.Loading, volumeGate(Loadable.Ready(null), Loadable.Loading, StringsJa))
 
-        val failed = volumeGate(Loadable.Ready(null), Loadable.Failed(GymFault.StoreCorrupt))
+        val failed = volumeGate(Loadable.Ready(null), Loadable.Failed(GymFault.StoreCorrupt), StringsJa)
         assertEquals(GymFault.StoreCorrupt, (failed as VolumeGate.Failed).fault)
+    }
+
+    @Test
+    fun `the suppressed gate carries the same sentence in English`() {
+        // One sentence, one owner: `chartSuppressionCopy` holds the wording *and* the 28 beside it, so
+        // the gate cannot paraphrase either.
+        val gate = volumeGate(Loadable.Ready(load(historyDays = 27)), trained, StringsEn)
+        assertEquals("Appears once 28 days have built up", (gate as VolumeGate.Suppressed).message)
     }
 
     // ─── The daily spine ────────────────────────────────────────────────────────────────────────

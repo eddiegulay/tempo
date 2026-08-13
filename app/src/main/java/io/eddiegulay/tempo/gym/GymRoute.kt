@@ -1,18 +1,34 @@
 package io.eddiegulay.tempo.gym
 
+import io.eddiegulay.tempo.i18n.Strings
 import java.time.YearMonth
 
 /**
- * The gym's three tabs, carrying their own labels because the bar renders **words, not glyphs**.
+ * The gym's three tabs. The bar renders **words, not glyphs**.
  *
  * There is no `TempoIcons` entry for training, forms or records, and inventing three line-paths is
  * more invention than this needs — 鍛錬 / 型 / 記録 are the feature's vocabulary and reading them is
- * the point. The label living on the enum rather than in the bar is what keeps the tab's name and its
- * TalkBack node from ever disagreeing (`00-plan.md` §3.2, `01-shell.md` §A.4).
+ * the point (`00-plan.md` §3.2, `01-shell.md` §A.4).
+ *
+ * **The word is no longer a constructor argument** (`.planning/i18n/DECISIONS.md` §L3, the same ruling
+ * `Tier` follows). An argument is resolved once, at class-init, so a bar built from one would keep
+ * whichever language the process started in and would not follow the picker. See [label].
  *
  * Declaration order is display order.
  */
-enum class GymTab(val label: String) { Train("鍛錬"), Library("型"), Records("記録") }
+enum class GymTab { Train, Library, Records }
+
+/**
+ * The word this tab draws — and, through `Role.Tab` and the bar's `selectableGroup()`, the whole of
+ * what TalkBack announces for it. One source, so the visible word and the spoken one cannot disagree.
+ *
+ * An extension rather than a property, so the enum carries no language at all.
+ */
+fun GymTab.label(strings: Strings): String = when (this) {
+    GymTab.Train -> strings.gymHome.tabTrain
+    GymTab.Library -> strings.gymHome.tabLibrary
+    GymTab.Records -> strings.gymHome.tabRecords
+}
 
 /**
  * Every place inside 鍛錬, as data.

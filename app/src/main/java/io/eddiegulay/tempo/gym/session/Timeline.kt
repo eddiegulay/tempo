@@ -5,6 +5,7 @@ import io.eddiegulay.tempo.gym.Measure
 import io.eddiegulay.tempo.gym.Phase
 import io.eddiegulay.tempo.gym.RoutineStation
 import io.eddiegulay.tempo.gym.SegmentResult
+import io.eddiegulay.tempo.i18n.Strings
 
 /*
  * The compiled session and the pure function that reads it — `03-player.md` §B.
@@ -67,11 +68,24 @@ enum class Gate { AUTO, MANUAL, AUTO_AT_CAP }
  * already happened.
  *
  * Not to be confused with `Tier` (入門/中級/上級), which is a difficulty band printed on a card.
+ *
+ * **The label left the constructor** (`.planning/i18n/DECISIONS.md` §L3, which applies the same ruling
+ * to all thirteen label-carrying enums): a constructor argument is fixed at class-init and cannot be
+ * re-resolved when the user flips the language, so a stored word would be the one thing on screen that
+ * did not change. What reaches `session.tier` is `name` — `EASY`/`RX`/`HARD`, ASCII — and that is
+ * unchanged, so nothing here is a stored value and there is no migration. See [ScalingTier.label].
  */
-enum class ScalingTier(val label: String) {
-    EASY("やさしい"),
-    RX("基本"),
-    HARD("きつい"),
+enum class ScalingTier {
+    EASY,
+    RX,
+    HARD,
+}
+
+/** やさしい / 基本 / きつい, resolved at draw time. */
+fun ScalingTier.label(strings: Strings): String = when (this) {
+    ScalingTier.EASY -> strings.gymSession.scalingTierEasy
+    ScalingTier.RX -> strings.gymSession.scalingTierRx
+    ScalingTier.HARD -> strings.gymSession.scalingTierHard
 }
 
 /**

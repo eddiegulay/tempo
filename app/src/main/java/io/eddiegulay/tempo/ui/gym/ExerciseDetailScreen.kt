@@ -1,7 +1,6 @@
 package io.eddiegulay.tempo.ui.gym
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,18 +43,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.calendar.Loadable
-import io.eddiegulay.tempo.data.JapaneseDate
 import io.eddiegulay.tempo.gym.Exercise
 import io.eddiegulay.tempo.gym.ExerciseCatalog
 import io.eddiegulay.tempo.gym.GymRoute
 import io.eddiegulay.tempo.gym.GymViewModel
 import io.eddiegulay.tempo.gym.MovementBest
 import io.eddiegulay.tempo.gym.RoutineSummary
+import io.eddiegulay.tempo.gym.displayCue
+import io.eddiegulay.tempo.gym.displayName
+import io.eddiegulay.tempo.gym.label
+import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.i18n.Strings
 import io.eddiegulay.tempo.ui.FaultStrip
 import io.eddiegulay.tempo.ui.HeaderAction
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.pressable
 
 /*
  * GYM.LIBRARY.EXERCISE_DETAIL — 種目の中身. `04-library-records.md` §3's last library page.
@@ -84,12 +89,10 @@ import io.eddiegulay.tempo.ui.theme.Mincho
 // Pure copy and shaping — Android-free
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** A value slot with nothing in it. `—`, as everywhere else in 鍛錬 (`gym/Numerals.kt`). */
-private const val NO_VALUE = "—"
-
 /** 押す ・ 難度 一.〇 — §3's header subtitle, through [exerciseCoefficient] so 走る still reads 難度 —. */
-internal fun exerciseDetailSubtitle(exercise: Exercise): String =
-    exercise.pattern.label + " ・ 難度 " + exerciseCoefficient(exercise)
+internal fun exerciseDetailSubtitle(exercise: Exercise, strings: Strings): String =
+    exercise.pattern.label(strings) + strings.fmt.separator +
+        strings.gymExercise.difficulty(exerciseCoefficient(exercise, strings))
 
 /**
  * One rung of the 段階 ladder: the movement, whether it has been climbed, and whether it is where the
@@ -168,9 +171,12 @@ internal fun ladderRungs(ladder: List<Exercise>, current: Exercise?): List<Ladde
  * every other non-current rung: the third word answers "am I standing here", and inventing a third
  * word for "climbed past" would be copy no table carries.
  */
-internal fun rungSemantics(rung: LadderRung): String =
-    rung.exercise.nameJa + "、難度 " + exerciseCoefficient(rung.exercise) + "、" +
-        if (rung.current) "いまここ" else "まだ"
+internal fun rungSemantics(rung: LadderRung, strings: Strings): String =
+    listOf(
+        rung.exercise.displayName(strings),
+        strings.gymExercise.difficulty(exerciseCoefficient(rung.exercise, strings)),
+        if (rung.current) strings.gymExercise.rungCurrent else strings.gymExercise.rungNotReached,
+    ).joinToString(strings.fmt.listSeparator)
 
 /** One 最高 tile: the value over its label, read label-first by TalkBack. */
 internal data class MovementTile(val value: String, val label: String)
@@ -193,7 +199,7 @@ internal data class MovementTile(val value: String, val label: String)
  * (prerequisite P5). There is deliberately no second cap in this function — `DECISIONS.md` §Q7 makes
  * that formatter the only one.
  *
- * A zero or a missing date renders [NO_VALUE] rather than 〇回 / a fabricated day: the row exists
+ * A zero or a missing date renders [Formats.noValue] rather than 〇回 / a fabricated day: the row exists
  * because *something* was recorded, so a zero in one column is a gap in the store's answer and not a
  * fact about the user.
  *
@@ -201,23 +207,16 @@ internal data class MovementTile(val value: String, val label: String)
  *   Handing it a `movementBests()` row would put a ladder-family sum under three labels that name one
  *   movement — 一度に is a set someone did, and a family's best set was not necessarily done here.
  */
-internal fun movementTiles(best: MovementBest?): List<MovementTile>? {
+internal fun movementTiles(best: MovementBest?, strings: Strings): List<MovementTile>? {
     if (best == null) return null
-    val singleSet = if (best.singleSetReps > 0) {
-        JapaneseDate.kanjiExtended(best.singleSetReps) + "回"
-    } else {
-        NO_VALUE
-    }
-    val lifetime = if (best.lifetimeReps > 0) {
-        JapaneseDate.kanjiExtended(best.lifetimeReps) + "回"
-    } else {
-        NO_VALUE
-    }
-    val last = best.lastLocalDate?.let { JapaneseDate.monthDay(it.atStartOfDay()) } ?: NO_VALUE
+    val noValue = strings.fmt.noValue
+    val singleSet = if (best.singleSetReps > 0) strings.fmt.reps(best.singleSetReps) else noValue
+    val lifetime = if (best.lifetimeReps > 0) strings.fmt.reps(best.lifetimeReps) else noValue
+    val last = best.lastLocalDate?.let { strings.fmt.monthDay(it.atStartOfDay()) } ?: noValue
     return listOf(
-        MovementTile(singleSet, "一度に"),
-        MovementTile(lifetime, "のべ回数"),
-        MovementTile(last, "最後"),
+        MovementTile(singleSet, strings.gymExercise.tileSingleSet),
+        MovementTile(lifetime, strings.gymExercise.tileLifetime),
+        MovementTile(last, strings.gymExercise.tileLast),
     )
 }
 
@@ -265,16 +264,19 @@ internal fun routinesUsing(
 ): List<RoutineSummary> =
     routines.filter { stationExerciseIds[it.versionId]?.contains(exerciseId) == true }
 
-/** 四件 — the count beside 使われている型, right-aligned. Kanji, per §6's Numerals note. */
-internal fun usedByCount(routines: Int): String = JapaneseDate.kanjiExtended(routines) + "件"
+/**
+ * 四件 — the count beside 使われている型, right-aligned.
+ *
+ * 件 is the generic counter and [Formats.items] is where the brief routes it. **Reported**: the thing
+ * counted is routines and the heading beside it already says so, so a `routines(n)` counter on
+ * `Formats` would read better in English than the generic word does. Not built here — a second
+ * counter invented inside one namespace is exactly what the migration forbids.
+ */
+internal fun usedByCount(routines: Int, strings: Strings): String = strings.fmt.items(routines)
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The page
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-
-private const val HEADING_BESTS = "最高"
-private const val HEADING_LADDER = "段階"
-private const val HEADING_USED_BY = "使われている型"
 
 /**
  * The dot column's width. The spine sits at its centre, which is §3's `x = 26 + 9 dp` measured from
@@ -294,6 +296,7 @@ private val LADDER_GUTTER = 26.dp
 @Composable
 fun ExerciseDetailScreen(gym: GymViewModel, exerciseId: String, modifier: Modifier = Modifier) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
 
     // Map reads, both of them. No `Loadable`, no spinner, no retry — see the file header.
     val exercise = remember(exerciseId) { ExerciseCatalog.byId(exerciseId) }
@@ -320,8 +323,8 @@ fun ExerciseDetailScreen(gym: GymViewModel, exerciseId: String, modifier: Modifi
 
     Column(modifier.fillMaxSize()) {
         ExerciseHeader(
-            title = exercise.nameJa,
-            subtitle = exerciseDetailSubtitle(exercise),
+            title = exercise.displayName(s),
+            subtitle = exerciseDetailSubtitle(exercise, s),
             onClose = { if (gym.stack.value.size > 1) gym.onBack() },
         )
 
@@ -331,8 +334,10 @@ fun ExerciseDetailScreen(gym: GymViewModel, exerciseId: String, modifier: Modifi
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 26.dp),
         ) {
-            // §3 edge case 3's sibling on this page: no cue, no line. 走る has none and gets none.
-            exercise.cue?.let { cue ->
+            // §3 edge case 3's sibling on this page: no cue, no line. 走る has none and gets none —
+            // `displayCue` keeps that null in both languages rather than inventing a sentence §F.1
+            // deliberately wrote as "—".
+            exercise.displayCue(s)?.let { cue ->
                 Spacer(Modifier.height(18.dp))
                 Text(
                     text = cue,
@@ -340,25 +345,25 @@ fun ExerciseDetailScreen(gym: GymViewModel, exerciseId: String, modifier: Modifi
                 )
             }
 
-            ExerciseSectionHeading(HEADING_BESTS)
+            ExerciseSectionHeading(s.gymExercise.sectionBests)
             // Four states, four composables, no sharing (`00-plan.md` §4.1 rule 1). まだ やっていません
             // is reachable from exactly one of them, and 記録を読めません from exactly one other.
             when (val state = bests) {
-                Loadable.Loading -> ExerciseNotice("読み込み中")
+                Loadable.Loading -> ExerciseNotice(s.gymExercise.loading)
                 // §3's `PbFailed`: a one-line 記録を読めません ・ もう一度, and the rest of the page
                 // untouched. `FaultStrip` *is* that line — one row, the fault's own sentence through
                 // `faultCopy`, and もう一度 only for the faults `DECISIONS.md` §Q6 gives one to.
                 is Loadable.Failed -> FaultStrip(fault = state.fault, onRecover = gym::retry)
                 is Loadable.Ready -> {
-                    val tiles = movementTiles(exerciseBestFor(exercise, state.value))
-                    if (tiles == null) ExerciseNotice("まだ やっていません") else BestTileRow(tiles)
+                    val tiles = movementTiles(exerciseBestFor(exercise, state.value), s)
+                    if (tiles == null) ExerciseNotice(s.gymExercise.noHistory) else BestTileRow(tiles)
                 }
             }
 
             // §3's `NoLadder`: a movement that is its own ladder — プランク, 走る — omits 段階 entirely
             // rather than drawing a ladder of one. `ExerciseCatalog.ladder` returns empty for it.
             if (ladder.isNotEmpty()) {
-                ExerciseSectionHeading(HEADING_LADDER)
+                ExerciseSectionHeading(s.gymExercise.sectionLadder)
                 // An unread or unreadable bests list marks no rung, which is §3's `NoHistory` ladder —
                 // every dot `c.inkFaint`, no いま. The ladder itself still draws, because it is a
                 // catalogue fact and cannot fail; only the marking is a claim about the user.
@@ -492,7 +497,8 @@ private fun ExerciseHeader(title: String, subtitle: String, onClose: () -> Unit)
                     style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 4.sp, color = c.inkFaint),
                 )
             }
-            HeaderAction(label = "とじる", description = "とじる", color = c.inkFaint, onClick = onClose)
+            val close = LocalStrings.current.gymExercise.close
+            HeaderAction(label = close, description = close, color = c.inkFaint, onClick = onClose)
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.hair))
     }
@@ -538,12 +544,13 @@ private fun ExerciseNotice(text: String) {
 @Composable
 private fun BestTileRow(tiles: List<MovementTile>) {
     val c = LocalTempoColors.current
+    val separator = LocalStrings.current.fmt.listSeparator
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         tiles.forEach { tile ->
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .clearAndSetSemantics { contentDescription = tile.label + "、" + tile.value }
+                    .clearAndSetSemantics { contentDescription = tile.label + separator + tile.value }
                     .padding(vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -608,14 +615,18 @@ private fun LadderBlock(rungs: List<LadderRung>, onRung: (Exercise) -> Unit) {
 @Composable
 private fun LadderRungRow(rung: LadderRung, onClick: () -> Unit) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
+    val description = rungSemantics(rung, s)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = 48.dp)
-            .clickable(onClick = onClick)
+            // The rung spans the content width and is separated from the next by nothing but the
+            // spine, so `Row` is what tells one rung from its neighbour under a thumb.
+            .pressable(TempoShapes.Row, onClick = onClick)
             .clearAndSetSemantics {
                 role = Role.Button
-                contentDescription = rungSemantics(rung)
+                contentDescription = description
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -634,7 +645,7 @@ private fun LadderRungRow(rung: LadderRung, onClick: () -> Unit) {
             )
         }
         Text(
-            text = rung.exercise.nameJa,
+            text = rung.exercise.displayName(s),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f, fill = true),
@@ -646,13 +657,13 @@ private fun LadderRungRow(rung: LadderRung, onClick: () -> Unit) {
             ),
         )
         Text(
-            text = exerciseCoefficient(rung.exercise),
+            text = exerciseCoefficient(rung.exercise, s),
             style = TextStyle(fontFamily = Gothic, fontSize = 11.sp, color = c.inkFaint),
         )
         if (rung.current) {
             Spacer(Modifier.width(10.dp))
             Text(
-                text = "いま",
+                text = s.gymExercise.ladderCurrent,
                 style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = 3.sp, color = c.accent),
             )
         }
@@ -678,13 +689,14 @@ private fun UsedBySection(
     onRoutine: (String) -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val s = LocalStrings.current
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = HEADING_USED_BY,
+            text = s.gymExercise.sectionUsedBy,
             modifier = Modifier.semantics { heading() },
             style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
         )
@@ -693,30 +705,36 @@ private fun UsedBySection(
         // (§3's mock: 使われている型 四件).
         routines.valueOrNull()?.takeIf { it.isNotEmpty() }?.let { list ->
             Text(
-                text = usedByCount(list.size),
+                text = usedByCount(list.size, s),
                 style = TextStyle(fontFamily = Gothic, fontSize = 11.sp, color = c.inkFaint),
             )
         }
     }
 
     when (routines) {
-        Loadable.Loading -> ExerciseNotice("読み込み中")
+        Loadable.Loading -> ExerciseNotice(s.gymExercise.loading)
         is Loadable.Failed -> FaultStrip(fault = routines.fault, onRecover = onRetry)
         is Loadable.Ready ->
             if (routines.value.isEmpty()) {
-                ExerciseNotice("どの型にも入っていません")
+                ExerciseNotice(s.gymExercise.noRoutines)
             } else {
                 FlowRow(Modifier.fillMaxWidth()) {
                     routines.value.forEachIndexed { index, summary ->
+                        // A built-in's seeded name in the reader's language; a user's routine falls
+                        // through to whatever they typed, in whichever language they typed it (§L10).
+                        val name = summary.displayName(s)
                         Box(
                             modifier = Modifier
-                                .sizeIn(minHeight = 48.dp)
-                                .clickable { onRoutine(summary.routineId) }
+                                // A bare name in a `FlowRow` with a separator glyph beside it: no
+                                // fill, no border, so the wash is its only outline — and `minWidth`
+                                // makes a two-glyph routine name a target rather than a hint.
+                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                .pressable(TempoShapes.Word) { onRoutine(summary.routineId) }
                                 .clearAndSetSemantics {
                                     role = Role.Button
                                     // The separator is decoration and never spoken: it belongs to the
                                     // visible line, not to the name of a routine.
-                                    contentDescription = summary.name
+                                    contentDescription = name
                                 },
                             contentAlignment = Alignment.CenterStart,
                         ) {
@@ -724,9 +742,9 @@ private fun UsedBySection(
                                 // 七分間 ・ シンディ ・ … — the separator rides on the preceding name so
                                 // it can never wrap to the head of a line on its own.
                                 text = if (index == routines.value.lastIndex) {
-                                    summary.name
+                                    name
                                 } else {
-                                    summary.name + " ・ "
+                                    name + s.fmt.separator
                                 },
                                 style = TextStyle(fontFamily = Gothic, fontSize = 13.sp, color = c.inkSoft),
                             )

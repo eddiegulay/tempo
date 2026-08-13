@@ -1,5 +1,7 @@
 package io.eddiegulay.tempo.gym
 
+import io.eddiegulay.tempo.i18n.StringsEn
+import io.eddiegulay.tempo.i18n.StringsJa
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -75,17 +77,17 @@ class TrainingNoticeTest {
 
     @Test
     fun `each phase reads as its own page's heading`() {
-        assertEquals("支度", noticePhaseLabel(Phase.PREPARE, paused = false))
-        assertEquals("運動", noticePhaseLabel(Phase.WORK, paused = false))
-        assertEquals("運動・回数", noticePhaseLabel(Phase.REPS, paused = false))
-        assertEquals("休息", noticePhaseLabel(Phase.REST, paused = false))
-        assertEquals("記録", noticePhaseLabel(Phase.COMPLETE, paused = false))
+        assertEquals("支度", noticePhaseLabel(Phase.PREPARE, paused = false, strings = StringsJa))
+        assertEquals("運動", noticePhaseLabel(Phase.WORK, paused = false, strings = StringsJa))
+        assertEquals("運動・回数", noticePhaseLabel(Phase.REPS, paused = false, strings = StringsJa))
+        assertEquals("休息", noticePhaseLabel(Phase.REST, paused = false, strings = StringsJa))
+        assertEquals("記録", noticePhaseLabel(Phase.COMPLETE, paused = false, strings = StringsJa))
     }
 
     @Test
     fun `a pause overrides every phase, because the fact that changed is that the clock stopped`() {
         Phase.entries.forEach { phase ->
-            assertEquals(phase.name, "休止", noticePhaseLabel(phase, paused = true))
+            assertEquals(phase.name, "休止", noticePhaseLabel(phase, paused = true, strings = StringsJa))
         }
     }
 
@@ -112,25 +114,25 @@ class TrainingNoticeTest {
 
     @Test
     fun `a running station names its movement after the phase`() {
-        assertEquals("運動 ・ 腕立て伏せ", noticeText(notice()))
-        assertEquals("運動・回数 ・ 腕立て伏せ", noticeText(notice(phase = Phase.REPS)))
+        assertEquals("運動 ・ 腕立て伏せ", noticeText(notice(), StringsJa))
+        assertEquals("運動・回数 ・ 腕立て伏せ", noticeText(notice(phase = Phase.REPS), StringsJa))
     }
 
     @Test
     fun `a phase with no movement says only the phase`() {
-        assertEquals("休息", noticeText(notice(phase = Phase.REST, exercise = null)))
-        assertEquals("支度", noticeText(notice(phase = Phase.PREPARE, exercise = null)))
+        assertEquals("休息", noticeText(notice(phase = Phase.REST, exercise = null), StringsJa))
+        assertEquals("支度", noticeText(notice(phase = Phase.PREPARE, exercise = null), StringsJa))
     }
 
     @Test
     fun `a paused session drops the movement, because 休止 is the whole of what is true`() {
         // 「休止 ・ 腕立て伏せ」 would read as a push-up in progress.
-        assertEquals("休止", noticeText(notice(paused = true)))
+        assertEquals("休止", noticeText(notice(paused = true), StringsJa))
     }
 
     @Test
     fun `a blank exercise name is treated as no exercise rather than a dangling separator`() {
-        assertEquals("運動", noticeText(notice(exercise = "")))
+        assertEquals("運動", noticeText(notice(exercise = ""), StringsJa))
     }
 
     // ── the control ───────────────────────────────────────────────────────────────────────────────
@@ -144,15 +146,15 @@ class TrainingNoticeTest {
     @Test
     fun `the control's words are the player's own`() {
         // `03-player.md` §A WORK, accessibility: ┃┃ = 休止. `PausedPage` answers with 続ける.
-        assertEquals("休止", noticeControlLabel(TrainingControl.PAUSE))
-        assertEquals("続ける", noticeControlLabel(TrainingControl.RESUME))
+        assertEquals("休止", noticeControlLabel(TrainingControl.PAUSE, StringsJa))
+        assertEquals("続ける", noticeControlLabel(TrainingControl.RESUME, StringsJa))
     }
 
     @Test
     fun `no control is とばす and no control is 鍛錬を終える`() {
         // Both were considered and dropped: a skip writes a SegmentResult with no ensō to watch it go,
         // and a discard is the one thing `03` §A QUIT_SHEET makes the user confirm twice.
-        val words = TrainingControl.entries.map { noticeControlLabel(it) }
+        val words = TrainingControl.entries.map { noticeControlLabel(it, StringsJa) }
         assertTrue(words.toString(), words.none { it.contains("とばす") || it.contains("終え") })
     }
 
@@ -160,7 +162,44 @@ class TrainingNoticeTest {
 
     @Test
     fun `the notification reads as one sentence, routine first`() {
-        assertEquals("七分間、運動 ・ 腕立て伏せ", noticeSemantics(notice()))
+        assertEquals("七分間、運動 ・ 腕立て伏せ", noticeSemantics(notice(), StringsJa))
+    }
+
+    // ── the other language ────────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `the notice reads in the language in force, punctuation included`() {
+        // The join is `fmt.separator`, not a literal: ・ is CJK punctuation and Latin typography spells
+        // the same join `·`. A notification is drawn by SystemUI in the system font, so a middle dot
+        // that only reads as punctuation in a Japanese face is a real defect there and not a nicety.
+        assertEquals("Work · Push-up", noticeText(notice(exercise = "Push-up"), StringsEn))
+        assertEquals("Paused", noticeText(notice(paused = true), StringsEn))
+        assertEquals("Reps · Push-up", noticeText(notice(phase = Phase.REPS, exercise = "Push-up"), StringsEn))
+    }
+
+    @Test
+    fun `the spoken form joins with the language's own list separator`() {
+        assertEquals("Seven minutes, Work · Push-up", noticeSemantics(notice("Seven minutes", exercise = "Push-up"), StringsEn))
+    }
+
+    @Test
+    fun `the buttons are words in both languages and never longer than two`() {
+        // SystemUI lays out notification actions and we cannot measure them. Two words is the budget an
+        // action button on a lock screen actually has.
+        assertEquals("Pause", noticeControlLabel(TrainingControl.PAUSE, StringsEn))
+        assertEquals("Resume", noticeControlLabel(TrainingControl.RESUME, StringsEn))
+        TrainingControl.entries.forEach { control ->
+            val word = noticeControlLabel(control, StringsEn)
+            assertTrue(word, word.split(" ").size <= 2)
+        }
+    }
+
+    @Test
+    fun `the title is the routine's own name and is never translated`() {
+        // A routine name is user data, or a catalogue string that `catalog.*` owns. Neither is this
+        // file's to touch, and a session recorded under one language keeps its name under the other.
+        assertEquals("七分間", noticeTitle(notice()))
+        assertEquals("七分間", noticeText(notice(phase = Phase.WORK, exercise = "七分間"), StringsEn).substringAfter("· "))
     }
 
     // ── Source access ─────────────────────────────────────────────────────────────────────────────
