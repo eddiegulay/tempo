@@ -123,23 +123,17 @@ fun RepsPage(state: SessionUiState, actions: SessionActions, modifier: Modifier 
                 ) {
                     ExerciseHeading(name)
                     Spacer(Modifier.height(2.dp))
-                    Text(
-                        // 「二十回」 is two to four glyphs and 限界まで is four, which is what
-                        // `LocalHeroCap`'s 4.2 divisor was sized for. English is not: "20 reps" is
-                        // seven characters and `gymShared.measureMaxEffort` is ten. The cap counts
-                        // glyphs, not advances, so a latin hero overflows the ring and is **clipped**
-                        // rather than ellipsised — reported, not silently patched here, because the
-                        // fix is to `heroSize`'s arithmetic and that governs all four hero numerals
-                        // on all four pages.
+                    // The widest hero in the feature, and the one the old glyph-counting cap could
+                    // not size: 限界まで is four CJK glyphs — about 304.dp at 76.sp, in a 220.dp ring
+                    // — and "All out" and "20 reps" are no narrower. [HeroText] measures the string
+                    // rather than counting it, so all three fit.
+                    HeroText(
                         text = repHero(s, reps),
-                        softWrap = false,
-                        maxLines = 1,
-                        style = TextStyle(
-                            fontFamily = Mincho,
-                            // The reps are the hero here, not the clock — 76.sp against 運動's 88.
-                            fontSize = heroSize(76.sp),
-                            color = c.ink,
-                        ),
+                        // The reps are the hero here, not the clock — 76.sp against 運動's 88.
+                        base = 76.sp,
+                        color = c.ink,
+                        // No tabular figures: this hero does not tick, and 限界まで has no digits.
+                        tabular = false,
                     )
                 }
                 pacerLabel(s, reps, state.remainingMs, state.overrunMs, emomWindow)?.let { pacer ->

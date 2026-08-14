@@ -79,19 +79,13 @@ fun PreparePage(state: SessionUiState, actions: SessionActions, modifier: Modifi
                 style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = 6.sp, color = c.inkFaint),
             )
             Spacer(Modifier.height(6.dp))
-            Text(
+            HeroText(
                 text = prepareNumeral(remaining),
-                softWrap = false,
-                maxLines = 1,
+                base = 88.sp,
+                color = c.ink,
                 // Not a live region: announcing 5, 4, 3, 2, 1 collides with the tone cues and is worse
                 // than silence (§A PREPARE, accessibility). The container above says it once.
                 modifier = Modifier.clearAndSetSemantics { },
-                style = TextStyle(
-                    fontFamily = Mincho,
-                    fontSize = heroSize(88.sp),
-                    fontFeatureSettings = "tnum",
-                    color = c.ink,
-                ),
             )
         },
         below = {

@@ -113,17 +113,11 @@ fun RestPage(state: SessionUiState, actions: SessionActions, modifier: Modifier 
                 }
             }
             Spacer(Modifier.height(4.dp))
-            Text(
+            HeroText(
                 text = formatCountdown(s, state.remainingMs),
-                softWrap = false,
-                maxLines = 1,
+                base = 72.sp,
+                color = c.inkSoft,
                 modifier = Modifier.clearAndSetSemantics { },
-                style = TextStyle(
-                    fontFamily = Mincho,
-                    fontSize = heroSize(72.sp),
-                    fontFeatureSettings = "tnum",
-                    color = c.inkSoft,
-                ),
             )
             Text(
                 text = s.gymSession.restNext,

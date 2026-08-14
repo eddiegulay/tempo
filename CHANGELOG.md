@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-14
+
+### Fixed
+- **The big number in the workout timer no longer loses its last character.** The ring sizes whatever
+  it draws to fit the space it has — before, it counted characters instead of measuring them, which
+  works for a clock and not for a word. 「限界まで」 has been quietly clipped inside the circle since
+  the page was written, and "All out" and "20 reps" were no better. Nothing about it was new in
+  English; it was simply easier to see there.
+
 ## [0.2.0] - 2026-08-14
 
 ### Added

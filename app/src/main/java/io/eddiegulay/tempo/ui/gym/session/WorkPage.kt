@@ -77,17 +77,11 @@ fun WorkPage(state: SessionUiState, actions: SessionActions, modifier: Modifier 
         ringContent = {
             ExerciseHeading(name)
             Spacer(Modifier.height(4.dp))
-            Text(
+            HeroText(
                 text = formatCountdown(s, state.remainingMs),
-                softWrap = false,
-                maxLines = 1,
+                base = 88.sp,
+                color = c.ink,
                 modifier = Modifier.clearAndSetSemantics { },
-                style = TextStyle(
-                    fontFamily = Mincho,
-                    fontSize = heroSize(88.sp),
-                    fontFeatureSettings = "tnum",
-                    color = c.ink,
-                ),
             )
         },
         below = {
