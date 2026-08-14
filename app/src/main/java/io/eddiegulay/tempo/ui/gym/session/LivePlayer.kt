@@ -1,5 +1,7 @@
 package io.eddiegulay.tempo.ui.gym.session
 
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.AnnotatedString
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -114,6 +116,75 @@ internal val LocalHeroCap = staticCompositionLocalOf { 88.sp }
 internal fun heroSize(base: TextUnit): TextUnit {
     val cap = LocalHeroCap.current
     return if (base.value <= cap.value) base else cap
+}
+
+/**
+ * A hair under 1, so rounding in the shrunken layout cannot put the last glyph over the edge.
+ *
+ * Every hero is `softWrap = false, maxLines = 1`, so an overshoot is **clipped rather than
+ * ellipsised** — the failure is silent, and a percent of slack is cheaper than discovering it on a
+ * 320.dp screen mid-set.
+ */
+private const val HERO_FIT = 0.99f
+
+/**
+ * A hero numeral, sized to the space it is actually drawn in.
+ *
+ * [LocalHeroCap] is still the ceiling and still right about what it measures: the *page*, so that the
+ * mock's 88.sp survives on a wide screen and shrinks with the font-scale setting. What it could not
+ * know is the width of the string. The hero renders inside the ensō's `Box(Modifier.size(220.dp))`,
+ * and the cap's 4.2 divisor is a **glyph count** — "four glyphs plus slack for the colon", sized for
+ * `0:23`. A four-glyph string is not four glyphs wide unless every glyph is a full em.
+ *
+ * That assumption held for the countdowns, which are the reason it was written, and failed for the
+ * one hero that is a word. `限界まで` at 76.sp is four CJK glyphs — about 304.dp of ink in a 220.dp
+ * ring — so it has been clipped in **Japanese**, in shipped builds, since the page was written. The
+ * English strings are no better: `All out` and `20 reps` are both wider than the ring at that size.
+ *
+ * So the string is measured once at the ceiling and scaled by the ratio it overshoots by. Advance is
+ * linear in font size, so one measurement settles it — no binary search and no per-script constant.
+ * [rememberTextMeasurer] resolves fonts and density itself, so what is measured is what is drawn.
+ * This is `RecordSummary.HeroTime`'s arithmetic; there is no reason for the two heroes in this
+ * feature to shrink by different rules.
+ *
+ * A countdown measures under the ceiling and keeps its size, so the four clock heroes are unchanged.
+ *
+ * @param tabular tabular figures, so a ticking column does not jitter as digits change width. Off for
+ *   a hero that does not tick — a rep count is written once and `限界まで` has no digits at all.
+ */
+@Composable
+internal fun HeroText(
+    text: String,
+    base: TextUnit,
+    color: Color,
+    modifier: Modifier = Modifier,
+    tabular: Boolean = true,
+) {
+    val density = LocalDensity.current
+    val measurer = rememberTextMeasurer()
+    val ceiling = heroSize(base)
+    BoxWithConstraints(modifier) {
+        val style = TextStyle(
+            fontFamily = Mincho,
+            fontSize = ceiling,
+            fontFeatureSettings = if (tabular) "tnum" else null,
+            color = color,
+        )
+        val available = with(density) { maxWidth.toPx() }
+        val size: TextUnit = remember(text, available, style, measurer) {
+            val measured = measurer
+                .measure(AnnotatedString(text), style, softWrap = false, maxLines = 1)
+                .size.width
+            if (measured <= 0 || measured <= available) ceiling
+            else (ceiling.value * HERO_FIT * available / measured).sp
+        }
+        Text(
+            text = text,
+            maxLines = 1,
+            softWrap = false,
+            style = style.copy(fontSize = size),
+        )
+    }
 }
 
 /**

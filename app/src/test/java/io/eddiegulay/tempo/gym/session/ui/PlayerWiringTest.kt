@@ -10,6 +10,7 @@ import io.eddiegulay.tempo.gym.session.compiledCircuit
 import io.eddiegulay.tempo.gym.session.step
 import io.eddiegulay.tempo.ui.gym.session.closesSession
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -289,6 +290,60 @@ class PlayerWiringTest {
             }
         }
         throw IllegalStateException("unbalanced braces reading: $header")
+    }
+
+
+    // ─── the hero fits the ring it is drawn in ──────────────────────────────────────────────────
+
+    /**
+     * Every hero numeral is measured, not counted.
+     *
+     * `LocalHeroCap` divides the **page** width by 4.2 — "four glyphs plus slack for the colon" — and
+     * that is a glyph *count*. The hero is drawn inside the ensō's 220.dp box, so a string wider than
+     * the ring is clipped by the box no matter what the cap says, and `softWrap = false, maxLines = 1`
+     * means clipped rather than ellipsised: the failure is silent.
+     *
+     * It was not hypothetical and it was not an English-only problem. 限界まで is four CJK glyphs, so
+     * about 304.dp of ink at 76.sp, and it has been losing its last glyph inside a 220.dp ring in
+     * shipped Japanese builds since REPS was written. `二十回` overflows too, by less.
+     *
+     * So no page may set `fontSize` on a hero itself. They all go through `HeroText`, which measures
+     * the string once at the ceiling and scales by the ratio it overshoots by.
+     */
+    @Test
+    fun `no page sizes a hero numeral by hand`() {
+        val pages = listOf("PreparePage.kt", "WorkPage.kt", "RepsPage.kt", "RestPage.kt", "PausedPage.kt")
+        val offenders = pages.filter { page ->
+            source("ui/gym/session/$page").contains("heroSize(")
+        }
+
+        assertEquals(
+            "a page calls heroSize directly. That is the glyph-counting cap, and it cannot see how " +
+                "wide the string actually is — use HeroText, which measures it",
+            emptyList<String>(),
+            offenders,
+        )
+    }
+
+    @Test
+    fun `the hero measures the text it is about to draw`() {
+        // The anti-vacuity half. Every assertion above is an absence, and deleting HeroText would
+        // satisfy all of them — this one fails if the measuring disappears, whatever replaces it.
+        val player = source("ui/gym/session/LivePlayer.kt")
+        assertTrue("HeroText must exist", player.contains("fun HeroText("))
+        assertTrue(
+            "the hero must measure rather than count: rememberTextMeasurer, not text.length",
+            player.contains("rememberTextMeasurer()") && player.contains(".measure(AnnotatedString(text)"),
+        )
+        assertTrue(
+            "it must measure against the width it is actually given, not the page",
+            player.contains("BoxWithConstraints") && player.contains("maxWidth.toPx()"),
+        )
+        assertFalse(
+            "sizing by character count is the bug this replaced — a CJK glyph advances one em and a " +
+                "latin one averages half, so counting sizes latin at ~40% of its budget",
+            player.contains("text.length"),
+        )
     }
 
     private fun source(relative: String): String {

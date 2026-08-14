@@ -103,18 +103,12 @@ fun PausedPage(
             // 「残り 二十三秒、休止中」 spoken against `0:23` drawn — §Q4's sharpest case in Japanese,
             // and one string in English (§L7).
             val spoken = pausedNumeralDescription(s, state.remainingMs)
-            Text(
+            HeroText(
                 text = formatCountdown(s, state.remainingMs),
-                softWrap = false,
-                maxLines = 1,
+                base = 88.sp,
+                // The one token that changes on pause.
+                color = c.inkSoft,
                 modifier = Modifier.clearAndSetSemantics { contentDescription = spoken },
-                style = TextStyle(
-                    fontFamily = Mincho,
-                    fontSize = heroSize(88.sp),
-                    fontFeatureSettings = "tnum",
-                    // The one token that changes on pause.
-                    color = c.inkSoft,
-                ),
             )
             state.exercise?.displayName(s)?.let { name ->
                 Text(
