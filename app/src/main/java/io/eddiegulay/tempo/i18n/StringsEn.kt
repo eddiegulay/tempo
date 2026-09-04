@@ -93,15 +93,30 @@ object StringsEn : Strings {
         override val handOffComposeEmail = "Write email"
         override val handOffSearchMail = "Search mail"
         override val handOffCalendarSection = "agenda"
+        override val peopleSection = "people"
+        override val contactMessage = "Message"
+        override val contactsAllow = "Allow contacts"
+        override val contactsAllowHint = "Search names in the address book"
+
+        override val categoryGame = "Games"
+        override val categoryAudio = "Music"
+        override val categoryVideo = "Video"
+        override val categoryImage = "Photos"
+        override val categorySocial = "Social"
+        override val categoryNews = "News"
+        override val categoryMaps = "Maps"
+        override val categoryProductivity = "Productivity"
+        override val categoryAccessibility = "Access"
     }
 
     override val searchAreas = object : SearchAreasStrings {
         override val kana = null
         override val title = "Search areas"
-        override val subtitle = "What Search may look through. Email and the web are handed to other apps. Calendar uses the agenda Tempo already reads."
+        override val subtitle = "What Search may look through. Contacts are read from the device. Email and the web are handed to other apps. Calendar uses the agenda Tempo already reads."
         override val toggleOn = "On"
         override val toggleOff = "Off"
         override val calendarNeedsAccess = "Needs calendar access"
+        override val contactsNeedsAccess = "Needs contacts access"
         override val apps = "Apps"
         override val phone = "Phone"
         override val contacts = "Contacts"

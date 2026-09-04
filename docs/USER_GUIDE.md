@@ -109,12 +109,17 @@ until you tap it, so the keyboard does not jump up on every visit.
 
 ### Finding a person or a number
 
-Tempo does **not** read your contacts, call log, or inbox, and it asks for no extra permission.
-When the query looks like a phone number, Search offers **Call**, **WhatsApp** (if that app is
-installed and not hidden), and **Find in Contacts**. An email address offers **Write email** and
-**Search mail**. A name that is not a confident app match offers Contacts, WhatsApp, mail, and
-Google. Matching **calendar** titles from the next fortnight appear in Search and open that event.
-A 10-day blockade still hides WhatsApp or mail (and the matching hand-off) for the full ten days.
+With **contacts access** (asked when you turn the Contacts area on, or from the allow row in
+Search), typing a name or part of a number shows matching **people** from the device address book.
+Each hit offers **Call**, **Message**, and **WhatsApp** (if that app is installed and not hidden).
+Tempo does **not** read the call log or the inbox. Call uses the dialer (it does not place the
+call itself). Message opens SMS. WhatsApp opens that chat.
+
+Without contacts access, a number still offers **Call**, **WhatsApp**, and **Find in Contacts**.
+An email address offers **Write email** and **Search mail**. A name that is not a confident app
+match offers Contacts, WhatsApp, mail, and Google. Matching **calendar** titles from the next
+fortnight appear in Search and open that event. A 10-day blockade still hides WhatsApp or mail
+(and the matching hand-off) for the full ten days.
 
 **Long-press the Search icon** in the dock to choose which of these areas are on. Each row is a
 word toggle (On / Off), not a Material switch. Apps stay available unless you turn that area off.
@@ -124,8 +129,9 @@ word toggle (On / Off), not a Material switch. Apps stay available unless you tu
 - **Tap an app row** to launch that app. The app opens with a subtle **scale-up animation** that grows
   out of the row you tapped.
 - **Tap a hand-off row** to open Phone, Contacts, WhatsApp, or Google with your query.
-- **Press the keyboard's "Go" / enter key** to launch the **top app**, or the first hand-off if no
-  app matched.
+- **Tap Call / Message / WhatsApp** on a person to start that action.
+- **Press the keyboard's "Go" / enter key** to launch the **top app**, the first person's Call if
+  no app matched, or the first hand-off.
 
 ### App management (long-press)
 
@@ -137,7 +143,7 @@ word toggle (On / Off), not a Material switch. Apps stay available unless you tu
 ### What you'll see while searching
 
 - `・・・` — the app list is still loading (only briefly, on first open).
-- `見つかりません` ("not found") — your query matched no apps and no hand-off applied.
+- `見つかりません` ("not found") — your query matched no apps, no people, and no hand-off applied.
 
 The app list stays **live**: installing, removing, or updating an app, or changing the system
 language, refreshes the list automatically without you reopening Search.
@@ -217,9 +223,9 @@ the active theme.
 | Tap dock sun/moon | Toggle Paper ⇄ AMOLED theme |
 | Back (from a sub-screen) | Return to Home |
 | Device Home button | Return to a clean Home screen |
-| Type in Search | Live-filter the app list, and offer people hand-offs when useful |
+| Type in Search | Live-filter apps and people, and offer hand-offs when useful |
 | Tap an app row | Launch the app (scale-up animation) |
-| Keyboard "Go" in Search | Launch the top app, or the first hand-off |
+| Keyboard "Go" in Search | Launch the top app, the first person's Call, or the first hand-off |
 | Long-press an app row | App info / uninstall menu |
 | Tap a notification | Open it |
 | Swipe a notification (either way) | Dismiss it |

@@ -6,8 +6,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Search hand-offs: when a typed query should offer Call / Contacts / WhatsApp / Google, without
- * Tempo ever reading contacts or the call log.
+ * Search hand-offs: when a typed query should offer Call / Contacts / WhatsApp / Google.
+ * Live address-book rows hide the redundant Contacts hand-offs. The call log is never read.
  */
 class SearchHandOffsTest {
 
@@ -66,6 +66,14 @@ class SearchHandOffsTest {
         assertTrue(matchCalendarFields("Standup", "Room 2", "Work", "room"))
         assertTrue(matchCalendarFields("Standup", null, "Work", "work"))
         assertFalse(matchCalendarFields("Standup", "Room 2", "Work", "x"))
+        assertTrue(matchCalendarFields("ヤマダ打合せ", null, "仕事", "やまだ"))
+    }
+
+    @Test
+    fun `app labels match after kana folding`() {
+        assertTrue(matchAppFields("ヤフー", "jp.co.yahoo.android", "やふー"))
+        assertTrue(matchAppFields("Chrome", "com.android.chrome", "chro"))
+        assertFalse(matchAppFields("Chrome", "com.android.chrome", "mina"))
     }
 
     @Test
@@ -105,18 +113,28 @@ class SearchHandOffsTest {
     }
 
     @Test
-    fun `the manifest adds no contacts call-log phone or internet permission`() {
+    fun `live contact hits hide the Contacts hand-off and the generic number rows`() {
+        val number = visibleHandOffs("0712345678", emptyList(), allOpen, hasContactHits = true)
+        assertTrue(number.isEmpty())
+        val name = visibleHandOffs("Mina", emptyList(), allOpen, hasContactHits = true)
+        assertFalse(name.contains(HandOffKind.SearchContacts))
+        assertTrue(name.contains(HandOffKind.SearchWhatsApp))
+    }
+
+    @Test
+    fun `the manifest may read contacts and never the call log phone or internet`() {
         val manifest = repoFile("src/main/AndroidManifest.xml").readText()
         val declared = Regex("""<uses-permission[^>]*android:name="([^"]+)"""")
             .findAll(manifest)
             .map { it.groupValues[1] }
             .toList()
+        assertTrue("READ_CONTACTS must be declared: $declared", "android.permission.READ_CONTACTS" in declared)
         listOf(
-            "android.permission.READ_CONTACTS",
             "android.permission.WRITE_CONTACTS",
             "android.permission.READ_CALL_LOG",
             "android.permission.WRITE_CALL_LOG",
             "android.permission.CALL_PHONE",
+            "android.permission.SEND_SMS",
             "android.permission.READ_PHONE_STATE",
             "android.permission.READ_PHONE_NUMBERS",
             "android.permission.INTERNET",

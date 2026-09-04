@@ -4,7 +4,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,6 +16,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -30,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.LauncherViewModel
 import io.eddiegulay.tempo.calendar.rememberCalendarPermissionState
+import io.eddiegulay.tempo.contacts.rememberContactsPermissionState
 import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.i18n.SearchAreasStrings
 import io.eddiegulay.tempo.search.SearchArea
@@ -49,10 +52,17 @@ fun SearchAreasScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifie
     val s = LocalStrings.current
     val areas by viewModel.searchAreas.collectAsStateWithLifecycle()
     val calendarGranted by viewModel.calendarAccess.collectAsStateWithLifecycle()
-    val permission = rememberCalendarPermissionState(
+    val contactsGranted by viewModel.contactsAccess.collectAsStateWithLifecycle()
+    val calendarPermission = rememberCalendarPermissionState(
         granted = calendarGranted,
         onGrantedChange = viewModel::setCalendarAccess,
     )
+    val contactsPermission = rememberContactsPermissionState(
+        granted = contactsGranted,
+        onGrantedChange = viewModel::setContactsAccess,
+    )
+    val lang by viewModel.lang.collectAsStateWithLifecycle()
+    var showLanguage by remember { mutableStateOf(false) }
 
     Column(modifier.fillMaxSize()) {
         Column(Modifier.padding(start = 26.dp, end = 26.dp, top = 20.dp)) {
@@ -62,10 +72,22 @@ fun SearchAreasScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifie
                     style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 6.sp, color = c.inkFaint),
                 )
             }
-            Box(Modifier.padding(top = 12.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = if (s.searchAreas.kana != null) 12.dp else 0.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
                     text = s.searchAreas.title,
                     style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, color = c.ink),
+                    modifier = Modifier.weight(1f),
+                )
+                HeaderIconButton(
+                    paths = TempoIcons.Globe,
+                    contentDescription = s.search.language,
+                    onClick = { showLanguage = true },
                 )
             }
             Text(
@@ -81,23 +103,43 @@ fun SearchAreasScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifie
         ) {
             items(SearchArea.entries, key = { it.name }) { area ->
                 val on = areas.isOn(area)
-                val needsCalendar = area == SearchArea.Calendar && on && !calendarGranted
+                val subtitle = when {
+                    area == SearchArea.Calendar && on && !calendarGranted ->
+                        s.searchAreas.calendarNeedsAccess
+                    area == SearchArea.Contacts && on && !contactsGranted ->
+                        s.searchAreas.contactsNeedsAccess
+                    else -> null
+                }
                 AreaRow(
                     label = areaLabel(s.searchAreas, area),
                     on = on,
                     wordOn = s.searchAreas.toggleOn,
                     wordOff = s.searchAreas.toggleOff,
-                    subtitle = if (needsCalendar) s.searchAreas.calendarNeedsAccess else null,
+                    subtitle = subtitle,
                     onToggle = {
                         val next = !on
                         viewModel.setSearchArea(area, next)
                         if (area == SearchArea.Calendar && next && !calendarGranted) {
-                            permission.request()
+                            calendarPermission.request()
+                        }
+                        if (area == SearchArea.Contacts && next && !contactsGranted) {
+                            contactsPermission.request()
                         }
                     },
                 )
             }
         }
+    }
+
+    if (showLanguage) {
+        LanguageDialog(
+            current = lang,
+            onChoose = {
+                viewModel.setLanguage(it)
+                showLanguage = false
+            },
+            onDismiss = { showLanguage = false },
+        )
     }
 }
 

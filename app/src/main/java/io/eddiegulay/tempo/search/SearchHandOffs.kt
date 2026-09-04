@@ -1,9 +1,11 @@
 package io.eddiegulay.tempo.search
 
+import io.eddiegulay.tempo.gym.foldKana
+
 /**
  * People-context hand-offs from Search: launch Phone, Contacts, WhatsApp, mail, or Google with the
- * typed query. Tempo never reads the address book, the call log, or the inbox. Calendar hits use
- * the agenda already loaded for 予定.
+ * typed query. Live contact rows come from READ_CONTACTS. Tempo never reads the call log or inbox.
+ * Calendar hits use the agenda already loaded for 予定.
  */
 
 enum class HandOffKind {
@@ -81,11 +83,18 @@ fun isEmailShaped(raw: String): Boolean {
 }
 
 fun hasConfidentAppMatch(query: String, apps: List<AppMatch>): Boolean {
-    val q = query.trim()
+    val q = foldKana(query)
     if (q.isEmpty()) return false
     return apps.any {
-        it.label.equals(q, ignoreCase = true) || it.label.startsWith(q, ignoreCase = true)
+        val label = foldKana(it.label)
+        label == q || label.startsWith(q)
     }
+}
+
+fun matchAppFields(label: String, packageName: String, query: String): Boolean {
+    val q = foldKana(query)
+    if (q.isEmpty()) return false
+    return foldKana(label).contains(q) || foldKana(packageName).contains(q)
 }
 
 fun showPersonHandOffs(query: String, filtered: List<AppMatch>): Boolean {
@@ -104,22 +113,31 @@ fun visibleHandOffs(
     filtered: List<AppMatch>,
     availability: HandOffAvailability,
     areas: SearchAreas = SearchAreas(),
+    hasContactHits: Boolean = false,
 ): List<HandOffKind> {
     val q = query.trim()
     if (q.isEmpty()) return emptyList()
     return when {
         isEmailShaped(q) -> emailHandOffs(availability, areas)
-        isNumberShaped(q) -> numberHandOffs(availability, areas)
-        showPersonHandOffs(q, filtered) -> personHandOffs(availability, areas)
+        isNumberShaped(q) -> numberHandOffs(availability, areas, hasContactHits)
+        showPersonHandOffs(q, filtered) -> personHandOffs(availability, areas, hasContactHits)
         else -> emptyList()
     }
 }
 
-private fun numberHandOffs(availability: HandOffAvailability, areas: SearchAreas): List<HandOffKind> =
+private fun numberHandOffs(
+    availability: HandOffAvailability,
+    areas: SearchAreas,
+    hasContactHits: Boolean,
+): List<HandOffKind> =
     buildList {
-        if (areas.phone) add(HandOffKind.Call)
-        if (areas.whatsApp && availability.whatsAppPackage != null) add(HandOffKind.WhatsAppNumber)
-        if (areas.contacts && availability.contactsAllowed) add(HandOffKind.FindContacts)
+        if (!hasContactHits) {
+            if (areas.phone) add(HandOffKind.Call)
+            if (areas.whatsApp && availability.whatsAppPackage != null) add(HandOffKind.WhatsAppNumber)
+        }
+        if (areas.contacts && availability.contactsAllowed && !hasContactHits) {
+            add(HandOffKind.FindContacts)
+        }
     }
 
 private fun emailHandOffs(availability: HandOffAvailability, areas: SearchAreas): List<HandOffKind> =
@@ -129,9 +147,15 @@ private fun emailHandOffs(availability: HandOffAvailability, areas: SearchAreas)
         if (availability.mailPackage != null) add(HandOffKind.SearchMail)
     }
 
-private fun personHandOffs(availability: HandOffAvailability, areas: SearchAreas): List<HandOffKind> =
+private fun personHandOffs(
+    availability: HandOffAvailability,
+    areas: SearchAreas,
+    hasContactHits: Boolean,
+): List<HandOffKind> =
     buildList {
-        if (areas.contacts && availability.contactsAllowed) add(HandOffKind.SearchContacts)
+        if (areas.contacts && availability.contactsAllowed && !hasContactHits) {
+            add(HandOffKind.SearchContacts)
+        }
         if (areas.whatsApp && availability.whatsAppPackage != null) add(HandOffKind.SearchWhatsApp)
         if (areas.email && availability.mailPackage != null) add(HandOffKind.SearchMail)
         if (areas.google && availability.googleAllowed) add(HandOffKind.SearchGoogle)
@@ -140,11 +164,13 @@ private fun personHandOffs(availability: HandOffAvailability, areas: SearchAreas
 fun handOffsAboveApps(query: String): Boolean = isNumberShaped(query) || isEmailShaped(query)
 
 fun matchCalendarFields(title: String, location: String?, calendarName: String, query: String): Boolean {
-    val q = query.trim()
-    if (q.length < 2) return false
-    return title.contains(q, ignoreCase = true) ||
-        (location?.contains(q, ignoreCase = true) == true) ||
-        calendarName.contains(q, ignoreCase = true)
+    val raw = query.trim()
+    if (raw.length < 2) return false
+    val q = foldKana(raw)
+    if (q.isEmpty()) return false
+    return foldKana(title).contains(q) ||
+        (location != null && foldKana(location).contains(q)) ||
+        foldKana(calendarName).contains(q)
 }
 
 /** Digits for ACTION_DIAL, keeping a leading plus. */

@@ -41,6 +41,14 @@
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
 
     <!--
+      Search reads the address book through ContactsContract when the Contacts area is on.
+      Asked at use time (Search areas toggle, or the allow row in Search), never at launch.
+      WRITE_CONTACTS, READ_CALL_LOG, CALL_PHONE, and SEND_SMS stay undeclared: call, SMS, and
+      WhatsApp leave through ACTION_DIAL, ACTION_SENDTO smsto, and wa.me.
+    -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    <!--
       GYM.SESSION.COMPLETE's 予定に入れる hand-off adds NO permission: it writes through the very
       CalendarRepository the 予定 composer writes through, behind the same EventConfirmDialog gate, so
       the two lines above are the whole of what it needs (04-library-records.md §4 row 8).
@@ -89,12 +97,16 @@
             <data android:mimeType="vnd.android.cursor.item/event" />
         </intent>
         <!--
-          Search hand-offs: Tempo never reads contacts or the call log. These queries only let
-          the resolver see Dial, Contacts, WhatsApp, and web search so a tap can leave Tempo.
+          Search hand-offs and contact actions. Dial, SMS, and WhatsApp leave Tempo; the
+          address book is read only after READ_CONTACTS. The call log is never read.
         -->
         <intent>
             <action android:name="android.intent.action.DIAL" />
             <data android:scheme="tel" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="smsto" />
         </intent>
         <intent>
             <action android:name="android.intent.action.VIEW" />

@@ -172,6 +172,20 @@ interface SearchStrings {
     val handOffComposeEmail: String
     val handOffSearchMail: String
     val handOffCalendarSection: String
+    val peopleSection: String
+    val contactMessage: String
+    val contactsAllow: String
+    val contactsAllowHint: String
+
+    val categoryGame: String
+    val categoryAudio: String
+    val categoryVideo: String
+    val categoryImage: String
+    val categorySocial: String
+    val categoryNews: String
+    val categoryMaps: String
+    val categoryProductivity: String
+    val categoryAccessibility: String
 }
 
 /** Long-press Search: which sources Search may use. */
@@ -182,6 +196,7 @@ interface SearchAreasStrings {
     val toggleOn: String
     val toggleOff: String
     val calendarNeedsAccess: String
+    val contactsNeedsAccess: String
     val apps: String
     val phone: String
     val contacts: String

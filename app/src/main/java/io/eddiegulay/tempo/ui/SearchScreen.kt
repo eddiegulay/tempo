@@ -7,6 +7,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
@@ -55,9 +58,15 @@ import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.i18n.SearchStrings
 import io.eddiegulay.tempo.calendar.CalendarEvent
 import io.eddiegulay.tempo.calendar.displayTitle
+import io.eddiegulay.tempo.contacts.DeviceContact
+import io.eddiegulay.tempo.contacts.matchContacts
+import io.eddiegulay.tempo.contacts.rememberContactsPermissionState
 import io.eddiegulay.tempo.search.AppMatch
 import io.eddiegulay.tempo.search.HandOffKind
+import io.eddiegulay.tempo.search.appCategoryLabel
 import io.eddiegulay.tempo.search.handOffsAboveApps
+import io.eddiegulay.tempo.search.isNumberShaped
+import io.eddiegulay.tempo.search.matchAppFields
 import io.eddiegulay.tempo.search.matchCalendarFields
 import io.eddiegulay.tempo.search.visibleHandOffs
 import io.eddiegulay.tempo.ui.theme.Gothic
@@ -71,8 +80,8 @@ import java.time.ZoneId
 
 /**
  * Search (検索): a bottom-ruled mincho input over a live-filtered list of every installed app,
- * plus permission-free hand-offs to Phone, Contacts, WhatsApp, and Google when the query looks
- * like a person or a number.
+ * plus address-book hits (Call, Message, WhatsApp) and hand-offs when the query looks like a
+ * person or a number.
  *
  * The inventory is the shared, live [LauncherViewModel] flow; icons load lazily per visible row from
  * the repository's cache. Tapping launches with a scale-up animation from the row; long-press opens
@@ -101,6 +110,12 @@ fun SearchScreen(
     val blockade by viewModel.blockade.collectAsStateWithLifecycle()
     val areas by viewModel.searchAreas.collectAsStateWithLifecycle()
     val events by viewModel.calendarEvents.collectAsStateWithLifecycle()
+    val contactsGranted by viewModel.contactsAccess.collectAsStateWithLifecycle()
+    val deviceContacts by viewModel.deviceContacts.collectAsStateWithLifecycle()
+    val contactsPermission = rememberContactsPermissionState(
+        granted = contactsGranted,
+        onGrantedChange = viewModel::setContactsAccess,
+    )
 
     LaunchedEffect(Unit) { viewModel.ensureAppsLoaded() }
 
@@ -109,33 +124,50 @@ fun SearchScreen(
         else {
             val q = query.trim()
             if (q.isEmpty()) apps
-            else apps.filter { it.label.contains(q, ignoreCase = true) || it.packageName.contains(q, ignoreCase = true) }
+            else apps.filter { matchAppFields(it.label, it.packageName, q) }
         }
     }
     val availability = remember(inventory, blockade) { viewModel.handOffAvailability() }
     val matches = remember(filtered) { filtered.map { AppMatch(it.label, it.packageName) } }
-    val handOffs = remember(query, matches, availability, areas) {
-        visibleHandOffs(query, matches, availability, areas)
+    val contactHits = remember(query, deviceContacts, areas, contactsGranted) {
+        if (!areas.contacts || !contactsGranted) emptyList()
+        else matchContacts(query, deviceContacts)
+    }
+    val handOffs = remember(query, matches, availability, areas, contactHits) {
+        visibleHandOffs(query, matches, availability, areas, hasContactHits = contactHits.isNotEmpty())
     }
     val calendarHits = remember(query, events, areas) {
         if (!areas.calendar || query.trim().length < 2) emptyList()
         else events.filter { matchCalendarFields(it.title, it.location, it.calendarName, query) }
     }
-    val noResults = query.isNotBlank() && filtered.isEmpty() && handOffs.isEmpty() && calendarHits.isEmpty()
+    val showContactsAllow = areas.contacts && !contactsGranted && query.trim().length >= 2
+    val noResults = query.isNotBlank() &&
+        filtered.isEmpty() &&
+        handOffs.isEmpty() &&
+        calendarHits.isEmpty() &&
+        contactHits.isEmpty() &&
+        !showContactsAllow
     val loading = areas.apps && apps.isEmpty() && query.isBlank()
-    val handOffsFirst = handOffs.isNotEmpty() && handOffsAboveApps(query)
+    val peopleFirst = (handOffs.isNotEmpty() && handOffsAboveApps(query)) ||
+        (contactHits.isNotEmpty() && isNumberShaped(query)) ||
+        (showContactsAllow && isNumberShaped(query))
 
     // Search doubles as the app drawer, so it opens unfocused. Submitting launches the top app, or
     // the first hand-off when the query matched no app, or the first agenda hit.
     val keyboard = LocalSoftwareKeyboardController.current
     val launchTop: () -> Unit = {
         val topApp = filtered.firstOrNull()
+        val topContact = contactHits.firstOrNull()
         val topHandOff = handOffs.firstOrNull()
         val topEvent = calendarHits.firstOrNull()
         when {
             topApp != null -> {
                 keyboard?.hide()
                 viewModel.launchApp(context, topApp)
+            }
+            topContact != null -> {
+                keyboard?.hide()
+                viewModel.launchContactCall(context, topContact.phone)
             }
             topHandOff != null -> {
                 keyboard?.hide()
@@ -222,26 +254,62 @@ fun SearchScreen(
                     }
                 }
             }
-            if (handOffsFirst) {
-                handOffBlock(
-                    kinds = handOffs,
-                    query = query,
+            if (peopleFirst) {
+                peopleBlock(
+                    contactHits = contactHits,
+                    showAllow = showContactsAllow,
+                    allowLabel = s.search.contactsAllow,
+                    allowHint = s.search.contactsAllowHint,
+                    section = s.search.peopleSection,
+                    callLabel = s.search.handOffCall,
+                    messageLabel = s.search.contactMessage,
+                    whatsAppLabel = s.search.handOffWhatsApp,
+                    showWhatsApp = areas.whatsApp && availability.whatsAppPackage != null,
                     afterApps = false,
-                    strings = s.search,
-                    onOpen = { kind -> viewModel.launchHandOff(context, kind, query) },
+                    onAllow = contactsPermission.request,
+                    onCall = { viewModel.launchContactCall(context, it.phone) },
+                    onMessage = { viewModel.launchContactMessage(context, it.phone) },
+                    onWhatsApp = { viewModel.launchContactWhatsApp(context, it.phone) },
                 )
+                if (handOffs.isNotEmpty()) {
+                    handOffBlock(
+                        kinds = handOffs,
+                        query = query,
+                        afterApps = contactHits.isNotEmpty() || showContactsAllow,
+                        strings = s.search,
+                        onOpen = { kind -> viewModel.launchHandOff(context, kind, query) },
+                    )
+                }
             }
             items(filtered, key = { it.key }) { app ->
                 AppRow(viewModel = viewModel, app = app)
             }
-            if (!handOffsFirst && handOffs.isNotEmpty()) {
-                handOffBlock(
-                    kinds = handOffs,
-                    query = query,
+            if (!peopleFirst) {
+                peopleBlock(
+                    contactHits = contactHits,
+                    showAllow = showContactsAllow,
+                    allowLabel = s.search.contactsAllow,
+                    allowHint = s.search.contactsAllowHint,
+                    section = s.search.peopleSection,
+                    callLabel = s.search.handOffCall,
+                    messageLabel = s.search.contactMessage,
+                    whatsAppLabel = s.search.handOffWhatsApp,
+                    showWhatsApp = areas.whatsApp && availability.whatsAppPackage != null,
                     afterApps = filtered.isNotEmpty(),
-                    strings = s.search,
-                    onOpen = { kind -> viewModel.launchHandOff(context, kind, query) },
+                    onAllow = contactsPermission.request,
+                    onCall = { viewModel.launchContactCall(context, it.phone) },
+                    onMessage = { viewModel.launchContactMessage(context, it.phone) },
+                    onWhatsApp = { viewModel.launchContactWhatsApp(context, it.phone) },
                 )
+                if (handOffs.isNotEmpty()) {
+                    handOffBlock(
+                        kinds = handOffs,
+                        query = query,
+                        afterApps = filtered.isNotEmpty() || contactHits.isNotEmpty() || showContactsAllow,
+                        strings = s.search,
+                        onOpen = { kind -> viewModel.launchHandOff(context, kind, query) },
+                    )
+                }
             }
             if (calendarHits.isNotEmpty()) {
                 item(key = "handoff:calendar-heading") {
@@ -252,7 +320,7 @@ fun SearchScreen(
                             .padding(
                                 start = 12.dp,
                                 end = 12.dp,
-                                top = if (filtered.isNotEmpty() || handOffs.isNotEmpty()) 24.dp else 0.dp,
+                                top = if (filtered.isNotEmpty() || handOffs.isNotEmpty() || contactHits.isNotEmpty() || showContactsAllow) 24.dp else 0.dp,
                                 bottom = 6.dp,
                             )
                             .semantics { heading() },
@@ -329,12 +397,12 @@ private fun AppRow(viewModel: LauncherViewModel, app: AppInfo) {
                 )
                 // Subtitle: app category and last-updated date (e.g. "生産性 · 更新 6月10日"), each
                 // dropped when unavailable. Replaces the developer-facing package name.
-                val subtitle = remember(app.category, app.lastUpdated, s) {
+                val subtitle = remember(app.categoryId, app.lastUpdated, s) {
                     val date = app.lastUpdated.takeIf { it > 0L }?.let {
                         s.search.updatedPrefix +
                             s.fmt.monthDay(Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDateTime())
                     }
-                    listOfNotNull(app.category, date).joinToString(" · ")
+                    listOfNotNull(appCategoryLabel(app.categoryId, s.search), date).joinToString(" · ")
                 }
                 if (subtitle.isNotEmpty()) {
                     Text(
@@ -368,6 +436,51 @@ private fun AppRow(viewModel: LauncherViewModel, app: AppInfo) {
                 },
             )
         }
+    }
+}
+
+private fun LazyListScope.peopleBlock(
+    contactHits: List<DeviceContact>,
+    showAllow: Boolean,
+    allowLabel: String,
+    allowHint: String,
+    section: String,
+    callLabel: String,
+    messageLabel: String,
+    whatsAppLabel: String,
+    showWhatsApp: Boolean,
+    afterApps: Boolean,
+    onAllow: () -> Unit,
+    onCall: (DeviceContact) -> Unit,
+    onMessage: (DeviceContact) -> Unit,
+    onWhatsApp: (DeviceContact) -> Unit,
+) {
+    if (contactHits.isEmpty() && !showAllow) return
+    item(key = "people:heading") {
+        Text(
+            text = section,
+            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = LocalTempoColors.current.inkFaint),
+            modifier = Modifier
+                .padding(start = 12.dp, end = 12.dp, top = if (afterApps) 24.dp else 0.dp, bottom = 6.dp)
+                .semantics { heading() },
+        )
+    }
+    if (showAllow) {
+        item(key = "people:allow") {
+            ContactsAllowRow(label = allowLabel, hint = allowHint, onClick = onAllow)
+        }
+    }
+    items(contactHits, key = { "contact:${it.contactId}" }) { contact ->
+        ContactHitRow(
+            contact = contact,
+            callLabel = callLabel,
+            messageLabel = messageLabel,
+            whatsAppLabel = whatsAppLabel,
+            showWhatsApp = showWhatsApp,
+            onCall = { onCall(contact) },
+            onMessage = { onMessage(contact) },
+            onWhatsApp = { onWhatsApp(contact) },
+        )
     }
 }
 
@@ -449,6 +562,104 @@ private fun handOffCopy(kind: HandOffKind, query: String, strings: SearchStrings
 }
 
 @Composable
+private fun ContactsAllowRow(label: String, hint: String, onClick: () -> Unit) {
+    val c = LocalTempoColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .pressable(
+                shape = TempoShapes.Row,
+                role = Role.Button,
+                onClickLabel = label,
+                onClick = onClick,
+            )
+            .padding(horizontal = 12.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        LineIcon(paths = AppGlyphs.Person, color = c.inkSoft, size = 26.dp)
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = label,
+                style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, letterSpacing = 1.sp, color = c.ink),
+            )
+            Text(
+                text = hint,
+                style = TextStyle(fontFamily = Gothic, fontSize = 11.sp, letterSpacing = 2.sp, color = c.inkFaint),
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ContactHitRow(
+    contact: DeviceContact,
+    callLabel: String,
+    messageLabel: String,
+    whatsAppLabel: String,
+    showWhatsApp: Boolean,
+    onCall: () -> Unit,
+    onMessage: () -> Unit,
+    onWhatsApp: () -> Unit,
+) {
+    val c = LocalTempoColors.current
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .pressable(
+                    shape = TempoShapes.Row,
+                    role = Role.Button,
+                    onClickLabel = callLabel,
+                    onClick = onCall,
+                )
+                .padding(horizontal = 12.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            LineIcon(paths = AppGlyphs.Person, color = c.inkSoft, size = 26.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = contact.displayName,
+                    style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, letterSpacing = 1.sp, color = c.ink),
+                )
+                Text(
+                    text = contact.phone,
+                    style = TextStyle(fontFamily = Gothic, fontSize = 11.sp, letterSpacing = 2.sp, color = c.inkFaint),
+                )
+            }
+        }
+        FlowRow(
+            modifier = Modifier.padding(start = 56.dp, end = 12.dp, bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            ContactActionChip(label = callLabel, onClick = onCall)
+            ContactActionChip(label = messageLabel, onClick = onMessage)
+            if (showWhatsApp) {
+                ContactActionChip(label = whatsAppLabel, onClick = onWhatsApp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContactActionChip(label: String, onClick: () -> Unit) {
+    val c = LocalTempoColors.current
+    Box(
+        modifier = Modifier
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .pressable(TempoShapes.Word, role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            text = label,
+            style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 1.sp, color = c.accent),
+        )
+    }
+}
+
+@Composable
 private fun CalendarHitRow(event: CalendarEvent, onClick: () -> Unit) {
     val c = LocalTempoColors.current
     val s = LocalStrings.current
@@ -493,7 +704,7 @@ private fun CalendarHitRow(event: CalendarEvent, onClick: () -> Unit) {
  * and unmistakable (the page turns, the theme flips, a picker opens), which is the feedback.
  */
 @Composable
-private fun HeaderIconButton(
+internal fun HeaderIconButton(
     paths: List<String>,
     contentDescription: String,
     onClick: () -> Unit,

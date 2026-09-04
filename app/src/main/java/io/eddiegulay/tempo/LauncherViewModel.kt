@@ -13,6 +13,9 @@ import io.eddiegulay.tempo.calendar.Loadable
 import io.eddiegulay.tempo.calendar.PendingWrite
 import io.eddiegulay.tempo.calendar.WriteOutcome
 import io.eddiegulay.tempo.calendar.hasCalendarAccess
+import io.eddiegulay.tempo.contacts.ContactsRepository
+import io.eddiegulay.tempo.contacts.DeviceContact
+import io.eddiegulay.tempo.contacts.hasContactsAccess
 import io.eddiegulay.tempo.data.AppInfo
 import io.eddiegulay.tempo.data.AppRepository
 import io.eddiegulay.tempo.data.BlockadeRepository
@@ -29,6 +32,9 @@ import io.eddiegulay.tempo.search.HandOffKind
 import io.eddiegulay.tempo.search.SearchArea
 import io.eddiegulay.tempo.search.SearchAreas
 import io.eddiegulay.tempo.search.handOffAvailability as computeHandOffAvailability
+import io.eddiegulay.tempo.search.launchContactCall as startContactCall
+import io.eddiegulay.tempo.search.launchContactMessage as startContactMessage
+import io.eddiegulay.tempo.search.launchContactWhatsApp as startContactWhatsApp
 import io.eddiegulay.tempo.search.launchHandOff as startHandOff
 import io.eddiegulay.tempo.ui.Screen
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -72,6 +78,7 @@ class LauncherViewModel(
     private val notificationRepository: NotificationRepository,
     private val blockadeRepository: BlockadeRepository,
     private val calendarRepository: CalendarRepository,
+    private val contactsRepository: ContactsRepository,
 ) : ViewModel() {
 
     // Read once, synchronously, at construction so the first frame already reflects stored choices
@@ -323,6 +330,17 @@ class LauncherViewModel(
         stringsFor(lang.value),
     )
 
+    fun launchContactCall(context: Context, phone: String) =
+        startContactCall(context, phone, stringsFor(lang.value))
+
+    fun launchContactMessage(context: Context, phone: String) =
+        startContactMessage(context, phone, stringsFor(lang.value))
+
+    fun launchContactWhatsApp(context: Context, phone: String) {
+        val pkg = handOffAvailability().whatsAppPackage ?: return
+        startContactWhatsApp(context, phone, pkg, stringsFor(lang.value))
+    }
+
     fun openAppInfo(context: Context, app: AppInfo) = appRepository.openAppInfo(context, app)
 
     fun requestUninstall(context: Context, app: AppInfo) =
@@ -436,6 +454,26 @@ class LauncherViewModel(
     val calendarFault: StateFlow<CalendarFault?> = _calendarFault.asStateFlow()
 
     fun refreshCalendarAccess(context: Context) = setCalendarAccess(hasCalendarAccess(context))
+
+    // ----- contacts -----
+
+    /** Whether READ_CONTACTS is held. Re-checked on resume; revocable in Settings. */
+    private val _contactsAccess = MutableStateFlow(false)
+    val contactsAccess: StateFlow<Boolean> = _contactsAccess.asStateFlow()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val deviceContacts: StateFlow<List<DeviceContact>> = _contactsAccess
+        .flatMapLatest { granted ->
+            if (granted) contactsRepository.contacts() else flowOf(emptyList())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun refreshContactsAccess(context: Context) = setContactsAccess(hasContactsAccess(context))
+
+    fun setContactsAccess(granted: Boolean) {
+        if (_contactsAccess.value == granted) return
+        _contactsAccess.value = granted
+    }
 
     fun setCalendarAccess(granted: Boolean) {
         if (_calendarAccess.value == granted) return
@@ -580,6 +618,7 @@ class LauncherViewModelFactory(context: Context) : ViewModelProvider.Factory {
             notificationRepository = NotificationRepository(),
             blockadeRepository = BlockadeRepository.getInstance(appContext),
             calendarRepository = CalendarRepository(appContext),
+            contactsRepository = ContactsRepository(appContext),
         ) as T
     }
 }

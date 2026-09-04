@@ -24,6 +24,46 @@ fun launchHandOff(
         Toast.makeText(context, strings.fault.launchFailed, Toast.LENGTH_SHORT).show()
         return
     }
+    startSafely(context, intent, strings)
+}
+
+fun launchContactCall(context: Context, phone: String, strings: Strings) {
+    val digits = telDigits(phone)
+    if (digits.isEmpty()) {
+        Toast.makeText(context, strings.fault.launchFailed, Toast.LENGTH_SHORT).show()
+        return
+    }
+    startSafely(context, Intent(Intent.ACTION_DIAL, Uri.parse(telUri(phone))), strings)
+}
+
+fun launchContactMessage(context: Context, phone: String, strings: Strings) {
+    val digits = telDigits(phone)
+    if (digits.isEmpty()) {
+        Toast.makeText(context, strings.fault.launchFailed, Toast.LENGTH_SHORT).show()
+        return
+    }
+    startSafely(context, Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$digits")), strings)
+}
+
+fun launchContactWhatsApp(
+    context: Context,
+    phone: String,
+    packageName: String,
+    strings: Strings,
+) {
+    val digits = whatsAppDigits(phone)
+    if (digits.isEmpty()) {
+        Toast.makeText(context, strings.fault.launchFailed, Toast.LENGTH_SHORT).show()
+        return
+    }
+    startSafely(
+        context,
+        Intent(Intent.ACTION_VIEW, Uri.parse(whatsAppUri(phone))).setPackage(packageName),
+        strings,
+    )
+}
+
+private fun startSafely(context: Context, intent: Intent, strings: Strings) {
     try {
         context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     } catch (_: ActivityNotFoundException) {
