@@ -53,9 +53,12 @@ import io.eddiegulay.tempo.LauncherViewModel
 import io.eddiegulay.tempo.data.AppInfo
 import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.i18n.SearchStrings
+import io.eddiegulay.tempo.calendar.CalendarEvent
+import io.eddiegulay.tempo.calendar.displayTitle
 import io.eddiegulay.tempo.search.AppMatch
 import io.eddiegulay.tempo.search.HandOffKind
 import io.eddiegulay.tempo.search.handOffsAboveApps
+import io.eddiegulay.tempo.search.matchCalendarFields
 import io.eddiegulay.tempo.search.visibleHandOffs
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
@@ -96,27 +99,39 @@ fun SearchScreen(
     val apps by viewModel.visibleApps.collectAsStateWithLifecycle()
     val inventory by viewModel.apps.collectAsStateWithLifecycle()
     val blockade by viewModel.blockade.collectAsStateWithLifecycle()
+    val areas by viewModel.searchAreas.collectAsStateWithLifecycle()
+    val events by viewModel.calendarEvents.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { viewModel.ensureAppsLoaded() }
 
-    val filtered = remember(query, apps) {
-        val q = query.trim()
-        if (q.isEmpty()) apps
-        else apps.filter { it.label.contains(q, ignoreCase = true) || it.packageName.contains(q, ignoreCase = true) }
+    val filtered = remember(query, apps, areas) {
+        if (!areas.apps) emptyList()
+        else {
+            val q = query.trim()
+            if (q.isEmpty()) apps
+            else apps.filter { it.label.contains(q, ignoreCase = true) || it.packageName.contains(q, ignoreCase = true) }
+        }
     }
     val availability = remember(inventory, blockade) { viewModel.handOffAvailability() }
     val matches = remember(filtered) { filtered.map { AppMatch(it.label, it.packageName) } }
-    val handOffs = remember(query, matches, availability) { visibleHandOffs(query, matches, availability) }
-    val noResults = query.isNotBlank() && filtered.isEmpty() && handOffs.isEmpty()
-    val loading = apps.isEmpty() && query.isBlank()
+    val handOffs = remember(query, matches, availability, areas) {
+        visibleHandOffs(query, matches, availability, areas)
+    }
+    val calendarHits = remember(query, events, areas) {
+        if (!areas.calendar || query.trim().length < 2) emptyList()
+        else events.filter { matchCalendarFields(it.title, it.location, it.calendarName, query) }
+    }
+    val noResults = query.isNotBlank() && filtered.isEmpty() && handOffs.isEmpty() && calendarHits.isEmpty()
+    val loading = areas.apps && apps.isEmpty() && query.isBlank()
     val handOffsFirst = handOffs.isNotEmpty() && handOffsAboveApps(query)
 
     // Search doubles as the app drawer, so it opens unfocused. Submitting launches the top app, or
-    // the first hand-off when the query matched no app.
+    // the first hand-off when the query matched no app, or the first agenda hit.
     val keyboard = LocalSoftwareKeyboardController.current
     val launchTop: () -> Unit = {
         val topApp = filtered.firstOrNull()
         val topHandOff = handOffs.firstOrNull()
+        val topEvent = calendarHits.firstOrNull()
         when {
             topApp != null -> {
                 keyboard?.hide()
@@ -125,6 +140,10 @@ fun SearchScreen(
             topHandOff != null -> {
                 keyboard?.hide()
                 viewModel.launchHandOff(context, topHandOff, query)
+            }
+            topEvent != null -> {
+                keyboard?.hide()
+                viewModel.openInCalendarApp(context, topEvent)
             }
             else -> keyboard?.hide()
         }
@@ -223,6 +242,28 @@ fun SearchScreen(
                     strings = s.search,
                     onOpen = { kind -> viewModel.launchHandOff(context, kind, query) },
                 )
+            }
+            if (calendarHits.isNotEmpty()) {
+                item(key = "handoff:calendar-heading") {
+                    Text(
+                        text = s.search.handOffCalendarSection,
+                        style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
+                        modifier = Modifier
+                            .padding(
+                                start = 12.dp,
+                                end = 12.dp,
+                                top = if (filtered.isNotEmpty() || handOffs.isNotEmpty()) 24.dp else 0.dp,
+                                bottom = 6.dp,
+                            )
+                            .semantics { heading() },
+                    )
+                }
+                items(calendarHits, key = { "cal:${it.key}" }) { event ->
+                    CalendarHitRow(
+                        event = event,
+                        onClick = { viewModel.openInCalendarApp(context, event) },
+                    )
+                }
             }
         }
     }
@@ -402,6 +443,44 @@ private fun handOffCopy(kind: HandOffKind, query: String, strings: SearchStrings
         HandOffKind.SearchContacts -> HandOffCopy(AppGlyphs.Person, strings.handOffSearchContacts, q)
         HandOffKind.SearchWhatsApp -> HandOffCopy(AppGlyphs.Message, strings.handOffSearchWhatsApp, q)
         HandOffKind.SearchGoogle -> HandOffCopy(AppGlyphs.Globe, strings.handOffSearchGoogle, q)
+        HandOffKind.ComposeEmail -> HandOffCopy(AppGlyphs.Mail, strings.handOffComposeEmail, q)
+        HandOffKind.SearchMail -> HandOffCopy(AppGlyphs.Mail, strings.handOffSearchMail, q)
+    }
+}
+
+@Composable
+private fun CalendarHitRow(event: CalendarEvent, onClick: () -> Unit) {
+    val c = LocalTempoColors.current
+    val s = LocalStrings.current
+    val title = event.displayTitle(s)
+    val whenText = s.fmt.monthDay(event.startDateTime())
+    val subtitle = listOfNotNull(whenText, event.location?.takeIf { it.isNotBlank() }).joinToString(" · ")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .pressable(
+                shape = TempoShapes.Row,
+                role = Role.Button,
+                onClickLabel = title,
+                onClick = onClick,
+            )
+            .padding(horizontal = 12.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        LineIcon(paths = AppGlyphs.Calendar, color = c.inkSoft, size = 26.dp)
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = title,
+                style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, letterSpacing = 1.sp, color = c.ink),
+            )
+            if (subtitle.isNotEmpty()) {
+                Text(
+                    text = subtitle,
+                    style = TextStyle(fontFamily = Gothic, fontSize = 11.sp, letterSpacing = 2.sp, color = c.inkFaint),
+                )
+            }
+        }
     }
 }
 

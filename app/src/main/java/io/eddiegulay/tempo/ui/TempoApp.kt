@@ -51,7 +51,7 @@ import io.eddiegulay.tempo.ui.theme.SumiColors
  * you are *inside* it is not the launcher's business — exactly as [Focus] does not encode "clock vs
  * pomodoro". It buys the gym a whole shell for one enum entry.
  */
-enum class Screen { Home, Search, Notifications, Filter, Focus, Calendar, EventCompose, Gym }
+enum class Screen { Home, Search, Notifications, Filter, SearchAreas, Focus, Calendar, EventCompose, Gym }
 
 /**
  * Which world owns the window, as distinct from which page is on screen.
@@ -126,10 +126,12 @@ fun TempoApp(
     // Back never leaves the launcher. Filter is a sub-page of Search and EventCompose a sub-page of
     // Calendar, so each returns to its parent; any other sub-screen returns home; on home it's a no-op.
     BackHandler(enabled = screen == Screen.Filter) { viewModel.goSearch() }
+    BackHandler(enabled = screen == Screen.SearchAreas) { viewModel.goSearch() }
     BackHandler(enabled = screen == Screen.EventCompose) { viewModel.cancelCompose() }
     BackHandler(
         enabled = screen != Screen.Home &&
             screen != Screen.Filter &&
+            screen != Screen.SearchAreas &&
             screen != Screen.EventCompose &&
             // The gym handles its own Back at every depth, and must: this generic handler would pop
             // the whole shell on the first press from anywhere inside it.
@@ -219,6 +221,7 @@ fun TempoApp(
                                 )
                                 Screen.Notifications -> NotificationsScreen(viewModel = viewModel)
                                 Screen.Filter -> FilterScreen(viewModel = viewModel)
+                                Screen.SearchAreas -> SearchAreasScreen(viewModel = viewModel)
                                 Screen.Calendar -> CalendarScreen(viewModel = viewModel)
                                 Screen.EventCompose -> EventComposeScreen(viewModel = viewModel)
                                 // Focus renders full-screen in the outer branch; never inside the dock layer.
@@ -238,6 +241,7 @@ fun TempoApp(
                             isDefaultLauncher = isDefaultLauncher,
                             onHome = viewModel::goHome,
                             onSearch = viewModel::goSearch,
+                            onSearchAreas = viewModel::goSearchAreas,
                             onNotifications = viewModel::goNotifications,
                             onGym = viewModel::goGym,
                             onRequestDefault = onRequestDefault,

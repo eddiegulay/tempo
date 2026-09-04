@@ -109,12 +109,15 @@ until you tap it, so the keyboard does not jump up on every visit.
 
 ### Finding a person or a number
 
-Tempo does **not** read your contacts or call log, and it asks for no extra permission. When the
-query looks like a phone number, Search offers **Call**, **WhatsApp** (if that app is installed and
-not hidden), and **Find in Contacts**. When the query looks like a name and no app is a confident
-match, it offers **Search contacts**, **Search in WhatsApp**, and **Search Google**. Each row
-hands the typed text to the other app. A 10-day blockade still hides WhatsApp (and the matching
-hand-off) for the full ten days.
+Tempo does **not** read your contacts, call log, or inbox, and it asks for no extra permission.
+When the query looks like a phone number, Search offers **Call**, **WhatsApp** (if that app is
+installed and not hidden), and **Find in Contacts**. An email address offers **Write email** and
+**Search mail**. A name that is not a confident app match offers Contacts, WhatsApp, mail, and
+Google. Matching **calendar** titles from the next fortnight appear in Search and open that event.
+A 10-day blockade still hides WhatsApp or mail (and the matching hand-off) for the full ten days.
+
+**Long-press the Search icon** in the dock to choose which of these areas are on. Each row is a
+word toggle (On / Off), not a Material switch. Apps stay available unless you turn that area off.
 
 ### Launching
 

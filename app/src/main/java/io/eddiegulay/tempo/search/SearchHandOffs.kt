@@ -1,9 +1,9 @@
 package io.eddiegulay.tempo.search
 
 /**
- * People-context hand-offs from Search: launch Phone, Contacts, WhatsApp, or Google with the
- * typed query. Tempo never reads the address book or the call log, and it adds no dangerous
- * permission. The list is built from the query shape plus which apps are installed and not hidden.
+ * People-context hand-offs from Search: launch Phone, Contacts, WhatsApp, mail, or Google with the
+ * typed query. Tempo never reads the address book, the call log, or the inbox. Calendar hits use
+ * the agenda already loaded for 予定.
  */
 
 enum class HandOffKind {
@@ -13,6 +13,8 @@ enum class HandOffKind {
     SearchContacts,
     SearchWhatsApp,
     SearchGoogle,
+    ComposeEmail,
+    SearchMail,
 }
 
 data class AppMatch(
@@ -27,6 +29,11 @@ object SearchPackages {
         "com.samsung.android.app.contacts",
         "com.android.contacts",
     )
+    val MAIL = listOf(
+        "com.google.android.gm",
+        "com.samsung.android.email.provider",
+        "com.microsoft.office.outlook",
+    )
     const val GOOGLE = "com.google.android.googlequicksearchbox"
 }
 
@@ -35,6 +42,7 @@ data class HandOffAvailability(
     val contactsPackage: String?,
     val contactsAllowed: Boolean,
     val googleAllowed: Boolean,
+    val mailPackage: String?,
 )
 
 fun handOffAvailability(
@@ -48,18 +56,28 @@ fun handOffAvailability(
     val contactsInstalled = SearchPackages.CONTACTS.any { it in installed }
     val contactsAllowed = contacts != null || !contactsInstalled
     val googleAllowed = SearchPackages.GOOGLE !in blocked
-    return HandOffAvailability(whatsApp, contacts, contactsAllowed, googleAllowed)
+    val mail = SearchPackages.MAIL.firstOrNull { it in installed && it !in blocked }
+    return HandOffAvailability(whatsApp, contacts, contactsAllowed, googleAllowed, mail)
 }
 
 fun isNumberShaped(raw: String): Boolean {
     val q = raw.trim()
-    if (q.isEmpty()) return false
+    if (q.isEmpty() || isEmailShaped(q)) return false
     val digits = q.count { it.isDigit() }
     if (digits < 3) return false
     val nonWs = q.count { !it.isWhitespace() }
     if (nonWs == 0) return false
     if (q.startsWith("+") && digits >= 3) return true
     return digits.toDouble() / nonWs >= 0.55
+}
+
+fun isEmailShaped(raw: String): Boolean {
+    val q = raw.trim()
+    val at = q.indexOf('@')
+    if (at <= 0 || at == q.lastIndex) return false
+    val domain = q.substring(at + 1)
+    val dot = domain.indexOf('.')
+    return dot > 0 && dot < domain.lastIndex && !q.contains(' ')
 }
 
 fun hasConfidentAppMatch(query: String, apps: List<AppMatch>): Boolean {
@@ -73,7 +91,7 @@ fun hasConfidentAppMatch(query: String, apps: List<AppMatch>): Boolean {
 fun showPersonHandOffs(query: String, filtered: List<AppMatch>): Boolean {
     val q = query.trim()
     if (q.length < 2) return false
-    if (isNumberShaped(q)) return false
+    if (isNumberShaped(q) || isEmailShaped(q)) return false
     if (hasConfidentAppMatch(q, filtered)) return false
     if (filtered.isEmpty()) return true
     if (q.contains(' ')) return true
@@ -81,27 +99,53 @@ fun showPersonHandOffs(query: String, filtered: List<AppMatch>): Boolean {
     return filtered.size <= 2
 }
 
-fun visibleHandOffs(query: String, filtered: List<AppMatch>, availability: HandOffAvailability): List<HandOffKind> {
+fun visibleHandOffs(
+    query: String,
+    filtered: List<AppMatch>,
+    availability: HandOffAvailability,
+    areas: SearchAreas = SearchAreas(),
+): List<HandOffKind> {
     val q = query.trim()
     if (q.isEmpty()) return emptyList()
-    return if (isNumberShaped(q)) {
-        buildList {
-            add(HandOffKind.Call)
-            if (availability.whatsAppPackage != null) add(HandOffKind.WhatsAppNumber)
-            if (availability.contactsAllowed) add(HandOffKind.FindContacts)
-        }
-    } else if (showPersonHandOffs(q, filtered)) {
-        buildList {
-            if (availability.contactsAllowed) add(HandOffKind.SearchContacts)
-            if (availability.whatsAppPackage != null) add(HandOffKind.SearchWhatsApp)
-            if (availability.googleAllowed) add(HandOffKind.SearchGoogle)
-        }
-    } else {
-        emptyList()
+    return when {
+        isEmailShaped(q) -> emailHandOffs(availability, areas)
+        isNumberShaped(q) -> numberHandOffs(availability, areas)
+        showPersonHandOffs(q, filtered) -> personHandOffs(availability, areas)
+        else -> emptyList()
     }
 }
 
-fun handOffsAboveApps(query: String): Boolean = isNumberShaped(query)
+private fun numberHandOffs(availability: HandOffAvailability, areas: SearchAreas): List<HandOffKind> =
+    buildList {
+        if (areas.phone) add(HandOffKind.Call)
+        if (areas.whatsApp && availability.whatsAppPackage != null) add(HandOffKind.WhatsAppNumber)
+        if (areas.contacts && availability.contactsAllowed) add(HandOffKind.FindContacts)
+    }
+
+private fun emailHandOffs(availability: HandOffAvailability, areas: SearchAreas): List<HandOffKind> =
+    buildList {
+        if (!areas.email) return@buildList
+        add(HandOffKind.ComposeEmail)
+        if (availability.mailPackage != null) add(HandOffKind.SearchMail)
+    }
+
+private fun personHandOffs(availability: HandOffAvailability, areas: SearchAreas): List<HandOffKind> =
+    buildList {
+        if (areas.contacts && availability.contactsAllowed) add(HandOffKind.SearchContacts)
+        if (areas.whatsApp && availability.whatsAppPackage != null) add(HandOffKind.SearchWhatsApp)
+        if (areas.email && availability.mailPackage != null) add(HandOffKind.SearchMail)
+        if (areas.google && availability.googleAllowed) add(HandOffKind.SearchGoogle)
+    }
+
+fun handOffsAboveApps(query: String): Boolean = isNumberShaped(query) || isEmailShaped(query)
+
+fun matchCalendarFields(title: String, location: String?, calendarName: String, query: String): Boolean {
+    val q = query.trim()
+    if (q.length < 2) return false
+    return title.contains(q, ignoreCase = true) ||
+        (location?.contains(q, ignoreCase = true) == true) ||
+        calendarName.contains(q, ignoreCase = true)
+}
 
 /** Digits for ACTION_DIAL, keeping a leading plus. */
 fun telDigits(raw: String): String {
@@ -116,5 +160,7 @@ fun telUri(raw: String): String = "tel:${telDigits(raw)}"
 fun whatsAppDigits(raw: String): String = raw.filter { it.isDigit() }
 
 fun whatsAppUri(raw: String): String = "https://wa.me/${whatsAppDigits(raw)}"
+
+fun mailtoUri(raw: String): String = "mailto:${displayQuery(raw)}"
 
 fun displayQuery(raw: String): String = raw.trim().replace(Regex("\\s+"), " ")

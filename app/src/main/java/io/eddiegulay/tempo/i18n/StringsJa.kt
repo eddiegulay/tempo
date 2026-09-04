@@ -20,6 +20,7 @@ object StringsJa : Strings {
         override val dockNotifications = "通知"
         override val dockGym = "鍛錬"
         override val dockSetDefault = "Tempoを既定のホームに設定"
+        override val dockSearchAreas = "検索の範囲"
     }
 
     override val onboarding = object : OnboardingStrings {
@@ -72,6 +73,25 @@ object StringsJa : Strings {
         override val handOffSearchContacts = "連絡先を検索"
         override val handOffSearchWhatsApp = "WhatsAppで探す"
         override val handOffSearchGoogle = "Googleで探す"
+        override val handOffComposeEmail = "メールを書く"
+        override val handOffSearchMail = "メールを検索"
+        override val handOffCalendarSection = "予定"
+    }
+
+    override val searchAreas = object : SearchAreasStrings {
+        override val kana = "はんい"
+        override val title = "検索の範囲"
+        override val subtitle = "検索が見にいく先。メールとウェブはほかのアプリへ渡します。予定はTempoがすでに読んでいる日程です。"
+        override val toggleOn = "入"
+        override val toggleOff = "切"
+        override val calendarNeedsAccess = "カレンダーへのアクセスが必要です"
+        override val apps = "アプリ"
+        override val phone = "電話"
+        override val contacts = "連絡先"
+        override val whatsApp = "WhatsApp"
+        override val google = "Google"
+        override val email = "メール"
+        override val calendar = "予定"
     }
 
     override val dialog = object : DialogStrings {

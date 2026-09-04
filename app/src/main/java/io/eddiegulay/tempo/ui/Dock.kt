@@ -2,7 +2,9 @@ package io.eddiegulay.tempo.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -51,6 +53,7 @@ fun Dock(
     isDefaultLauncher: Boolean,
     onHome: () -> Unit,
     onSearch: () -> Unit,
+    onSearchAreas: () -> Unit,
     onNotifications: () -> Unit,
     onGym: () -> Unit,
     onRequestDefault: () -> Unit,
@@ -92,7 +95,14 @@ fun Dock(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             DockButton(TempoIcons.Home, active = current == Screen.Home, contentDescription = s.app.dockHome, onClick = onHome)
-            DockButton(TempoIcons.Search, active = current == Screen.Search, contentDescription = s.app.dockSearch, onClick = onSearch)
+            DockButton(
+                TempoIcons.Search,
+                active = current == Screen.Search || current == Screen.Filter || current == Screen.SearchAreas,
+                contentDescription = s.app.dockSearch,
+                onClick = onSearch,
+                onLongClick = onSearchAreas,
+                onLongClickLabel = s.app.dockSearchAreas,
+            )
             DockButton(TempoIcons.Bell, active = current == Screen.Notifications, contentDescription = s.app.dockNotifications, onClick = onNotifications)
             DockButton(TempoIcons.Dumbbell, active = current == Screen.Gym, contentDescription = s.app.dockGym, onClick = onGym)
         }
@@ -108,24 +118,42 @@ fun Dock(
  * to vermillion is the feedback, and it is the only one this control needs: every tab changes the
  * whole page under it.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DockButton(
     paths: List<String>,
     active: Boolean,
     contentDescription: String,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    onLongClickLabel: String? = null,
 ) {
     val c = LocalTempoColors.current
     val tint = if (active) c.accent else c.inkFaint
+    val interaction = remember { MutableInteractionSource() }
     Box(
         modifier = Modifier
             // 48dp meets the minimum accessible touch target while the glyph stays 23dp.
             .size(48.dp)
             .clip(TempoShapes.Glyph)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
+            .then(
+                if (onLongClick != null) {
+                    // Combined so this button consumes the long-press and the capsule's
+                    // default-home long-press does not also fire.
+                    Modifier.combinedClickable(
+                        interactionSource = interaction,
+                        indication = null,
+                        onClick = onClick,
+                        onLongClick = onLongClick,
+                        onLongClickLabel = onLongClickLabel,
+                    )
+                } else {
+                    Modifier.clickable(
+                        interactionSource = interaction,
+                        indication = null,
+                        onClick = onClick,
+                    )
+                },
             )
             .semantics {
                 this.contentDescription = contentDescription

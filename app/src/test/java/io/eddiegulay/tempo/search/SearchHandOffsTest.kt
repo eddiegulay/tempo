@@ -16,6 +16,7 @@ class SearchHandOffsTest {
         contactsPackage = "com.google.android.contacts",
         contactsAllowed = true,
         googleAllowed = true,
+        mailPackage = "com.google.android.gm",
     )
 
     @Test
@@ -29,13 +30,42 @@ class SearchHandOffsTest {
     }
 
     @Test
-    fun `a name with no app match offers contacts WhatsApp and Google`() {
+    fun `a name with no app match offers contacts WhatsApp mail and Google`() {
         val hits = visibleHandOffs("Mina Okello", emptyList(), allOpen)
         assertEquals(
-            listOf(HandOffKind.SearchContacts, HandOffKind.SearchWhatsApp, HandOffKind.SearchGoogle),
+            listOf(
+                HandOffKind.SearchContacts,
+                HandOffKind.SearchWhatsApp,
+                HandOffKind.SearchMail,
+                HandOffKind.SearchGoogle,
+            ),
             hits,
         )
         assertFalse(handOffsAboveApps("Mina Okello"))
+    }
+
+    @Test
+    fun `an email-shaped query offers compose and search mail`() {
+        val hits = visibleHandOffs("mina@ground.work", emptyList(), allOpen)
+        assertEquals(listOf(HandOffKind.ComposeEmail, HandOffKind.SearchMail), hits)
+        assertTrue(handOffsAboveApps("mina@ground.work"))
+        assertEquals("mailto:mina@ground.work", mailtoUri("mina@ground.work"))
+    }
+
+    @Test
+    fun `a disabled area is omitted`() {
+        val noPhone = SearchAreas(phone = false)
+        assertFalse(visibleHandOffs("0712345678", emptyList(), allOpen, noPhone).contains(HandOffKind.Call))
+        val noEmail = SearchAreas(email = false)
+        assertTrue(visibleHandOffs("mina@ground.work", emptyList(), allOpen, noEmail).isEmpty())
+    }
+
+    @Test
+    fun `calendar fields match title location or calendar name`() {
+        assertTrue(matchCalendarFields("Standup", "Room 2", "Work", "stand"))
+        assertTrue(matchCalendarFields("Standup", "Room 2", "Work", "room"))
+        assertTrue(matchCalendarFields("Standup", null, "Work", "work"))
+        assertFalse(matchCalendarFields("Standup", "Room 2", "Work", "x"))
     }
 
     @Test

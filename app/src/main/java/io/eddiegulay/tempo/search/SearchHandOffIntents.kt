@@ -60,5 +60,12 @@ fun resolveHandOffIntent(
             context.packageManager.getLaunchIntentForPackage(pkg)
         }
         HandOffKind.SearchGoogle -> Intent(Intent.ACTION_WEB_SEARCH).putExtra(SearchManager.QUERY, q)
+        HandOffKind.ComposeEmail -> Intent(Intent.ACTION_SENDTO, Uri.parse(mailtoUri(q)))
+        HandOffKind.SearchMail -> {
+            val pkg = availability.mailPackage ?: return null
+            Intent(Intent.ACTION_SEARCH)
+                .putExtra(SearchManager.QUERY, q)
+                .setPackage(pkg)
+        }
     }
 }

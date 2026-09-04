@@ -26,6 +26,8 @@ import io.eddiegulay.tempo.notification.TempoNotification
 import io.eddiegulay.tempo.notification.groupByApp
 import io.eddiegulay.tempo.search.HandOffAvailability
 import io.eddiegulay.tempo.search.HandOffKind
+import io.eddiegulay.tempo.search.SearchArea
+import io.eddiegulay.tempo.search.SearchAreas
 import io.eddiegulay.tempo.search.handOffAvailability as computeHandOffAvailability
 import io.eddiegulay.tempo.search.launchHandOff as startHandOff
 import io.eddiegulay.tempo.ui.Screen
@@ -98,6 +100,9 @@ class LauncherViewModel(
      */
     val onboardingComplete: StateFlow<Boolean> = themeRepository.onboardingComplete
         .stateIn(viewModelScope, SharingStarted.Eagerly, initialSettings.onboardingComplete)
+
+    val searchAreas: StateFlow<SearchAreas> = themeRepository.searchAreas
+        .stateIn(viewModelScope, SharingStarted.Eagerly, SearchAreas())
 
     private val _screen = MutableStateFlow(Screen.Home)
     val screen: StateFlow<Screen> = _screen.asStateFlow()
@@ -180,6 +185,15 @@ class LauncherViewModel(
     /** Open the hidden-apps filter page (launched from the Search header). */
     fun goFilter() {
         _screen.value = Screen.Filter
+    }
+
+    /** Open the search-areas page (long-press on the Search dock icon). */
+    fun goSearchAreas() {
+        _screen.value = Screen.SearchAreas
+    }
+
+    fun setSearchArea(area: SearchArea, on: Boolean) {
+        viewModelScope.launch { themeRepository.setSearchArea(area, on) }
     }
 
     // ----- modes (landscape flip clock / pomodoro, and the gym) -----

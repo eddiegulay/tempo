@@ -29,6 +29,7 @@ object StringsEn : Strings {
         override val dockNotifications = "Notifications"
         override val dockGym = "Training"
         override val dockSetDefault = "Set Tempo as the default home app"
+        override val dockSearchAreas = "Search areas"
     }
 
     override val onboarding = object : OnboardingStrings {
@@ -89,6 +90,25 @@ object StringsEn : Strings {
         override val handOffSearchContacts = "Search contacts"
         override val handOffSearchWhatsApp = "Search in WhatsApp"
         override val handOffSearchGoogle = "Search Google"
+        override val handOffComposeEmail = "Write email"
+        override val handOffSearchMail = "Search mail"
+        override val handOffCalendarSection = "agenda"
+    }
+
+    override val searchAreas = object : SearchAreasStrings {
+        override val kana = null
+        override val title = "Search areas"
+        override val subtitle = "What Search may look through. Email and the web are handed to other apps. Calendar uses the agenda Tempo already reads."
+        override val toggleOn = "On"
+        override val toggleOff = "Off"
+        override val calendarNeedsAccess = "Needs calendar access"
+        override val apps = "Apps"
+        override val phone = "Phone"
+        override val contacts = "Contacts"
+        override val whatsApp = "WhatsApp"
+        override val google = "Google"
+        override val email = "Email"
+        override val calendar = "Calendar"
     }
 
     override val dialog = object : DialogStrings {
