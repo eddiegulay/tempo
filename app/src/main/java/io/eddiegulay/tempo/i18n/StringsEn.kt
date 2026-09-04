@@ -80,6 +80,15 @@ object StringsEn : Strings {
         override val uninstall = "Uninstall"
 
         override val updatedPrefix = "Updated "
+
+        override val handOffSection = "elsewhere"
+        override val handOffCall = "Call"
+        override val handOffWhatsApp = "WhatsApp"
+        override val handOffWhatsAppNumberSubtitle = "Message this number"
+        override val handOffFindContacts = "Find in Contacts"
+        override val handOffSearchContacts = "Search contacts"
+        override val handOffSearchWhatsApp = "Search in WhatsApp"
+        override val handOffSearchGoogle = "Search Google"
     }
 
     override val dialog = object : DialogStrings {

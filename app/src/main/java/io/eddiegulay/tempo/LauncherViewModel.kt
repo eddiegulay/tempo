@@ -24,6 +24,10 @@ import io.eddiegulay.tempo.notification.NotificationGroup
 import io.eddiegulay.tempo.notification.NotificationRepository
 import io.eddiegulay.tempo.notification.TempoNotification
 import io.eddiegulay.tempo.notification.groupByApp
+import io.eddiegulay.tempo.search.HandOffAvailability
+import io.eddiegulay.tempo.search.HandOffKind
+import io.eddiegulay.tempo.search.handOffAvailability as computeHandOffAvailability
+import io.eddiegulay.tempo.search.launchHandOff as startHandOff
 import io.eddiegulay.tempo.ui.Screen
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -291,6 +295,19 @@ class LauncherViewModel(
         sourceBounds: android.graphics.Rect? = null,
         opts: android.os.Bundle? = null,
     ) = appRepository.launch(context, app, stringsFor(lang.value), sourceBounds, opts)
+
+    fun handOffAvailability(): HandOffAvailability = computeHandOffAvailability(
+        installedPackages = apps.value.map { it.packageName },
+        blockaded = blockade.value.keys,
+    )
+
+    fun launchHandOff(context: Context, kind: HandOffKind, query: String) = startHandOff(
+        context,
+        kind,
+        query,
+        handOffAvailability(),
+        stringsFor(lang.value),
+    )
 
     fun openAppInfo(context: Context, app: AppInfo) = appRepository.openAppInfo(context, app)
 

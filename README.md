@@ -49,8 +49,10 @@ to leave it *for*: 集中 (a clock and nothing else) and 鍛錬 (a workout timer
   The corner is set vertically (縦書き) in Japanese and horizontally in English — stacking Latin
   letters one per line is a ransom note, not typography.
 - **Search (検索)**: live-filtered list of every installed app (work-profile apps included), with a
-  scale-up launch animation and a long-press menu (app info / hide / uninstall). The hidden-apps page,
-  the theme toggle and the language picker live in this screen's header.
+  scale-up launch animation and a long-press menu (app info / hide / uninstall). A number or a name
+  that is not an app also offers Call, Contacts, WhatsApp, and Google, by handing the query to those
+  apps. Tempo does not read contacts or the call log. The hidden-apps page, the theme toggle and the
+  language picker live in this screen's header.
 - **The blockade (the whole point)**: hide an app and it's gone for **10 days**, no take-backs. A
   confirmation spells out the commitment, a live countdown shows the time remaining, and while an app
   is blocked its **notifications are suppressed system-wide** too. The ledger is included in Android

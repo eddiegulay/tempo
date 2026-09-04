@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -40,6 +41,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -49,17 +51,25 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.eddiegulay.tempo.LauncherViewModel
 import io.eddiegulay.tempo.data.AppInfo
-import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.i18n.LocalStrings
+import io.eddiegulay.tempo.i18n.SearchStrings
+import io.eddiegulay.tempo.search.AppMatch
+import io.eddiegulay.tempo.search.HandOffKind
+import io.eddiegulay.tempo.search.handOffsAboveApps
+import io.eddiegulay.tempo.search.visibleHandOffs
+import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.combinedPressable
+import io.eddiegulay.tempo.ui.theme.pressable
 import java.time.Instant
 import java.time.ZoneId
 
 /**
- * Search (検索): a bottom-ruled mincho input over a live-filtered list of every installed app.
+ * Search (検索): a bottom-ruled mincho input over a live-filtered list of every installed app,
+ * plus permission-free hand-offs to Phone, Contacts, WhatsApp, and Google when the query looks
+ * like a person or a number.
  *
  * The inventory is the shared, live [LauncherViewModel] flow; icons load lazily per visible row from
  * the repository's cache. Tapping launches with a scale-up animation from the row; long-press opens
@@ -84,6 +94,8 @@ fun SearchScreen(
     // needs to know it is open. Same treatment the app-info menu below already gets.
     var showLanguage by remember { mutableStateOf(false) }
     val apps by viewModel.visibleApps.collectAsStateWithLifecycle()
+    val inventory by viewModel.apps.collectAsStateWithLifecycle()
+    val blockade by viewModel.blockade.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { viewModel.ensureAppsLoaded() }
 
@@ -92,16 +104,29 @@ fun SearchScreen(
         if (q.isEmpty()) apps
         else apps.filter { it.label.contains(q, ignoreCase = true) || it.packageName.contains(q, ignoreCase = true) }
     }
-    val noResults = query.isNotBlank() && filtered.isEmpty()
+    val availability = remember(inventory, blockade) { viewModel.handOffAvailability() }
+    val matches = remember(filtered) { filtered.map { AppMatch(it.label, it.packageName) } }
+    val handOffs = remember(query, matches, availability) { visibleHandOffs(query, matches, availability) }
+    val noResults = query.isNotBlank() && filtered.isEmpty() && handOffs.isEmpty()
     val loading = apps.isEmpty() && query.isBlank()
+    val handOffsFirst = handOffs.isNotEmpty() && handOffsAboveApps(query)
 
-    // Search doubles as the app drawer, so it opens unfocused — no keyboard pops up until the user
-    // taps the field. Submitting still launches the top hit.
+    // Search doubles as the app drawer, so it opens unfocused. Submitting launches the top app, or
+    // the first hand-off when the query matched no app.
     val keyboard = LocalSoftwareKeyboardController.current
     val launchTop: () -> Unit = {
-        filtered.firstOrNull()?.let { top ->
-            keyboard?.hide()
-            viewModel.launchApp(context, top)
+        val topApp = filtered.firstOrNull()
+        val topHandOff = handOffs.firstOrNull()
+        when {
+            topApp != null -> {
+                keyboard?.hide()
+                viewModel.launchApp(context, topApp)
+            }
+            topHandOff != null -> {
+                keyboard?.hide()
+                viewModel.launchHandOff(context, topHandOff, query)
+            }
+            else -> keyboard?.hide()
         }
     }
 
@@ -178,8 +203,26 @@ fun SearchScreen(
                     }
                 }
             }
+            if (handOffsFirst) {
+                handOffBlock(
+                    kinds = handOffs,
+                    query = query,
+                    afterApps = false,
+                    strings = s.search,
+                    onOpen = { kind -> viewModel.launchHandOff(context, kind, query) },
+                )
+            }
             items(filtered, key = { it.key }) { app ->
                 AppRow(viewModel = viewModel, app = app)
+            }
+            if (!handOffsFirst && handOffs.isNotEmpty()) {
+                handOffBlock(
+                    kinds = handOffs,
+                    query = query,
+                    afterApps = filtered.isNotEmpty(),
+                    strings = s.search,
+                    onOpen = { kind -> viewModel.launchHandOff(context, kind, query) },
+                )
             }
         }
     }
@@ -284,6 +327,81 @@ private fun AppRow(viewModel: LauncherViewModel, app: AppInfo) {
                 },
             )
         }
+    }
+}
+
+private fun LazyListScope.handOffBlock(
+    kinds: List<HandOffKind>,
+    query: String,
+    afterApps: Boolean,
+    strings: SearchStrings,
+    onOpen: (HandOffKind) -> Unit,
+) {
+    item(key = "handoff:heading") {
+        Text(
+            text = strings.handOffSection,
+            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = LocalTempoColors.current.inkFaint),
+            modifier = Modifier
+                .padding(start = 12.dp, end = 12.dp, top = if (afterApps) 24.dp else 0.dp, bottom = 6.dp)
+                .semantics { heading() },
+        )
+    }
+    items(kinds, key = { "handoff:${it.name}" }) { kind ->
+        HandOffRow(kind = kind, query = query, strings = strings, onClick = { onOpen(kind) })
+    }
+}
+
+@Composable
+private fun HandOffRow(
+    kind: HandOffKind,
+    query: String,
+    strings: SearchStrings,
+    onClick: () -> Unit,
+) {
+    val c = LocalTempoColors.current
+    val copy = handOffCopy(kind, query, strings)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .pressable(
+                shape = TempoShapes.Row,
+                role = Role.Button,
+                onClickLabel = copy.primary,
+                onClick = onClick,
+            )
+            .padding(horizontal = 12.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        LineIcon(paths = copy.glyph, color = c.inkSoft, size = 26.dp)
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = copy.primary,
+                style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, letterSpacing = 1.sp, color = c.ink),
+            )
+            Text(
+                text = copy.subtitle,
+                style = TextStyle(fontFamily = Gothic, fontSize = 11.sp, letterSpacing = 2.sp, color = c.inkFaint),
+            )
+        }
+    }
+}
+
+private data class HandOffCopy(
+    val glyph: List<String>,
+    val primary: String,
+    val subtitle: String,
+)
+
+private fun handOffCopy(kind: HandOffKind, query: String, strings: SearchStrings): HandOffCopy {
+    val q = query.trim()
+    return when (kind) {
+        HandOffKind.Call -> HandOffCopy(AppGlyphs.Phone, strings.handOffCall, q)
+        HandOffKind.WhatsAppNumber -> HandOffCopy(AppGlyphs.Message, strings.handOffWhatsApp, strings.handOffWhatsAppNumberSubtitle)
+        HandOffKind.FindContacts -> HandOffCopy(AppGlyphs.Person, strings.handOffFindContacts, q)
+        HandOffKind.SearchContacts -> HandOffCopy(AppGlyphs.Person, strings.handOffSearchContacts, q)
+        HandOffKind.SearchWhatsApp -> HandOffCopy(AppGlyphs.Message, strings.handOffSearchWhatsApp, q)
+        HandOffKind.SearchGoogle -> HandOffCopy(AppGlyphs.Globe, strings.handOffSearchGoogle, q)
     }
 }
 

@@ -155,6 +155,16 @@ interface SearchStrings {
      * still the one hard-coded `DateTimeFormatter` in the app.
      */
     val updatedPrefix: String
+
+    /** Section label above people-context hand-offs (Call, Contacts, WhatsApp, Google). */
+    val handOffSection: String
+    val handOffCall: String
+    val handOffWhatsApp: String
+    val handOffWhatsAppNumberSubtitle: String
+    val handOffFindContacts: String
+    val handOffSearchContacts: String
+    val handOffSearchWhatsApp: String
+    val handOffSearchGoogle: String
 }
 
 /** Modal dialogs. */

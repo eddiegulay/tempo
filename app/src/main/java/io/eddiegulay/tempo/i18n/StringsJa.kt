@@ -63,6 +63,15 @@ object StringsJa : Strings {
         override val uninstall = "アンインストール"
 
         override val updatedPrefix = "更新 "
+
+        override val handOffSection = "ほかで"
+        override val handOffCall = "電話する"
+        override val handOffWhatsApp = "WhatsApp"
+        override val handOffWhatsAppNumberSubtitle = "この番号へ"
+        override val handOffFindContacts = "連絡先で探す"
+        override val handOffSearchContacts = "連絡先を検索"
+        override val handOffSearchWhatsApp = "WhatsAppで探す"
+        override val handOffSearchGoogle = "Googleで探す"
     }
 
     override val dialog = object : DialogStrings {
