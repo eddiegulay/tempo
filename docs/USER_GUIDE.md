@@ -1,7 +1,7 @@
 # Tempo — User Guide
 
 Tempo is an ultra-minimal Android **home-screen replacement** (launcher). It does three quiet
-things and nothing else: **tell the time**, **find an app**, and **show your notifications** — all
+things and nothing else: **tell the time**, **find an app or a person**, and **show your notifications** — all
 on a calm washi-paper canvas with a single vermillion accent and Japanese typography.
 
 There are no home-screen widgets, no app drawer grid, no folders, no wallpaper picker, and no
@@ -47,7 +47,7 @@ bottom of every screen:
 | Dock icon | Screen | What it shows |
 |-----------|--------|---------------|
 | Home glyph | **Home** (ホーム) | The clock, date, and ensō |
-| Search glyph | **Search** (検索) | Find and launch an app |
+| Search glyph | **Search** (検索) | Find an app, a number, or a person |
 | Bell glyph | **Notifications** (通知) | Your live notifications |
 | Sun / Moon glyph | *(not a screen)* | Toggles the theme — see [§6](#6-themes) |
 
@@ -94,27 +94,44 @@ formatting; they recompute as the day rolls over.
 
 ---
 
-## 4. Search — finding and launching apps
+## 4. Search: finding apps, people, and numbers
 
-Tap the **Search** (検索) dock icon. The screen opens with the text field already focused and the
-keyboard up, so you can start typing immediately.
+Tap the **Search** (検索) dock icon. The screen opens as the app drawer: the field stays unfocused
+until you tap it, so the keyboard does not jump up on every visit.
 
 ### Finding an app
 
 - Type any part of an app's **name** *or* its **package name** (e.g. `chrome` or `com.android`).
   Matching is case-insensitive and updates live as you type.
 - The list shows every **launchable app on the device**, sorted alphabetically. This includes apps
-  in a **work profile** or other user profiles, each shown with its proper badged icon. (Tempo
-  itself is hidden from the list.)
-- Each row shows the app **icon**, its **name** (mincho type), and its **package name** (small grey
-  text beneath).
+  in a **work profile** or other user profiles. Tempo itself is hidden from the list.
+- Each row shows a monochrome glyph, the app **name** (mincho type), and a small subtitle.
+
+### Finding a person or a number
+
+With **contacts access** (asked when you turn the Contacts area on, or from the allow row in
+Search), typing a name or part of a number shows matching **people** from the device address book.
+Each hit offers **Call**, **Message**, and **WhatsApp** (if that app is installed and not hidden).
+Tempo does **not** read the call log or the inbox. Call uses the dialer (it does not place the
+call itself). Message opens SMS. WhatsApp opens that chat.
+
+Without contacts access, a number still offers **Call**, **WhatsApp**, and **Find in Contacts**.
+An email address offers **Write email** and **Search mail**. A name that is not a confident app
+match offers Contacts, WhatsApp, mail, and Google. Matching **calendar** titles from the next
+fortnight appear in Search and open that event. A 10-day blockade still hides WhatsApp or mail
+(and the matching hand-off) for the full ten days.
+
+**Long-press the Search icon** in the dock to choose which of these areas are on. Each row is a
+word toggle (On / Off), not a Material switch. Apps stay available unless you turn that area off.
 
 ### Launching
 
-- **Tap a row** to launch that app. The app opens with a subtle **scale-up animation** that grows
+- **Tap an app row** to launch that app. The app opens with a subtle **scale-up animation** that grows
   out of the row you tapped.
-- **Press the keyboard's "Go" / enter key** to instantly launch the **top result** — handy for
-  launching by typing a few letters and hitting Go without lifting your thumb.
+- **Tap a hand-off row** to open Phone, Contacts, WhatsApp, or Google with your query.
+- **Tap Call / Message / WhatsApp** on a person to start that action.
+- **Press the keyboard's "Go" / enter key** to launch the **top app**, the first person's Call if
+  no app matched, or the first hand-off.
 
 ### App management (long-press)
 
@@ -126,7 +143,7 @@ keyboard up, so you can start typing immediately.
 ### What you'll see while searching
 
 - `・・・` — the app list is still loading (only briefly, on first open).
-- `見つかりません` ("not found") — your query matched no apps.
+- `見つかりません` ("not found") — your query matched no apps, no people, and no hand-off applied.
 
 The app list stays **live**: installing, removing, or updating an app, or changing the system
 language, refreshes the list automatically without you reopening Search.
@@ -206,9 +223,9 @@ the active theme.
 | Tap dock sun/moon | Toggle Paper ⇄ AMOLED theme |
 | Back (from a sub-screen) | Return to Home |
 | Device Home button | Return to a clean Home screen |
-| Type in Search | Live-filter the app list |
+| Type in Search | Live-filter apps and people, and offer hand-offs when useful |
 | Tap an app row | Launch the app (scale-up animation) |
-| Keyboard "Go" in Search | Launch the top result |
+| Keyboard "Go" in Search | Launch the top app, the first person's Call, or the first hand-off |
 | Long-press an app row | App info / uninstall menu |
 | Tap a notification | Open it |
 | Swipe a notification (either way) | Dismiss it |

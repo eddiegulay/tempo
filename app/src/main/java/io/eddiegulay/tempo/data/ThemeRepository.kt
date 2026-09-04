@@ -9,6 +9,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import io.eddiegulay.tempo.i18n.Lang
+import io.eddiegulay.tempo.search.SearchArea
+import io.eddiegulay.tempo.search.SearchAreas
 import java.util.Locale
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -68,6 +70,23 @@ class ThemeRepository(private val context: Context) {
     }
 
     /**
+     * Which Search sources are live. Lives on this store because a second DataStore over
+     * `tempo_settings` is illegal, and a new file would drop out of Auto Backup.
+     * Absent keys read as on, so an upgrade does not hide Search.
+     */
+    val searchAreas: Flow<SearchAreas> = context.tempoDataStore.data.map { prefs ->
+        SearchAreas(
+            apps = prefs[areaApps] ?: true,
+            phone = prefs[areaPhone] ?: true,
+            contacts = prefs[areaContacts] ?: true,
+            whatsApp = prefs[areaWhatsApp] ?: true,
+            google = prefs[areaGoogle] ?: true,
+            email = prefs[areaEmail] ?: true,
+            calendar = prefs[areaCalendar] ?: true,
+        )
+    }
+
+    /**
      * One synchronous read of stored settings for the very first frame. The window background and
      * the initial theme/onboarding state must be correct *before* Compose draws — otherwise a
      * returning user briefly sees the wrong theme or a blank Home, which reads as the app
@@ -99,6 +118,10 @@ class ThemeRepository(private val context: Context) {
         }
     }
 
+    suspend fun setSearchArea(area: SearchArea, on: Boolean) {
+        context.tempoDataStore.edit { prefs -> prefs[keyFor(area)] = on }
+    }
+
     // "amoled" is the legacy stored value (pre-Sumi); still read as dark so existing installs
     // keep their dark choice across the rename.
     private fun String?.toTheme(): TempoTheme =
@@ -128,9 +151,26 @@ class ThemeRepository(private val context: Context) {
         return if (Locale.getDefault().language == Lang.Ja.tag) Lang.Ja else Lang.En
     }
 
+    private fun keyFor(area: SearchArea) = when (area) {
+        SearchArea.Apps -> areaApps
+        SearchArea.Phone -> areaPhone
+        SearchArea.Contacts -> areaContacts
+        SearchArea.WhatsApp -> areaWhatsApp
+        SearchArea.Google -> areaGoogle
+        SearchArea.Email -> areaEmail
+        SearchArea.Calendar -> areaCalendar
+    }
+
     private companion object {
         const val VALUE_PAPER = "paper"
         const val VALUE_SUMI = "sumi"
         const val VALUE_LEGACY_DARK = "amoled"
+        val areaApps = booleanPreferencesKey("search_area_apps")
+        val areaPhone = booleanPreferencesKey("search_area_phone")
+        val areaContacts = booleanPreferencesKey("search_area_contacts")
+        val areaWhatsApp = booleanPreferencesKey("search_area_whatsapp")
+        val areaGoogle = booleanPreferencesKey("search_area_google")
+        val areaEmail = booleanPreferencesKey("search_area_email")
+        val areaCalendar = booleanPreferencesKey("search_area_calendar")
     }
 }
