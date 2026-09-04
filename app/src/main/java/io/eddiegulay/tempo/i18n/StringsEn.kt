@@ -29,6 +29,7 @@ object StringsEn : Strings {
         override val dockNotifications = "Notifications"
         override val dockGym = "Training"
         override val dockSetDefault = "Set Tempo as the default home app"
+        override val dockSearchAreas = "Search areas"
     }
 
     override val onboarding = object : OnboardingStrings {
@@ -80,6 +81,49 @@ object StringsEn : Strings {
         override val uninstall = "Uninstall"
 
         override val updatedPrefix = "Updated "
+
+        override val handOffSection = "elsewhere"
+        override val handOffCall = "Call"
+        override val handOffWhatsApp = "WhatsApp"
+        override val handOffWhatsAppNumberSubtitle = "Message this number"
+        override val handOffFindContacts = "Find in Contacts"
+        override val handOffSearchContacts = "Search contacts"
+        override val handOffSearchWhatsApp = "Search in WhatsApp"
+        override val handOffSearchGoogle = "Search Google"
+        override val handOffComposeEmail = "Write email"
+        override val handOffSearchMail = "Search mail"
+        override val handOffCalendarSection = "agenda"
+        override val peopleSection = "people"
+        override val contactMessage = "Message"
+        override val contactsAllow = "Allow contacts"
+        override val contactsAllowHint = "Search names in the address book"
+
+        override val categoryGame = "Games"
+        override val categoryAudio = "Music"
+        override val categoryVideo = "Video"
+        override val categoryImage = "Photos"
+        override val categorySocial = "Social"
+        override val categoryNews = "News"
+        override val categoryMaps = "Maps"
+        override val categoryProductivity = "Productivity"
+        override val categoryAccessibility = "Access"
+    }
+
+    override val searchAreas = object : SearchAreasStrings {
+        override val kana = null
+        override val title = "Search areas"
+        override val subtitle = "What Search may look through. Contacts are read from the device. Email and the web are handed to other apps. Calendar uses the agenda Tempo already reads."
+        override val toggleOn = "On"
+        override val toggleOff = "Off"
+        override val calendarNeedsAccess = "Needs calendar access"
+        override val contactsNeedsAccess = "Needs contacts access"
+        override val apps = "Apps"
+        override val phone = "Phone"
+        override val contacts = "Contacts"
+        override val whatsApp = "WhatsApp"
+        override val google = "Google"
+        override val email = "Email"
+        override val calendar = "Calendar"
     }
 
     override val dialog = object : DialogStrings {

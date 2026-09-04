@@ -55,6 +55,7 @@ interface Strings {
     val app: AppStrings
     val onboarding: OnboardingStrings
     val search: SearchStrings
+    val searchAreas: SearchAreasStrings
     val dialog: DialogStrings
     val gym: GymStrings
     val home: HomeStrings
@@ -92,6 +93,9 @@ interface AppStrings {
 
     /** The long-press that claims the default-home role. It has no visual affordance at all. */
     val dockSetDefault: String
+
+    /** Long-press on the Search dock icon. */
+    val dockSearchAreas: String
 }
 
 /** The first-launch permission walkthrough. */
@@ -155,6 +159,51 @@ interface SearchStrings {
      * still the one hard-coded `DateTimeFormatter` in the app.
      */
     val updatedPrefix: String
+
+    /** Section label above people-context hand-offs (Call, Contacts, WhatsApp, Google). */
+    val handOffSection: String
+    val handOffCall: String
+    val handOffWhatsApp: String
+    val handOffWhatsAppNumberSubtitle: String
+    val handOffFindContacts: String
+    val handOffSearchContacts: String
+    val handOffSearchWhatsApp: String
+    val handOffSearchGoogle: String
+    val handOffComposeEmail: String
+    val handOffSearchMail: String
+    val handOffCalendarSection: String
+    val peopleSection: String
+    val contactMessage: String
+    val contactsAllow: String
+    val contactsAllowHint: String
+
+    val categoryGame: String
+    val categoryAudio: String
+    val categoryVideo: String
+    val categoryImage: String
+    val categorySocial: String
+    val categoryNews: String
+    val categoryMaps: String
+    val categoryProductivity: String
+    val categoryAccessibility: String
+}
+
+/** Long-press Search: which sources Search may use. */
+interface SearchAreasStrings {
+    val kana: String?
+    val title: String
+    val subtitle: String
+    val toggleOn: String
+    val toggleOff: String
+    val calendarNeedsAccess: String
+    val contactsNeedsAccess: String
+    val apps: String
+    val phone: String
+    val contacts: String
+    val whatsApp: String
+    val google: String
+    val email: String
+    val calendar: String
 }
 
 /** Modal dialogs. */

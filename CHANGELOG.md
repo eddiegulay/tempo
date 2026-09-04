@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-04
+
+### Added
+- **People in Search.** Type a name or part of a number and matching contacts appear with Call,
+  Message, and WhatsApp. Contacts are read from the device address book when you allow it, at the
+  moment you turn the area on or tap Allow contacts. The call log is not read. Call opens the
+  dialer; Tempo does not place the call. Message opens SMS. WhatsApp opens that chat when the app
+  is installed and not hidden.
+- **Search areas.** Long-press Search in the dock to choose what Search may look through: apps,
+  phone, contacts, WhatsApp, Google, email, and calendar. Each row is a word (On / Off), not a
+  switch. Email and the web stay hand-offs to other apps. Calendar matches titles already loaded
+  for 予定.
+- **Hand-offs when contacts are off.** A number still offers Call, WhatsApp, and Find in Contacts.
+  An email address offers Write email and Search mail. A name that is not an app offers Contacts,
+  WhatsApp, mail, and Google.
+
+### Changed
+- **Search follows the UI language.** App categories, headings, and Search areas copy switch with
+  the language picker. Search areas has the same globe as Search. App and calendar matching fold
+  kana the same way the gym library already does.
+
 ## [0.2.1] - 2026-08-14
 
 ### Fixed
@@ -244,7 +265,10 @@ All notable changes to this project are documented here. The format is based on
 - Open-source scaffolding: README, MIT license, contribution guide, code of conduct, CI, issue/PR
   templates, and editor config.
 
-[Unreleased]: https://github.com/eddiegulay/tempo/compare/v0.0.6...HEAD
+[Unreleased]: https://github.com/eddiegulay/tempo/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/eddiegulay/tempo/compare/v0.2.1...v0.3.0
+[0.2.1]: https://github.com/eddiegulay/tempo/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/eddiegulay/tempo/compare/v0.1.0...v0.2.0
 [0.0.6]: https://github.com/eddiegulay/tempo/compare/v0.0.5...v0.0.6
 [0.0.5]: https://github.com/eddiegulay/tempo/compare/v0.0.4...v0.0.5
 [0.0.4]: https://github.com/eddiegulay/tempo/compare/v0.0.3...v0.0.4

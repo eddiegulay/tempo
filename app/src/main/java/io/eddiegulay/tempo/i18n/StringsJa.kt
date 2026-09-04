@@ -20,6 +20,7 @@ object StringsJa : Strings {
         override val dockNotifications = "通知"
         override val dockGym = "鍛錬"
         override val dockSetDefault = "Tempoを既定のホームに設定"
+        override val dockSearchAreas = "検索の範囲"
     }
 
     override val onboarding = object : OnboardingStrings {
@@ -63,6 +64,49 @@ object StringsJa : Strings {
         override val uninstall = "アンインストール"
 
         override val updatedPrefix = "更新 "
+
+        override val handOffSection = "ほかで"
+        override val handOffCall = "電話する"
+        override val handOffWhatsApp = "WhatsApp"
+        override val handOffWhatsAppNumberSubtitle = "この番号へ"
+        override val handOffFindContacts = "連絡先で探す"
+        override val handOffSearchContacts = "連絡先を検索"
+        override val handOffSearchWhatsApp = "WhatsAppで探す"
+        override val handOffSearchGoogle = "Googleで探す"
+        override val handOffComposeEmail = "メールを書く"
+        override val handOffSearchMail = "メールを検索"
+        override val handOffCalendarSection = "予定"
+        override val peopleSection = "ひと"
+        override val contactMessage = "メッセージ"
+        override val contactsAllow = "連絡先を許可"
+        override val contactsAllowHint = "名前で探すには連絡先の許可が要ります"
+
+        override val categoryGame = "ゲーム"
+        override val categoryAudio = "音楽"
+        override val categoryVideo = "動画"
+        override val categoryImage = "画像"
+        override val categorySocial = "社交"
+        override val categoryNews = "報道"
+        override val categoryMaps = "地図"
+        override val categoryProductivity = "仕事"
+        override val categoryAccessibility = "補助"
+    }
+
+    override val searchAreas = object : SearchAreasStrings {
+        override val kana = "はんい"
+        override val title = "検索の範囲"
+        override val subtitle = "検索が見にいく先。連絡先は端末から読みます。メールとウェブはほかのアプリへ渡します。予定はTempoがすでに読んでいる日程です。"
+        override val toggleOn = "入"
+        override val toggleOff = "切"
+        override val calendarNeedsAccess = "カレンダーへのアクセスが必要です"
+        override val contactsNeedsAccess = "連絡先の閲覧がまだ許可されていません"
+        override val apps = "アプリ"
+        override val phone = "電話"
+        override val contacts = "連絡先"
+        override val whatsApp = "WhatsApp"
+        override val google = "Google"
+        override val email = "メール"
+        override val calendar = "予定"
     }
 
     override val dialog = object : DialogStrings {
