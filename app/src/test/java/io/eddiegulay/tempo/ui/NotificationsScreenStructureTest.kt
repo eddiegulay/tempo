@@ -6,7 +6,7 @@ import java.io.File
 
 /**
  * The share overlay is a lift + scrim, not a Material menu. These pins are the ones a future
- * edit would silently drop: the 2-second hold, the swipe freeze, the house haptic, and the
+ * edit would silently drop: the 900ms hold, the swipe freeze, the touch-class haptic, and the
  * refusal of Dialog / DropdownMenu chrome.
  *
  * JVM-only — same idiom as `LibraryIndexScreenStructureTest`.
@@ -15,14 +15,19 @@ class NotificationsScreenStructureTest {
 
     private val screen by lazy { repoFile("src/main/java/io/eddiegulay/tempo/ui/NotificationsScreen.kt").readText() }
     private val share by lazy { repoFile("src/main/java/io/eddiegulay/tempo/ui/NotificationShare.kt").readText() }
+    private val haptics by lazy { repoFile("src/main/java/io/eddiegulay/tempo/ui/ShareHaptics.kt").readText() }
+    private val listener by lazy {
+        repoFile("src/main/java/io/eddiegulay/tempo/notification/TempoNotificationListener.kt").readText()
+    }
     private val app by lazy { repoFile("src/main/java/io/eddiegulay/tempo/ui/TempoApp.kt").readText() }
 
     @Test
-    fun `the hold is two seconds and not the platform long-press`() {
-        assertTrue(share.contains("SHARE_HOLD_MS = 2_000L"))
+    fun `the hold is 900ms and not the platform long-press`() {
+        assertTrue(share.contains("SHARE_HOLD_MS = 900L"))
+        assertTrue(!share.contains("2_000L") && !share.contains("2000L"))
         assertTrue(declarationBody(screen, "private fun NotifRow(").contains("ShareHoldEffect"))
         assertTrue(
-            "must not use combinedPressable for the 2s hold",
+            "must not use combinedPressable for the hold",
             !declarationBody(screen, "private fun NotifRow(").contains("combinedPressable"),
         )
     }
@@ -35,9 +40,21 @@ class NotificationsScreenStructureTest {
     }
 
     @Test
-    fun `commit haptic is LongPress at the call site`() {
-        val body = declarationBody(screen, "private fun NotifRow(")
-        assertTrue(body.contains("HapticFeedbackType.LongPress"))
+    fun `pop and close haptics are the 30 percent waveform not LongPress`() {
+        val row = declarationBody(screen, "private fun NotifRow(")
+        assertTrue("hold site must not fire LongPress", !row.contains("HapticFeedbackType.LongPress"))
+        assertTrue("hold site must not use LocalHapticFeedback", !row.contains("LocalHapticFeedback"))
+        assertTrue(haptics.contains("USAGE_TOUCH"))
+        assertTrue(haptics.contains("USAGE_NOTIFICATION"))
+        assertTrue(!haptics.contains("USAGE_ALARM"))
+        assertTrue(!haptics.contains("GymHaptics"))
+        assertTrue(!haptics.contains("HapticFeedbackType"))
+        assertTrue(haptics.contains("0, 28, 72, 28"))
+        assertTrue(haptics.contains("SHARE_HAPTIC_AMPLITUDE = 77"))
+        assertTrue(haptics.contains("SHARE_CLOSE_MS = 36L"))
+        assertTrue(share.contains("shareHaptics.pop()"))
+        assertTrue(share.contains("shareHaptics.close()"))
+        assertTrue(!screen.contains("GymHaptics") && !share.contains("GymHaptics"))
     }
 
     @Test
@@ -52,7 +69,7 @@ class NotificationsScreenStructureTest {
     }
 
     @Test
-    fun `TalkBack names share without requiring the two-second hold`() {
+    fun `TalkBack names share without requiring the hold`() {
         val body = declarationBody(screen, "private fun NotifRow(")
         assertTrue(body.contains("onLongClick(label = s.notifications.share)"))
         assertTrue(
@@ -66,6 +83,43 @@ class NotificationsScreenStructureTest {
         val body = declarationBody(screen, "private fun NotifRow(")
         assertTrue(body.contains("if (lifted) onShareBoundsChange(rect)"))
         assertTrue(body.contains("onGloballyPositioned"))
+    }
+
+    @Test
+    fun `list ellipsises title and body share does not`() {
+        val face = declarationBody(share, "fun NotificationCardFace(")
+        val header = declarationBody(share, "private fun FaceHeader(")
+        assertTrue(header.contains("maxLines = if (expanded) Int.MAX_VALUE else 1"))
+        val media = declarationBody(share, "private fun FaceMedia(")
+        assertTrue(media.contains("maxLines = if (expanded) Int.MAX_VALUE else 3"))
+        assertTrue(share.contains("ListPictureMax = 120.dp"))
+        assertTrue(share.contains("SharePictureMax = 240.dp"))
+        assertTrue(share.contains("TempoShapes.Glyph"))
+        assertTrue(media.contains("shareThread") || face.contains("shareThread"))
+        assertTrue(media.contains("verticalScroll").not())
+        assertTrue(face.contains("verticalScroll"))
+    }
+
+    @Test
+    fun `the PNG twin cannot sit on save and copy`() {
+        assertTrue(share.contains("(-cardW * 2f)"))
+        assertTrue(share.contains("captureArmed"))
+        val overlay = declarationBody(share, "fun NotificationShareOverlay(")
+        val twin = overlay.indexOf("(-cardW * 2f)")
+        val options = overlay.indexOf("s.notifications.saveImage")
+        assertTrue("twin is composed before the option words", twin in 0 until options)
+    }
+
+    @Test
+    fun `the listener reads picture extras and MessagingStyle`() {
+        assertTrue(listener.contains("EXTRA_PICTURE"))
+        assertTrue(listener.contains("largeIcon") || listener.contains("getLargeIcon"))
+        assertTrue(listener.contains("MessagingStyle") || listener.contains("EXTRA_MESSAGES"))
+        assertTrue(listener.contains("dataUri"))
+        assertTrue(listener.contains("runCatching"))
+        assertTrue(listener.contains("Dispatchers.Default"))
+        assertTrue(listener.contains("SHARE_PICTURE_MAX_PX"))
+        assertTrue(listener.contains("picture == null && messages.isEmpty()"))
     }
 
     private fun declarationBody(source: String, header: String): String {

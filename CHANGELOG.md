@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-22
+
+### Changed
+- Notification share hold is 900ms. Lift plays two 30% pulses; dismiss plays one. The lifted card
+  shows the full title and body, the real photo or sticker when the shade attached one, and the
+  last three chat lines when the notification can be replied to. The list thumbnail shows the same
+  image. Save and copy stay tappable on a tall card; pictures are downscaled so the shade stays
+  responsive.
+
 ## [0.4.0] - 2026-09-22
 
 ### Added
@@ -275,7 +284,8 @@ All notable changes to this project are documented here. The format is based on
 - Open-source scaffolding: README, MIT license, contribution guide, code of conduct, CI, issue/PR
   templates, and editor config.
 
-[Unreleased]: https://github.com/eddiegulay/tempo/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/eddiegulay/tempo/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/eddiegulay/tempo/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/eddiegulay/tempo/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/eddiegulay/tempo/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/eddiegulay/tempo/compare/v0.2.0...v0.2.1

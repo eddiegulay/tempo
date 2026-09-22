@@ -48,11 +48,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -242,12 +240,11 @@ private fun NotifRow(
 ) {
     val c = LocalTempoColors.current
     val s = LocalStrings.current
-    val haptics = LocalHapticFeedback.current
 
     // A single, readable TalkBack announcement for the whole row, plus explicit actions for
-    // dismiss / share. The swipe and the 2-second hold are both invisible to accessibility
+    // dismiss / share. The swipe and the 900ms hold are both invisible to accessibility
     // services, so without these a screen-reader user could read a notification but never
-    // clear it or export it. TalkBack's long-click opens the overlay immediately — the 2s
+    // clear it or export it. TalkBack's long-click opens the overlay immediately — the hold
     // wait is a finger-only accident brake.
     val rowDescription = remember(n.appLabel, n.title, n.body, n.time, s) {
         listOf(n.appLabel, n.title, n.body.takeIf { it.isNotBlank() }, n.time)
@@ -262,7 +259,6 @@ private fun NotifRow(
     }
     ShareHoldEffect(enabled = dismissEnabled, interactionSource = sharePress) {
         suppressOpen = true
-        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         onShare(cardBounds)
     }
     val rowActions = remember(onDismiss, s) {

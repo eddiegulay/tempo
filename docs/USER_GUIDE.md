@@ -193,13 +193,15 @@ When there's nothing to show, the screen reads `通知はありません` ("ther
   shade). If the notification is the auto-dismiss kind, it clears after you open it.
 - **Swipe** a row left **or** right to dismiss it. This clears it from the system shade too — Tempo
   isn't a separate inbox, it's a window onto your real notifications.
-- **Hold** a row for two seconds to lift it. 保存 writes a rounded PNG to Pictures/Tempo; コピー
-  puts that PNG on the clipboard so you can paste one notification without a screenshot. Tap the
-  dim or press Back to settle the card back into the list.
+- **Hold** a row for just under a second to lift it. 保存 writes a rounded PNG to Pictures/Tempo;
+  コピー puts that PNG on the clipboard so you can paste one notification without a screenshot.
+  The lifted card shows the full title and body, the photo or sticker when the shade had one, and
+  the last three chat lines when you can reply. Tap the dim or press Back to settle the card back
+  into the list.
 
 > **Accessibility:** Each notification is announced as a single readable unit to TalkBack, with an
 > explicit **消去 ("dismiss")** action and **画像として共有 ("share as image")** — so screen-reader
-> users can clear or share a notification without the swipe or the two-second hold (which assistive
+> users can clear or share a notification without the swipe or the hold (which assistive
 > services can't see).
 
 ---
@@ -233,7 +235,7 @@ the active theme.
 | Long-press an app row | App info / uninstall menu |
 | Tap a notification | Open it |
 | Swipe a notification (either way) | Dismiss it |
-| Hold a notification for two seconds | Lift it to save or copy as an image |
+| Hold a notification for just under a second | Lift it to save or copy as an image |
 | Long-press the bottom pill | Request to be the default home app *(only while not default)* |
 
 ---

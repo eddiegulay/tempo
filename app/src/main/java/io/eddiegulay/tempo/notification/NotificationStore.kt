@@ -31,6 +31,24 @@ data class TempoNotification(
      * (we never hold the action's PendingIntent in the snapshot — see the listener).
      */
     val actions: List<TempoNotificationAction> = emptyList(),
+    /**
+     * Sticker / photo / BigPicture the posting app attached. Never the small app icon — that stays
+     * [icon]. Null when the shade had no image or we could not decode it.
+     */
+    val picture: ImageBitmap? = null,
+    /**
+     * MessagingStyle lines already on the notification. The share face shows at most the last
+     * three, and only when a reply action exists. The list never renders these.
+     */
+    val messages: List<TempoNotificationMessage> = emptyList(),
+)
+
+/** One line from a MessagingStyle conversation. [sender] is empty when the extra named no one. */
+@Immutable
+data class TempoNotificationMessage(
+    val text: String,
+    val sender: String = "",
+    val isSelf: Boolean = false,
 )
 
 /** A single inline notification action; [isReply] means it carries a RemoteInput text field. */

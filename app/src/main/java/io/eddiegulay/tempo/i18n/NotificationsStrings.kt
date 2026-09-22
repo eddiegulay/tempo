@@ -37,7 +37,7 @@ interface NotificationsStrings {
     val rowOpen: String
 
     /**
-     * TalkBack verb for the 2-second hold that lifts the card. Drawn nowhere; without it a
+     * TalkBack verb for the hold that lifts the card. Drawn nowhere; without it a
      * screen-reader user cannot reach save or copy.
      */
     val share: String
