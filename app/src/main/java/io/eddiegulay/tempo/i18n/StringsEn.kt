@@ -94,6 +94,8 @@ object StringsEn : Strings {
         override val handOffSearchMail = "Search mail"
         override val handOffCalendarSection = "agenda"
         override val peopleSection = "people"
+        override val spotifySection = "Spotify"
+        override val spotifyOpen = "Open Spotify"
         override val contactMessage = "Message"
         override val contactsAllow = "Allow contacts"
         override val contactsAllowHint = "Search names in the address book"
@@ -112,7 +114,7 @@ object StringsEn : Strings {
     override val searchAreas = object : SearchAreasStrings {
         override val kana = null
         override val title = "Search areas"
-        override val subtitle = "What Search may look through. Contacts are read from the device. Email and the web are handed to other apps. Calendar uses the agenda Tempo already reads."
+        override val subtitle = "What Search may look through. Contacts are read from the device. Email and the web are handed to other apps. Calendar uses the agenda Tempo already reads. Spotify shows a few titles, then opens Spotify for more."
         override val toggleOn = "On"
         override val toggleOff = "Off"
         override val calendarNeedsAccess = "Needs calendar access"
@@ -124,6 +126,7 @@ object StringsEn : Strings {
         override val google = "Google"
         override val email = "Email"
         override val calendar = "Calendar"
+        override val spotify = "Spotify"
     }
 
     override val dialog = object : DialogStrings {

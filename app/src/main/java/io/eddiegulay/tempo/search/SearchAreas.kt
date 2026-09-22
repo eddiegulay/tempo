@@ -9,6 +9,7 @@ enum class SearchArea {
     Google,
     Email,
     Calendar,
+    Spotify,
 }
 
 data class SearchAreas(
@@ -19,6 +20,7 @@ data class SearchAreas(
     val google: Boolean = true,
     val email: Boolean = true,
     val calendar: Boolean = true,
+    val spotify: Boolean = true,
 ) {
     fun isOn(area: SearchArea): Boolean = when (area) {
         SearchArea.Apps -> apps
@@ -28,6 +30,7 @@ data class SearchAreas(
         SearchArea.Google -> google
         SearchArea.Email -> email
         SearchArea.Calendar -> calendar
+        SearchArea.Spotify -> spotify
     }
 
     fun with(area: SearchArea, on: Boolean): SearchAreas = when (area) {
@@ -38,5 +41,6 @@ data class SearchAreas(
         SearchArea.Google -> copy(google = on)
         SearchArea.Email -> copy(email = on)
         SearchArea.Calendar -> copy(calendar = on)
+        SearchArea.Spotify -> copy(spotify = on)
     }
 }

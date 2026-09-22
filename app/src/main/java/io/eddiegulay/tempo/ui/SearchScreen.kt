@@ -63,11 +63,13 @@ import io.eddiegulay.tempo.contacts.matchContacts
 import io.eddiegulay.tempo.contacts.rememberContactsPermissionState
 import io.eddiegulay.tempo.search.AppMatch
 import io.eddiegulay.tempo.search.HandOffKind
+import io.eddiegulay.tempo.search.SpotifyHit
 import io.eddiegulay.tempo.search.appCategoryLabel
 import io.eddiegulay.tempo.search.handOffsAboveApps
 import io.eddiegulay.tempo.search.isNumberShaped
 import io.eddiegulay.tempo.search.matchAppFields
 import io.eddiegulay.tempo.search.matchCalendarFields
+import io.eddiegulay.tempo.search.shouldOfferSpotify
 import io.eddiegulay.tempo.search.visibleHandOffs
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
@@ -80,8 +82,8 @@ import java.time.ZoneId
 
 /**
  * Search (検索): a bottom-ruled mincho input over a live-filtered list of every installed app,
- * plus address-book hits (Call, Message, WhatsApp) and hand-offs when the query looks like a
- * person or a number.
+ * plus address-book hits (Call, Message, WhatsApp), a few Spotify titles, and hand-offs when
+ * the query looks like a person or a number.
  *
  * The inventory is the shared, live [LauncherViewModel] flow; icons load lazily per visible row from
  * the repository's cache. Tapping launches with a scale-up animation from the row; long-press opens
@@ -140,13 +142,16 @@ fun SearchScreen(
         if (!areas.calendar || query.trim().length < 2) emptyList()
         else events.filter { matchCalendarFields(it.title, it.location, it.calendarName, query) }
     }
+    val spotifyHits by viewModel.spotifyHits.collectAsStateWithLifecycle()
+    val showSpotify = remember(query, areas, matches) { shouldOfferSpotify(query, areas, matches) }
     val showContactsAllow = areas.contacts && !contactsGranted && query.trim().length >= 2
     val noResults = query.isNotBlank() &&
         filtered.isEmpty() &&
         handOffs.isEmpty() &&
         calendarHits.isEmpty() &&
         contactHits.isEmpty() &&
-        !showContactsAllow
+        !showContactsAllow &&
+        !showSpotify
     val loading = areas.apps && apps.isEmpty() && query.isBlank()
     val peopleFirst = (handOffs.isNotEmpty() && handOffsAboveApps(query)) ||
         (contactHits.isNotEmpty() && isNumberShaped(query)) ||
@@ -160,6 +165,7 @@ fun SearchScreen(
         val topContact = contactHits.firstOrNull()
         val topHandOff = handOffs.firstOrNull()
         val topEvent = calendarHits.firstOrNull()
+        val topSpotify = spotifyHits.firstOrNull()
         when {
             topApp != null -> {
                 keyboard?.hide()
@@ -176,6 +182,14 @@ fun SearchScreen(
             topEvent != null -> {
                 keyboard?.hide()
                 viewModel.openInCalendarApp(context, topEvent)
+            }
+            topSpotify != null -> {
+                keyboard?.hide()
+                viewModel.launchSpotifyTrack(context, topSpotify)
+            }
+            showSpotify -> {
+                keyboard?.hide()
+                viewModel.launchSpotifySearch(context, query)
             }
             else -> keyboard?.hide()
         }
@@ -267,9 +281,9 @@ fun SearchScreen(
                     showWhatsApp = areas.whatsApp && availability.whatsAppPackage != null,
                     afterApps = false,
                     onAllow = contactsPermission.request,
-                    onCall = { viewModel.launchContactCall(context, it.phone) },
-                    onMessage = { viewModel.launchContactMessage(context, it.phone) },
-                    onWhatsApp = { viewModel.launchContactWhatsApp(context, it.phone) },
+                    onCall = { viewModel.launchContactCall(context, it) },
+                    onMessage = { viewModel.launchContactMessage(context, it) },
+                    onWhatsApp = { viewModel.launchContactWhatsApp(context, it) },
                 )
                 if (handOffs.isNotEmpty()) {
                     handOffBlock(
@@ -297,9 +311,9 @@ fun SearchScreen(
                     showWhatsApp = areas.whatsApp && availability.whatsAppPackage != null,
                     afterApps = filtered.isNotEmpty(),
                     onAllow = contactsPermission.request,
-                    onCall = { viewModel.launchContactCall(context, it.phone) },
-                    onMessage = { viewModel.launchContactMessage(context, it.phone) },
-                    onWhatsApp = { viewModel.launchContactWhatsApp(context, it.phone) },
+                    onCall = { viewModel.launchContactCall(context, it) },
+                    onMessage = { viewModel.launchContactMessage(context, it) },
+                    onWhatsApp = { viewModel.launchContactWhatsApp(context, it) },
                 )
                 if (handOffs.isNotEmpty()) {
                     handOffBlock(
@@ -332,6 +346,20 @@ fun SearchScreen(
                         onClick = { viewModel.openInCalendarApp(context, event) },
                     )
                 }
+            }
+            if (showSpotify) {
+                spotifyBlock(
+                    hits = spotifyHits,
+                    afterOthers = filtered.isNotEmpty() ||
+                        handOffs.isNotEmpty() ||
+                        calendarHits.isNotEmpty() ||
+                        contactHits.isNotEmpty() ||
+                        showContactsAllow,
+                    section = s.search.spotifySection,
+                    openLabel = s.search.spotifyOpen,
+                    onHit = { viewModel.launchSpotifyTrack(context, it) },
+                    onOpen = { viewModel.launchSpotifySearch(context, query) },
+                )
             }
         }
     }
@@ -451,9 +479,9 @@ private fun LazyListScope.peopleBlock(
     showWhatsApp: Boolean,
     afterApps: Boolean,
     onAllow: () -> Unit,
-    onCall: (DeviceContact) -> Unit,
-    onMessage: (DeviceContact) -> Unit,
-    onWhatsApp: (DeviceContact) -> Unit,
+    onCall: (String) -> Unit,
+    onMessage: (String) -> Unit,
+    onWhatsApp: (String) -> Unit,
 ) {
     if (contactHits.isEmpty() && !showAllow) return
     item(key = "people:heading") {
@@ -477,9 +505,9 @@ private fun LazyListScope.peopleBlock(
             messageLabel = messageLabel,
             whatsAppLabel = whatsAppLabel,
             showWhatsApp = showWhatsApp,
-            onCall = { onCall(contact) },
-            onMessage = { onMessage(contact) },
-            onWhatsApp = { onWhatsApp(contact) },
+            onCall = onCall,
+            onMessage = onMessage,
+            onWhatsApp = onWhatsApp,
         )
     }
 }
@@ -599,11 +627,12 @@ private fun ContactHitRow(
     messageLabel: String,
     whatsAppLabel: String,
     showWhatsApp: Boolean,
-    onCall: () -> Unit,
-    onMessage: () -> Unit,
-    onWhatsApp: () -> Unit,
+    onCall: (String) -> Unit,
+    onMessage: (String) -> Unit,
+    onWhatsApp: (String) -> Unit,
 ) {
     val c = LocalTempoColors.current
+    val first = contact.phone
     Column(Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -612,32 +641,35 @@ private fun ContactHitRow(
                     shape = TempoShapes.Row,
                     role = Role.Button,
                     onClickLabel = callLabel,
-                    onClick = onCall,
+                    onClick = { if (first.isNotEmpty()) onCall(first) },
                 )
                 .padding(horizontal = 12.dp, vertical = 13.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             LineIcon(paths = AppGlyphs.Person, color = c.inkSoft, size = 26.dp)
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = contact.displayName,
+                style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, letterSpacing = 1.sp, color = c.ink),
+            )
+        }
+        contact.phones.forEach { number ->
+            Column(Modifier.fillMaxWidth()) {
                 Text(
-                    text = contact.displayName,
-                    style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, letterSpacing = 1.sp, color = c.ink),
-                )
-                Text(
-                    text = contact.phone,
+                    text = number,
+                    modifier = Modifier.padding(start = 56.dp, end = 12.dp, top = 2.dp),
                     style = TextStyle(fontFamily = Gothic, fontSize = 11.sp, letterSpacing = 2.sp, color = c.inkFaint),
                 )
-            }
-        }
-        FlowRow(
-            modifier = Modifier.padding(start = 56.dp, end = 12.dp, bottom = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            ContactActionChip(label = callLabel, onClick = onCall)
-            ContactActionChip(label = messageLabel, onClick = onMessage)
-            if (showWhatsApp) {
-                ContactActionChip(label = whatsAppLabel, onClick = onWhatsApp)
+                FlowRow(
+                    modifier = Modifier.padding(start = 56.dp, end = 12.dp, bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(20.dp),
+                ) {
+                    ContactActionChip(label = callLabel, onClick = { onCall(number) })
+                    ContactActionChip(label = messageLabel, onClick = { onMessage(number) })
+                    if (showWhatsApp) {
+                        ContactActionChip(label = whatsAppLabel, onClick = { onWhatsApp(number) })
+                    }
+                }
             }
         }
     }
@@ -655,6 +687,59 @@ private fun ContactActionChip(label: String, onClick: () -> Unit) {
         Text(
             text = label,
             style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 1.sp, color = c.accent),
+        )
+    }
+}
+
+private fun LazyListScope.spotifyBlock(
+    hits: List<SpotifyHit>,
+    afterOthers: Boolean,
+    section: String,
+    openLabel: String,
+    onHit: (SpotifyHit) -> Unit,
+    onOpen: () -> Unit,
+) {
+    item(key = "spotify:heading") {
+        Text(
+            text = section,
+            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = LocalTempoColors.current.inkFaint),
+            modifier = Modifier
+                .padding(start = 12.dp, end = 12.dp, top = if (afterOthers) 24.dp else 0.dp, bottom = 6.dp)
+                .semantics { heading() },
+        )
+    }
+    items(hits, key = { "spotify:${it.title}\u0000${it.artist}" }) { hit ->
+        SpotifyHitRow(hit = hit, onClick = { onHit(hit) })
+    }
+    item(key = "spotify:open") {
+        Box(Modifier.padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp)) {
+            ContactActionChip(label = openLabel, onClick = onOpen)
+        }
+    }
+}
+
+@Composable
+private fun SpotifyHitRow(hit: SpotifyHit, onClick: () -> Unit) {
+    val c = LocalTempoColors.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .pressable(
+                shape = TempoShapes.Row,
+                role = Role.Button,
+                onClickLabel = hit.title,
+                onClick = onClick,
+            )
+            .padding(horizontal = 12.dp, vertical = 13.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = hit.title,
+            style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, letterSpacing = 1.sp, color = c.ink),
+        )
+        Text(
+            text = hit.artist,
+            style = TextStyle(fontFamily = Gothic, fontSize = 11.sp, letterSpacing = 2.sp, color = c.inkFaint),
         )
     }
 }

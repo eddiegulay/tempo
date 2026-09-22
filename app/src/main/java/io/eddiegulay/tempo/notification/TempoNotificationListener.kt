@@ -4,16 +4,10 @@ import android.app.Notification
 import android.app.RemoteInput
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.drawable.Icon
-import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -35,7 +29,6 @@ import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import kotlin.math.roundToInt
 
 /**
  * Surfaces real device notifications to the Notifications screen.
@@ -124,7 +117,6 @@ class TempoNotificationListener : NotificationListenerService() {
                 .filterNot { (it.notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0 }
                 .map { it to rankOf(it.key) }
 
-            // Pictures decode off the main thread so a sticker-heavy shade cannot freeze the list.
             val items = withContext(Dispatchers.Default) {
                 ranked.mapNotNull { (sbn, rank) -> toModel(sbn)?.let { it to rank } }
                     .sortedWith(compareBy({ it.second }, { -it.first.postTime }))
@@ -151,9 +143,8 @@ class TempoNotificationListener : NotificationListenerService() {
             TempoNotificationAction(title = label, isReply = !action.remoteInputs.isNullOrEmpty())
         }
 
-        val picture = runCatching { extractNotificationPicture(this, notification) }.getOrNull()
         val messages = runCatching { extractNotificationMessages(notification) }.getOrNull().orEmpty()
-        if (title.isBlank() && body.isBlank() && picture == null && messages.isEmpty()) return null
+        if (title.isBlank() && body.isBlank() && messages.isEmpty()) return null
 
         return TempoNotification(
             key = sbn.key,
@@ -167,7 +158,6 @@ class TempoNotificationListener : NotificationListenerService() {
             contentIntent = notification.contentIntent,
             autoCancel = (notification.flags and Notification.FLAG_AUTO_CANCEL) != 0,
             actions = actions,
-            picture = picture,
             messages = messages,
         )
     }
@@ -252,39 +242,6 @@ class TempoNotificationListener : NotificationListenerService() {
     }
 }
 
-/**
- * Picture / sticker pixels, best-effort.
- *
- * Order: [Notification.EXTRA_PICTURE] (and its Icon form) → last MessagingStyle image URI →
- * [Notification.getLargeIcon] only when this is *not* a MessagingStyle post (that large icon is
- * almost always the contact avatar). A decode miss returns null; the row still stands.
- */
-internal fun extractNotificationPicture(context: Context, notification: Notification): ImageBitmap? {
-    val extras = notification.extras
-    extrasBitmap(extras, Notification.EXTRA_PICTURE)?.downscaleForShare()?.asImageBitmap()?.let { return it }
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        extrasIcon(extras, Notification.EXTRA_PICTURE_ICON)
-            ?.loadDrawable(context)
-            ?.toBitmap()
-            ?.downscaleForShare()
-            ?.asImageBitmap()
-            ?.let { return it }
-    }
-
-    val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(notification)
-    if (style != null) {
-        style.messages.asReversed().firstNotNullOfOrNull { message ->
-            val uri = message.dataUri ?: return@firstNotNullOfOrNull null
-            val mime = message.dataMimeType.orEmpty()
-            if (!mime.startsWith("image/")) return@firstNotNullOfOrNull null
-            decodeNotificationUri(context, uri)
-        }?.let { return it }
-        return null
-    }
-
-    return notification.getLargeIcon()?.loadDrawable(context)?.toBitmap()?.downscaleForShare()?.asImageBitmap()
-}
-
 internal fun extractNotificationMessages(notification: Notification): List<TempoNotificationMessage> {
     val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(notification)
         ?: return emptyList()
@@ -301,38 +258,5 @@ internal fun extractNotificationMessages(notification: Notification): List<Tempo
         }
         TempoNotificationMessage(text = text, sender = sender, isSelf = isSelf)
     }
-}
-
-@Suppress("DEPRECATION")
-private fun extrasBitmap(extras: Bundle?, key: String): Bitmap? = extras?.get(key) as? Bitmap
-
-@Suppress("DEPRECATION")
-private fun extrasIcon(extras: Bundle?, key: String): Icon? = extras?.get(key) as? Icon
-
-private fun decodeNotificationUri(context: Context, uri: Uri): ImageBitmap? {
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-    val longest = maxOf(bounds.outWidth, bounds.outHeight)
-    val sample = if (longest > SHARE_PICTURE_MAX_PX) {
-        Integer.highestOneBit((longest / SHARE_PICTURE_MAX_PX).coerceAtLeast(1))
-    } else {
-        1
-    }
-    val opts = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
-    return context.contentResolver.openInputStream(uri)?.use { stream ->
-        BitmapFactory.decodeStream(stream, null, opts)?.downscaleForShare()?.asImageBitmap()
-    }
-}
-
-/** Longest edge kept for list thumbs and the share PNG. Full-res extras would OOM a busy shade. */
-internal const val SHARE_PICTURE_MAX_PX = 720
-
-private fun Bitmap.downscaleForShare(maxPx: Int = SHARE_PICTURE_MAX_PX): Bitmap {
-    val longest = maxOf(width, height)
-    if (longest <= maxPx) return this
-    val scale = maxPx.toFloat() / longest
-    val w = (width * scale).roundToInt().coerceAtLeast(1)
-    val h = (height * scale).roundToInt().coerceAtLeast(1)
-    return Bitmap.createScaledBitmap(this, w, h, true)
 }
 

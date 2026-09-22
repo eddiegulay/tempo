@@ -77,6 +77,8 @@ object StringsJa : Strings {
         override val handOffSearchMail = "メールを検索"
         override val handOffCalendarSection = "予定"
         override val peopleSection = "ひと"
+        override val spotifySection = "Spotify"
+        override val spotifyOpen = "もっと"
         override val contactMessage = "メッセージ"
         override val contactsAllow = "連絡先を許可"
         override val contactsAllowHint = "名前で探すには連絡先の許可が要ります"
@@ -95,7 +97,7 @@ object StringsJa : Strings {
     override val searchAreas = object : SearchAreasStrings {
         override val kana = "はんい"
         override val title = "検索の範囲"
-        override val subtitle = "検索が見にいく先。連絡先は端末から読みます。メールとウェブはほかのアプリへ渡します。予定はTempoがすでに読んでいる日程です。"
+        override val subtitle = "検索が見にいく先。連絡先は端末から読みます。メールとウェブはほかのアプリへ渡します。予定はTempoがすでに読んでいる日程です。Spotifyは曲名とアーティストを数件出し、続きはSpotifyで開きます。"
         override val toggleOn = "入"
         override val toggleOff = "切"
         override val calendarNeedsAccess = "カレンダーへのアクセスが必要です"
@@ -107,6 +109,7 @@ object StringsJa : Strings {
         override val google = "Google"
         override val email = "メール"
         override val calendar = "予定"
+        override val spotify = "Spotify"
     }
 
     override val dialog = object : DialogStrings {

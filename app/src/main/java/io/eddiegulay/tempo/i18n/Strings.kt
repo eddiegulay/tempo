@@ -173,6 +173,8 @@ interface SearchStrings {
     val handOffSearchMail: String
     val handOffCalendarSection: String
     val peopleSection: String
+    val spotifySection: String
+    val spotifyOpen: String
     val contactMessage: String
     val contactsAllow: String
     val contactsAllowHint: String
@@ -204,6 +206,7 @@ interface SearchAreasStrings {
     val google: String
     val email: String
     val calendar: String
+    val spotify: String
 }
 
 /** Modal dialogs. */

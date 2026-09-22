@@ -1,6 +1,7 @@
 package io.eddiegulay.tempo
 
 import android.content.Context
+import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -27,16 +28,24 @@ import io.eddiegulay.tempo.notification.NotificationGroup
 import io.eddiegulay.tempo.notification.NotificationRepository
 import io.eddiegulay.tempo.notification.TempoNotification
 import io.eddiegulay.tempo.notification.groupByApp
+import io.eddiegulay.tempo.search.AppMatch
 import io.eddiegulay.tempo.search.HandOffAvailability
 import io.eddiegulay.tempo.search.HandOffKind
+import io.eddiegulay.tempo.search.MusicCatalog
+import io.eddiegulay.tempo.search.SPOTIFY_DEBOUNCE_MS
 import io.eddiegulay.tempo.search.SearchArea
 import io.eddiegulay.tempo.search.SearchAreas
+import io.eddiegulay.tempo.search.SpotifyHit
 import io.eddiegulay.tempo.search.handOffAvailability as computeHandOffAvailability
 import io.eddiegulay.tempo.search.launchContactCall as startContactCall
 import io.eddiegulay.tempo.search.launchContactMessage as startContactMessage
 import io.eddiegulay.tempo.search.launchContactWhatsApp as startContactWhatsApp
 import io.eddiegulay.tempo.search.launchHandOff as startHandOff
+import io.eddiegulay.tempo.search.launchSpotifySearch as startSpotifySearch
+import io.eddiegulay.tempo.search.shouldOfferSpotify
+import io.eddiegulay.tempo.search.spotifyTrackQuery
 import io.eddiegulay.tempo.ui.Screen
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -44,6 +53,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -51,6 +61,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** How long a swiped/cleared notification stays recoverable before it is really cancelled. */
 private const val UNDO_WINDOW_MS = 4_000L
@@ -79,6 +90,7 @@ class LauncherViewModel(
     private val blockadeRepository: BlockadeRepository,
     private val calendarRepository: CalendarRepository,
     private val contactsRepository: ContactsRepository,
+    private val musicCatalog: MusicCatalog = MusicCatalog(),
 ) : ViewModel() {
 
     // Read once, synchronously, at construction so the first frame already reflects stored choices
@@ -110,6 +122,9 @@ class LauncherViewModel(
 
     val searchAreas: StateFlow<SearchAreas> = themeRepository.searchAreas
         .stateIn(viewModelScope, SharingStarted.Eagerly, SearchAreas())
+
+    private val _spotifyHits = MutableStateFlow<List<SpotifyHit>>(emptyList())
+    val spotifyHits: StateFlow<List<SpotifyHit>> = _spotifyHits.asStateFlow()
 
     private val _screen = MutableStateFlow(Screen.Home)
     val screen: StateFlow<Screen> = _screen.asStateFlow()
@@ -156,6 +171,19 @@ class LauncherViewModel(
     init {
         // Begin live app enumeration up front so Search is ready on first open.
         appRepository.start()
+        viewModelScope.launch {
+            combine(_searchQuery, searchAreas, visibleApps, lang) { query, areas, apps, language ->
+                Triple(query, areas, apps.map { AppMatch(it.label, it.packageName) } to language)
+            }.collectLatest { (query, areas, appsAndLang) ->
+                val (apps, language) = appsAndLang
+                if (!shouldOfferSpotify(query, areas, apps)) {
+                    _spotifyHits.value = emptyList()
+                    return@collectLatest
+                }
+                delay(SPOTIFY_DEBOUNCE_MS)
+                _spotifyHits.value = withContext(Dispatchers.IO) { musicCatalog.search(query, language) }
+            }
+        }
     }
 
     fun goHome() {
@@ -337,9 +365,15 @@ class LauncherViewModel(
         startContactMessage(context, phone, stringsFor(lang.value))
 
     fun launchContactWhatsApp(context: Context, phone: String) {
-        val pkg = handOffAvailability().whatsAppPackage ?: return
-        startContactWhatsApp(context, phone, pkg, stringsFor(lang.value))
+        if (handOffAvailability().whatsAppPackage == null) return
+        startContactWhatsApp(context, phone, stringsFor(lang.value))
     }
+
+    fun launchSpotifySearch(context: Context, query: String = _searchQuery.value) =
+        startSpotifySearch(context, query, stringsFor(lang.value))
+
+    fun launchSpotifyTrack(context: Context, hit: SpotifyHit) =
+        startSpotifySearch(context, spotifyTrackQuery(hit), stringsFor(lang.value))
 
     fun openAppInfo(context: Context, app: AppInfo) = appRepository.openAppInfo(context, app)
 
@@ -357,11 +391,12 @@ class LauncherViewModel(
 
     // ----- notifications -----
 
-    fun openNotification(notification: TempoNotification) {
-        val intent = notification.contentIntent ?: return
-        runCatching { intent.send() }.onSuccess {
-            if (notification.autoCancel) notificationRepository.dismiss(notification.key)
-        }
+    fun openNotification(context: Context, notification: TempoNotification) {
+        val pending = notification.contentIntent ?: return
+        val ok = runCatching {
+            pending.send(context, 0, Intent().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.isSuccess
+        if (ok && notification.autoCancel) notificationRepository.dismiss(notification.key)
     }
 
     /**

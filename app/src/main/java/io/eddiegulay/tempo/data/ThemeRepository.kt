@@ -83,6 +83,7 @@ class ThemeRepository(private val context: Context) {
             google = prefs[areaGoogle] ?: true,
             email = prefs[areaEmail] ?: true,
             calendar = prefs[areaCalendar] ?: true,
+            spotify = prefs[areaSpotify] ?: true,
         )
     }
 
@@ -159,6 +160,7 @@ class ThemeRepository(private val context: Context) {
         SearchArea.Google -> areaGoogle
         SearchArea.Email -> areaEmail
         SearchArea.Calendar -> areaCalendar
+        SearchArea.Spotify -> areaSpotify
     }
 
     private companion object {
@@ -172,5 +174,6 @@ class ThemeRepository(private val context: Context) {
         val areaGoogle = booleanPreferencesKey("search_area_google")
         val areaEmail = booleanPreferencesKey("search_area_email")
         val areaCalendar = booleanPreferencesKey("search_area_calendar")
+        val areaSpotify = booleanPreferencesKey("search_area_spotify")
     }
 }

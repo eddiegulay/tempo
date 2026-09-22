@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-22
+
+### Added
+- **Spotify in Search.** A new Search area. Type a song or artist and Tempo shows a few titles
+  with the artist under each. もっと / Open Spotify hands the query to Spotify for the rest.
+  The chrome and the catalog follow the UI language: Japanese asks the JP store, English the
+  US store. Spotify's own API needs keys Tempo does not ship, so the rows come from Apple's
+  public catalog. Contacts and the agenda still never leave the device.
+
+### Changed
+- Share bubble wraps its content instead of stretching to the screen. Notification photos and
+  avatars are no longer drawn on the list or the bubble. A tap opens the source app again; swipe
+  to dismiss needs a clearer horizontal drag.
+- Search contact hits keep every number on that person. WhatsApp opens `https://wa.me/<number>`
+  so the chat starts on that line.
+
 ## [0.5.0] - 2026-09-22
 
 ### Changed
@@ -284,7 +300,8 @@ All notable changes to this project are documented here. The format is based on
 - Open-source scaffolding: README, MIT license, contribution guide, code of conduct, CI, issue/PR
   templates, and editor config.
 
-[Unreleased]: https://github.com/eddiegulay/tempo/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/eddiegulay/tempo/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/eddiegulay/tempo/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/eddiegulay/tempo/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/eddiegulay/tempo/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/eddiegulay/tempo/compare/v0.2.1...v0.3.0

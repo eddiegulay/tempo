@@ -92,11 +92,9 @@ class NotificationsScreenStructureTest {
         assertTrue(header.contains("maxLines = if (expanded) Int.MAX_VALUE else 1"))
         val media = declarationBody(share, "private fun FaceMedia(")
         assertTrue(media.contains("maxLines = if (expanded) Int.MAX_VALUE else 3"))
-        assertTrue(share.contains("ListPictureMax = 120.dp"))
-        assertTrue(share.contains("SharePictureMax = 240.dp"))
-        assertTrue(share.contains("TempoShapes.Glyph"))
+        assertTrue("pictures stay off the face", !share.contains("NotificationPicture"))
+        assertTrue("bubble wraps content", !face.contains("fillMaxHeight"))
         assertTrue(media.contains("shareThread") || face.contains("shareThread"))
-        assertTrue(media.contains("verticalScroll").not())
         assertTrue(face.contains("verticalScroll"))
     }
 
@@ -111,15 +109,19 @@ class NotificationsScreenStructureTest {
     }
 
     @Test
-    fun `the listener reads picture extras and MessagingStyle`() {
-        assertTrue(listener.contains("EXTRA_PICTURE"))
-        assertTrue(listener.contains("largeIcon") || listener.contains("getLargeIcon"))
+    fun `the listener reads MessagingStyle and not pictures`() {
         assertTrue(listener.contains("MessagingStyle") || listener.contains("EXTRA_MESSAGES"))
-        assertTrue(listener.contains("dataUri"))
         assertTrue(listener.contains("runCatching"))
-        assertTrue(listener.contains("Dispatchers.Default"))
-        assertTrue(listener.contains("SHARE_PICTURE_MAX_PX"))
-        assertTrue(listener.contains("picture == null && messages.isEmpty()"))
+        assertTrue(!listener.contains("EXTRA_PICTURE"))
+        assertTrue(!listener.contains("extractNotificationPicture"))
+        assertTrue(listener.contains("messages.isEmpty()"))
+    }
+
+    @Test
+    fun `a tap opens the app and a hold is not a dismiss`() {
+        assertTrue(screen.contains("openNotification(context, n)"))
+        assertTrue(screen.contains("positionalThreshold"))
+        assertTrue(share.contains("scrimArmed"))
     }
 
     private fun declarationBody(source: String, header: String): String {

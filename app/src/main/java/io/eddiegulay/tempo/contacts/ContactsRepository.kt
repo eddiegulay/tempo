@@ -73,17 +73,16 @@ class ContactsRepository(context: Context) {
             while (c.moveToNext()) {
                 val id = c.getLong(0)
                 val phone = c.getString(3)?.trim().orEmpty()
-                if (phone.isEmpty()) continue
+                if (phone.isEmpty() || phoneKey(phone).isEmpty()) continue
                 val existing = byId[id]
                 if (existing == null && byId.size >= MAX_CONTACTS) continue
-                val next = DeviceContact(
+                byId[id] = existing.plusPhone(
                     contactId = id,
                     lookupKey = c.getString(1).orEmpty(),
-                    displayName = c.getString(2).orEmpty().ifBlank { phone },
+                    displayName = c.getString(2).orEmpty(),
                     phone = phone,
+                    prefer = c.getInt(4) == 1,
                 )
-                val superPrimary = c.getInt(4) == 1
-                if (existing == null || superPrimary) byId[id] = next
             }
         }
         return byId.values.toList()

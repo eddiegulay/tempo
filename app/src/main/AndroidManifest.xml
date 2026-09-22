@@ -49,6 +49,13 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
     <!--
+      Spotify in Search pings Apple's public iTunes catalog for a few title + artist rows.
+      Contacts, calendar, and notifications still never leave the device. This is the only
+      network Tempo opens, and only while that Search area is on and a query is typed.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
       GYM.SESSION.COMPLETE's 予定に入れる hand-off adds NO permission: it writes through the very
       CalendarRepository the 予定 composer writes through, behind the same EventConfirmDialog gate, so
       the two lines above are the whole of what it needs (04-library-records.md §4 row 8).
@@ -124,6 +131,14 @@
         </intent>
         <intent>
             <action android:name="com.android.contacts.action.SHOW_OR_CREATE_CONTACT" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="spotify" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" android:host="open.spotify.com" />
         </intent>
     </queries>
 

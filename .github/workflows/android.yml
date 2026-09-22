@@ -13,6 +13,10 @@ concurrency:
 
 jobs:
   build:
+    # Release APKs come from the tag workflow. A main push that only exists to
+    # cut that tag does not need this job; [skip android-ci] skips it without
+    # GitHub's native [skip ci], which would also drop the Release workflow.
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip android-ci]') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

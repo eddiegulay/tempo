@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -47,13 +46,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
@@ -97,9 +94,6 @@ data class NotificationShareRequest(
 /** Finger must stay down this long before the card lifts. Swipe and scroll cancel it. */
 internal const val SHARE_HOLD_MS = 900L
 
-internal val ListPictureMax = 120.dp
-internal val SharePictureMax = 240.dp
-
 /** How far the lifted card rises, matching a 1.02 scale so it reads picked-up, not a page push. */
 private val LiftOffset = 10.dp
 private const val LiftScale = 1.02f
@@ -140,11 +134,15 @@ fun NotificationShareOverlay(
     var leaving by remember { mutableStateOf(false) }
     var liftedH by remember { mutableStateOf(0f) }
     var captureArmed by remember(n.key) { mutableStateOf(true) }
+    var scrimArmed by remember(n.key) { mutableStateOf(false) }
 
     LaunchedEffect(n.key) {
         shareHaptics.pop()
         progress.snapTo(0f)
         progress.animateTo(1f, tween(EnterMs, easing = LinearOutSlowInEasing))
+        // The opening finger is still down. Arm the scrim only after that gesture is over
+        // so the same press cannot settle the overlay and swallow the tap-to-open.
+        scrimArmed = true
     }
 
     LaunchedEffect(n.key, graphicsLayer) {
@@ -225,7 +223,7 @@ fun NotificationShareOverlay(
         val reservedBelow = gapPx + optionH + dockPx
         val maxFacePx = (constraints.maxHeight - reservedBelow - topPad).coerceAtLeast(0f)
         val maxFaceDp = with(density) { maxFacePx.toDp() }
-        val faceH = if (measured) liftedH else maxFacePx
+        val faceH = if (measured) liftedH else 0f
         val desiredY = localY + rise
         val maxCardY = (constraints.maxHeight - reservedBelow - faceH).coerceAtLeast(topPad)
         val cardY = if (canPlace) desiredY.coerceIn(topPad, maxCardY) else desiredY
@@ -246,7 +244,10 @@ fun NotificationShareOverlay(
                 .fillMaxSize()
                 .graphicsLayer { alpha = t }
                 .background(c.bgSolid.copy(alpha = ScrimAlpha))
-                .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(); settle() } }
+                .pointerInput(scrimArmed) {
+                    if (!scrimArmed) return@pointerInput
+                    awaitEachGesture { awaitFirstDown(); settle() }
+                }
                 .clearAndSetSemantics { },
         )
 
@@ -357,9 +358,9 @@ private fun ShareWord(label: String, enabled: Boolean, onClick: () -> Unit) {
  * or action chips. [fill] is [io.eddiegulay.tempo.notification.opaqueCardFill] when this is a
  * lifted / exported bubble, and [io.eddiegulay.tempo.ui.theme.TempoColors.card] when it sits in the list.
  *
- * [expanded] is the share / PNG face: full title and body, a larger picture, last-three thread
- * when a reply exists. The list keeps one-line title and three-line body. [maxHeight] caps only
- * the lifted overlay so 保存 / コピー stay above the dock; the hidden PNG twin omits it.
+ * [expanded] is the share / PNG face: full title and body, last-three thread when a reply
+ * exists. The list keeps one-line title and three-line body. [maxHeight] is a cap only — the
+ * bubble wraps its content and never stretches to fill the screen.
  */
 @Composable
 fun NotificationCardFace(
@@ -371,14 +372,14 @@ fun NotificationCardFace(
 ) {
     val c = LocalTempoColors.current
     val thread = if (expanded) shareThread(n) else emptyList()
-    val body = displayBody(n.body, n.picture != null, thread)
-    val bounded = maxHeight != null
+    val body = displayBody(n.body, hasPicture = false, thread)
     val scroll = rememberScrollState()
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .then(if (bounded) Modifier.heightIn(max = maxHeight!!) else Modifier)
+            .then(if (maxHeight != null) Modifier.heightIn(max = maxHeight) else Modifier)
+            .then(if (maxHeight != null) Modifier.verticalScroll(scroll) else Modifier)
             .clip(TempoShapes.Card)
             .background(fill)
             .padding(horizontal = 18.dp, vertical = 16.dp),
@@ -395,25 +396,11 @@ fun NotificationCardFace(
             Spacer(Modifier.width(20.dp))
         }
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .then(if (bounded) Modifier.fillMaxHeight() else Modifier),
+            modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            if (bounded) {
-                Column(
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .verticalScroll(scroll),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    FaceHeader(n = n, expanded = expanded)
-                    FaceMedia(n = n, expanded = expanded, body = body, thread = thread)
-                }
-            } else {
-                FaceHeader(n = n, expanded = expanded)
-                FaceMedia(n = n, expanded = expanded, body = body, thread = thread)
-            }
+            FaceHeader(n = n, expanded = expanded)
+            FaceMedia(expanded = expanded, body = body, thread = thread)
             Text(
                 text = n.appLabel,
                 style = TextStyle(
@@ -454,15 +441,11 @@ private fun FaceHeader(
 
 @Composable
 private fun FaceMedia(
-    n: TempoNotification,
     expanded: Boolean,
     body: String?,
     thread: List<TempoNotificationMessage>,
 ) {
     val c = LocalTempoColors.current
-    n.picture?.let { bitmap ->
-        NotificationPicture(bitmap = bitmap, expanded = expanded)
-    }
     if (body != null) {
         Text(
             text = body,
@@ -512,33 +495,6 @@ private fun FaceMedia(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun NotificationPicture(
-    bitmap: ImageBitmap,
-    expanded: Boolean,
-) {
-    val density = LocalDensity.current
-    val cap = if (expanded) SharePictureMax else ListPictureMax
-    val ratio = if (expanded) 1f else 0.75f
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val capPx = with(density) { cap.toPx() }
-        val maxW = constraints.maxWidth.toFloat()
-        val maxH = minOf(maxW * ratio, capPx)
-        val aspect = bitmap.width.toFloat() / bitmap.height.coerceAtLeast(1)
-        val h = minOf(maxH, maxW / aspect)
-        val w = minOf(maxW, h * aspect)
-        Image(
-            bitmap = bitmap,
-            contentDescription = null,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .width(with(density) { w.toDp() })
-                .height(with(density) { h.toDp() })
-                .clip(TempoShapes.Glyph),
-        )
     }
 }
 

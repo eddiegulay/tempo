@@ -100,6 +100,12 @@ class SearchHandOffsTest {
     fun `dial and WhatsApp uris keep digits and drop separators`() {
         assertEquals("tel:+255712345678", telUri("+255 712-345-678"))
         assertEquals("https://wa.me/255712345678", whatsAppUri("+255 712-345-678"))
+        val intents = repoFile("src/main/java/io/eddiegulay/tempo/search/SearchHandOffIntents.kt").readText()
+        val start = intents.indexOf("fun launchContactWhatsApp(")
+        val end = intents.indexOf("\nprivate fun startSafely", start)
+        val body = intents.substring(start, end)
+        assertTrue(body.contains("whatsAppUri"))
+        assertFalse("wa.me must not be pinned to a package", body.contains("setPackage"))
     }
 
     @Test
@@ -122,13 +128,14 @@ class SearchHandOffsTest {
     }
 
     @Test
-    fun `the manifest may read contacts and never the call log phone or internet`() {
+    fun `the manifest may read contacts and the catalog and never the call log or phone`() {
         val manifest = repoFile("src/main/AndroidManifest.xml").readText()
         val declared = Regex("""<uses-permission[^>]*android:name="([^"]+)"""")
             .findAll(manifest)
             .map { it.groupValues[1] }
             .toList()
         assertTrue("READ_CONTACTS must be declared: $declared", "android.permission.READ_CONTACTS" in declared)
+        assertTrue("INTERNET is only for the Spotify catalog ping: $declared", "android.permission.INTERNET" in declared)
         listOf(
             "android.permission.WRITE_CONTACTS",
             "android.permission.READ_CALL_LOG",
@@ -137,7 +144,6 @@ class SearchHandOffsTest {
             "android.permission.SEND_SMS",
             "android.permission.READ_PHONE_STATE",
             "android.permission.READ_PHONE_NUMBERS",
-            "android.permission.INTERNET",
         ).forEach { permission ->
             assertFalse("$permission must stay undeclared: $declared", permission in declared)
         }

@@ -45,10 +45,23 @@ fun launchContactMessage(context: Context, phone: String, strings: Strings) {
     startSafely(context, Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$digits")), strings)
 }
 
+fun launchSpotifySearch(context: Context, query: String, strings: Strings) {
+    val q = displayQuery(query)
+    if (q.isEmpty()) {
+        Toast.makeText(context, strings.fault.launchFailed, Toast.LENGTH_SHORT).show()
+        return
+    }
+    val app = Intent(Intent.ACTION_VIEW, Uri.parse(spotifyAppSearchUri(q)))
+    if (app.resolveActivity(context.packageManager) != null) {
+        startSafely(context, app, strings)
+        return
+    }
+    startSafely(context, Intent(Intent.ACTION_VIEW, Uri.parse(spotifyWebSearchUri(q))), strings)
+}
+
 fun launchContactWhatsApp(
     context: Context,
     phone: String,
-    packageName: String,
     strings: Strings,
 ) {
     val digits = whatsAppDigits(phone)
@@ -56,11 +69,9 @@ fun launchContactWhatsApp(
         Toast.makeText(context, strings.fault.launchFailed, Toast.LENGTH_SHORT).show()
         return
     }
-    startSafely(
-        context,
-        Intent(Intent.ACTION_VIEW, Uri.parse(whatsAppUri(phone))).setPackage(packageName),
-        strings,
-    )
+    // wa.me /number opens that chat. Do not pin a package: WhatsApp claims the https host
+    // and a forced package often drops the link on the app home instead of the thread.
+    startSafely(context, Intent(Intent.ACTION_VIEW, Uri.parse(whatsAppUri(phone))), strings)
 }
 
 private fun startSafely(context: Context, intent: Intent, strings: Strings) {
@@ -84,8 +95,8 @@ fun resolveHandOffIntent(
     return when (kind) {
         HandOffKind.Call -> Intent(Intent.ACTION_DIAL, Uri.parse(telUri(q)))
         HandOffKind.WhatsAppNumber -> {
-            val pkg = availability.whatsAppPackage ?: return null
-            Intent(Intent.ACTION_VIEW, Uri.parse(whatsAppUri(q))).setPackage(pkg)
+            if (availability.whatsAppPackage == null) return null
+            Intent(Intent.ACTION_VIEW, Uri.parse(whatsAppUri(q)))
         }
         HandOffKind.FindContacts ->
             Intent(ContactsContract.Intents.SHOW_OR_CREATE_CONTACT)

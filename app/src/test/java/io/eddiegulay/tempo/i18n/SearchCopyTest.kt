@@ -5,6 +5,7 @@ import io.eddiegulay.tempo.search.appCategoryLabel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -42,6 +43,14 @@ class SearchCopyTest {
         assertEquals("Off", en.searchAreas.toggleOff)
         assertEquals("ひと", ja.search.peopleSection)
         assertEquals("people", en.search.peopleSection)
+        assertEquals("Spotify", ja.search.spotifySection)
+        assertEquals("Spotify", en.search.spotifySection)
+        assertEquals("もっと", ja.search.spotifyOpen)
+        assertEquals("Open Spotify", en.search.spotifyOpen)
+        assertEquals("Spotify", ja.searchAreas.spotify)
+        assertEquals("Spotify", en.searchAreas.spotify)
+        assertTrue(ja.searchAreas.subtitle.contains("Spotify"))
+        assertTrue(en.searchAreas.subtitle.contains("Spotify"))
         assertEquals("メッセージ", ja.search.contactMessage)
         assertEquals("Message", en.search.contactMessage)
         assertNotNull(ja.searchAreas.contactsNeedsAccess)

@@ -205,4 +205,5 @@ private fun areaLabel(copy: SearchAreasStrings, area: SearchArea): String = when
     SearchArea.Google -> copy.google
     SearchArea.Email -> copy.email
     SearchArea.Calendar -> copy.calendar
+    SearchArea.Spotify -> copy.spotify
 }

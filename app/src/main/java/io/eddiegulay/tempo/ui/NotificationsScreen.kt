@@ -192,7 +192,7 @@ fun NotificationsScreen(
                                 n = n,
                                 lifted = sharingKey == n.key,
                                 dismissEnabled = sharingKey == null,
-                                onOpen = { viewModel.openNotification(n) },
+                                onOpen = { viewModel.openNotification(context, n) },
                                 onDismiss = { viewModel.dismissNotification(n.key) },
                                 onShare = { bounds -> onShare(n, bounds) },
                                 onShareBoundsChange = onShareBoundsChange,
@@ -268,6 +268,7 @@ private fun NotifRow(
     // Swipe either direction to clear; the list removes the row once the service reports it gone.
     // Frozen while any card is lifted so a leftover drag cannot dismiss the thing being shared.
     val dismissState = rememberSwipeToDismissBoxState(
+        positionalThreshold = { distance -> distance * 0.6f },
         confirmValueChange = { value ->
             if (dismissEnabled && value != SwipeToDismissBoxValue.Settled) {
                 onDismiss()
