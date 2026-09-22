@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Clipboard / share PNG for one notification card. Cache only — never user storage. -->
+    <cache-path name="notification_exports" path="notifications/" />
+</paths>

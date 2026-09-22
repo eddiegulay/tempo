@@ -3,6 +3,7 @@ package io.eddiegulay.tempo.ui
 import android.content.Intent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,15 +43,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
@@ -82,7 +91,14 @@ import io.eddiegulay.tempo.ui.theme.pressable
  * returns to the foreground (the user may have toggled it in Settings).
  */
 @Composable
-fun NotificationsScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifier) {
+fun NotificationsScreen(
+    viewModel: LauncherViewModel,
+    sharingKey: String? = null,
+    onShare: (TempoNotification, Rect) -> Unit = { _, _ -> },
+    onShareBoundsChange: (Rect) -> Unit = {},
+    onCloseShare: () -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
     val c = LocalTempoColors.current
     val s = LocalStrings.current
     val context = LocalContext.current
@@ -104,6 +120,12 @@ fun NotificationsScreen(viewModel: LauncherViewModel, modifier: Modifier = Modif
     val pending by viewModel.pendingDismiss.collectAsStateWithLifecycle()
     // Per-app expand state for the "N more" collapse; keyed by package, survives recomposition.
     val expanded = remember { mutableStateMapOf<String, Boolean>() }
+
+    LaunchedEffect(groups, sharingKey) {
+        val key = sharingKey ?: return@LaunchedEffect
+        val stillThere = groups.any { group -> group.items.any { it.key == key } }
+        if (!stillThere) onCloseShare()
+    }
 
     // Nudge the system to reconnect the listener if access is granted but it isn't bound yet
     // (e.g. after a process restart).
@@ -128,7 +150,7 @@ fun NotificationsScreen(viewModel: LauncherViewModel, modifier: Modifier = Modif
                     style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 4.sp, color = c.inkFaint),
                 )
             }
-            if (enabled && groups.isNotEmpty()) {
+            if (enabled && groups.isNotEmpty() && sharingKey == null) {
                 ClearAllButton(onClick = { viewModel.dismissAllVisible() })
             }
         }
@@ -150,7 +172,10 @@ fun NotificationsScreen(viewModel: LauncherViewModel, modifier: Modifier = Modif
                 // Filter lists do. Without it the last notification — and the swipe that clears it —
                 // sat underneath the capsule and could not be reached.
                 else -> LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 6.dp),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 22.dp, vertical = 6.dp)
+                        .then(if (sharingKey != null) Modifier.clearAndSetSemantics { } else Modifier),
                     contentPadding = PaddingValues(bottom = 96.dp),
                 ) {
                     groups.forEach { group ->
@@ -167,8 +192,12 @@ fun NotificationsScreen(viewModel: LauncherViewModel, modifier: Modifier = Modif
                         items(visible, key = { it.key }) { n ->
                             NotifRow(
                                 n = n,
+                                lifted = sharingKey == n.key,
+                                dismissEnabled = sharingKey == null,
                                 onOpen = { viewModel.openNotification(n) },
                                 onDismiss = { viewModel.dismissNotification(n.key) },
+                                onShare = { bounds -> onShare(n, bounds) },
+                                onShareBoundsChange = onShareBoundsChange,
                                 onAction = { idx -> viewModel.sendNotificationAction(n.key, idx) },
                                 onReply = { idx, text -> viewModel.replyToNotification(n.key, idx, text) },
                             )
@@ -187,7 +216,7 @@ fun NotificationsScreen(viewModel: LauncherViewModel, modifier: Modifier = Modif
             }
 
             // Transient undo affordance — auto-fades when the window commits (pending clears).
-            if (pending.isNotEmpty()) {
+            if (pending.isNotEmpty() && sharingKey == null) {
                 UndoStrip(
                     count = pending.size,
                     onUndo = { viewModel.undoDismiss() },
@@ -202,30 +231,49 @@ fun NotificationsScreen(viewModel: LauncherViewModel, modifier: Modifier = Modif
 @Composable
 private fun NotifRow(
     n: TempoNotification,
+    lifted: Boolean,
+    dismissEnabled: Boolean,
     onOpen: () -> Unit,
     onDismiss: () -> Unit,
+    onShare: (Rect) -> Unit,
+    onShareBoundsChange: (Rect) -> Unit,
     onAction: (Int) -> Unit,
     onReply: (Int, String) -> Unit,
 ) {
     val c = LocalTempoColors.current
     val s = LocalStrings.current
+    val haptics = LocalHapticFeedback.current
 
-    // A single, readable TalkBack announcement for the whole row, plus an explicit "dismiss" action
-    // (the swipe gesture below is invisible to accessibility services, so without this a screen-reader
-    // user could read a notification but never clear it).
+    // A single, readable TalkBack announcement for the whole row, plus explicit actions for
+    // dismiss / share. The swipe and the 2-second hold are both invisible to accessibility
+    // services, so without these a screen-reader user could read a notification but never
+    // clear it or export it. TalkBack's long-click opens the overlay immediately — the 2s
+    // wait is a finger-only accident brake.
     val rowDescription = remember(n.appLabel, n.title, n.body, n.time, s) {
         listOf(n.appLabel, n.title, n.body.takeIf { it.isNotBlank() }, n.time)
             .filterNotNull()
             .joinToString(s.fmt.listSeparator)
     }
-    val dismissAction = remember(onDismiss, s) {
+    var cardBounds by remember { mutableStateOf(Rect.Zero) }
+    var suppressOpen by remember { mutableStateOf(false) }
+    val sharePress = remember { MutableInteractionSource() }
+    LaunchedEffect(lifted) {
+        if (!lifted) suppressOpen = false
+    }
+    ShareHoldEffect(enabled = dismissEnabled, interactionSource = sharePress) {
+        suppressOpen = true
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        onShare(cardBounds)
+    }
+    val rowActions = remember(onDismiss, s) {
         listOf(CustomAccessibilityAction(label = s.notifications.rowDismiss) { onDismiss(); true })
     }
 
     // Swipe either direction to clear; the list removes the row once the service reports it gone.
+    // Frozen while any card is lifted so a leftover drag cannot dismiss the thing being shared.
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
-            if (value != SwipeToDismissBoxValue.Settled) {
+            if (dismissEnabled && value != SwipeToDismissBoxValue.Settled) {
                 onDismiss()
                 true
             } else {
@@ -233,9 +281,14 @@ private fun NotifRow(
             }
         },
     )
+    LaunchedEffect(dismissEnabled) {
+        if (!dismissEnabled) dismissState.snapTo(SwipeToDismissBoxValue.Settled)
+    }
     SwipeToDismissBox(
         state = dismissState,
         modifier = Modifier.fillMaxWidth(),
+        enableDismissFromStartToEnd = dismissEnabled,
+        enableDismissFromEndToStart = dismissEnabled,
         backgroundContent = {},
     ) {
         // Each notification is its own soft card — a faint washi fill rounded at the corners with a
@@ -248,71 +301,57 @@ private fun NotifRow(
                 .clip(TempoShapes.Card)
                 .background(c.card),
         ) {
-            Row(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .onGloballyPositioned {
+                        val rect = it.boundsInWindow()
+                        cardBounds = rect
+                        if (lifted) onShareBoundsChange(rect)
+                    }
+                    .graphicsLayer { alpha = if (lifted) 0f else 1f }
                     // The summary is the pressable part of the card, not the whole card: the action
                     // chips below open nothing. So the wash takes the card's own corners at the top
                     // and squares off at the bottom whenever there are actions under it, meeting them
                     // flush instead of curving away from a card that visibly continues.
                     .pressable(
                         shape = if (n.actions.isEmpty()) TempoShapes.Card else SUMMARY_OVER_ACTIONS,
-                        onClick = onOpen,
+                        interactionSource = sharePress,
+                        onClick = {
+                            if (suppressOpen) {
+                                suppressOpen = false
+                            } else {
+                                onOpen()
+                            }
+                        },
                     )
-                    // The tappable summary is one TalkBack node: open on activate, dismiss as an
-                    // action. Inline actions below stay separately focusable (not in this subtree).
-                    // Role and label stay in this block rather than moving to `pressable`:
-                    // `clearAndSetSemantics` replaces whatever the click modifier declared, so a role
-                    // passed there would be discarded on the way past.
-                    .clearAndSetSemantics {
-                        contentDescription = rowDescription
-                        onClick(label = s.notifications.rowOpen) { onOpen(); true }
-                        customActions = dismissAction
-                    }
-                    .padding(horizontal = 18.dp, vertical = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    // The tappable summary is one TalkBack node: open on activate, share on
+                    // long-click, dismiss as an action. Inline actions below stay separately
+                    // focusable (not in this subtree). Role and label stay in this block rather
+                    // than moving to `pressable`: `clearAndSetSemantics` replaces whatever the
+                    // click modifier declared, so a role passed there would be discarded.
+                    // When lifted the list is hidden from TalkBack (the overlay words remain);
+                    // an empty semantics node here would still be activatable as "Open".
+                    .then(
+                        if (lifted) {
+                            Modifier.clearAndSetSemantics { }
+                        } else {
+                            Modifier.clearAndSetSemantics {
+                                contentDescription = rowDescription
+                                onClick(label = s.notifications.rowOpen) { onOpen(); true }
+                                onLongClick(label = s.notifications.share) {
+                                    onShare(cardBounds)
+                                    true
+                                }
+                                customActions = rowActions
+                            }
+                        },
+                    ),
             ) {
-                if (n.icon != null) {
-                    Image(
-                        bitmap = n.icon,
-                        contentDescription = n.appLabel,
-                        colorFilter = ColorFilter.tint(c.inkSoft),
-                        modifier = Modifier.padding(top = 2.dp).size(20.dp),
-                    )
-                } else {
-                    Spacer(Modifier.width(20.dp))
-                }
-                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.Top,
-                    ) {
-                        Text(
-                            text = n.title,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = true),
-                            style = TextStyle(fontFamily = Mincho, fontSize = 16.sp, color = c.ink),
-                        )
-                        Text(
-                            text = n.time,
-                            style = TextStyle(fontFamily = Gothic, fontSize = 12.sp, color = c.inkFaint),
-                        )
-                    }
-                    if (n.body.isNotBlank()) {
-                        Text(
-                            text = n.body,
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
-                            style = TextStyle(fontFamily = Gothic, fontSize = 13.sp, lineHeight = 19.5.sp, color = c.inkSoft),
-                        )
-                    }
-                    Text(
-                        text = n.appLabel,
-                        style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = 3.sp, color = c.inkFaint),
-                    )
-                }
+                NotificationCardFace(
+                    n = n,
+                    fill = Color.Transparent,
+                )
             }
             if (n.actions.isNotEmpty()) {
                 ActionsRow(actions = n.actions, onAction = onAction, onReply = onReply)

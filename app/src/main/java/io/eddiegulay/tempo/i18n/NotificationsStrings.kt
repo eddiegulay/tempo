@@ -36,6 +36,19 @@ interface NotificationsStrings {
     /** The row's activate action, also announcement-only. */
     val rowOpen: String
 
+    /**
+     * TalkBack verb for the 2-second hold that lifts the card. Drawn nowhere; without it a
+     * screen-reader user cannot reach save or copy.
+     */
+    val share: String
+
+    /** The two overlay words. Bare Mincho, vermillion, no icons. */
+    val saveImage: String
+    val copyImage: String
+
+    val saveFailed: String
+    val copyFailed: String
+
     val replyDescription: String
     val replyPlaceholder: String
 
@@ -71,6 +84,12 @@ internal object JaNotifications : NotificationsStrings {
     override val rowDismiss = "消去"
     override val rowOpen = "開く"
 
+    override val share = "画像として共有"
+    override val saveImage = "保存"
+    override val copyImage = "コピー"
+    override val saveFailed = "保存できませんでした"
+    override val copyFailed = "コピーできませんでした"
+
     override val replyDescription = "返信を入力"
     override val replyPlaceholder = "返信"
 
@@ -97,6 +116,12 @@ internal object EnNotifications : NotificationsStrings {
 
     override val rowDismiss = "Dismiss"
     override val rowOpen = "Open"
+
+    override val share = "Share as image"
+    override val saveImage = "Save"
+    override val copyImage = "Copy"
+    override val saveFailed = "Couldn't save"
+    override val copyFailed = "Couldn't copy"
 
     override val replyDescription = "Type a reply"
     override val replyPlaceholder = "Reply"

@@ -145,4 +145,18 @@ class FilterFocusBlockNotificationsTest {
         assertEquals("通知へのアクセス", ja.notifications.accessTitle)
         assertEquals("タップして許可", ja.notifications.accessAction)
     }
+
+    @Test
+    fun `the share overlay words are short in both languages`() {
+        assertEquals("画像として共有", ja.notifications.share)
+        assertEquals("保存", ja.notifications.saveImage)
+        assertEquals("コピー", ja.notifications.copyImage)
+        assertEquals("保存できませんでした", ja.notifications.saveFailed)
+        assertEquals("コピーできませんでした", ja.notifications.copyFailed)
+        assertEquals("Share as image", en.notifications.share)
+        assertEquals("Save", en.notifications.saveImage)
+        assertEquals("Copy", en.notifications.copyImage)
+        assertEquals("Couldn't save", en.notifications.saveFailed)
+        assertEquals("Couldn't copy", en.notifications.copyFailed)
+    }
 }

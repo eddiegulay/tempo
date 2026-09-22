@@ -154,6 +154,22 @@
             </intent-filter>
         </activity>
 
+        <!--
+          Clipboard export of one notification card as a PNG. The file lives in cache
+          (see @xml/tempo_file_paths); grantUriPermissions lets the receiving app read the
+          one URI we put on the clipboard, and nothing else. exported="false" so nothing
+          outside Tempo can ask the provider for an arbitrary path.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/tempo_file_paths" />
+        </provider>
+
         <!-- Surfaces real notifications to the 通知 screen once the user grants access. -->
         <service
             android:name=".notification.TempoNotificationListener"

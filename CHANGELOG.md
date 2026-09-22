@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-22
+
+### Added
+- **Share one notification as a bubble.** Hold a notification for two seconds. The card lifts off
+  the list — the rest dims — and two words appear: 保存 and コピー. Copy puts a rounded PNG on the
+  clipboard, ready to paste into LINE or Notes. Save writes it to Pictures/Tempo. The corners are
+  transparent, so it sits on someone else's wallpaper like a sticker, not a screenshot of the
+  shade. Tap the dim or press Back and the card settles back into its slot. TalkBack opens the
+  same overlay without the two-second wait.
+
 ## [0.3.0] - 2026-09-04
 
 ### Added
@@ -265,7 +275,8 @@ All notable changes to this project are documented here. The format is based on
 - Open-source scaffolding: README, MIT license, contribution guide, code of conduct, CI, issue/PR
   templates, and editor config.
 
-[Unreleased]: https://github.com/eddiegulay/tempo/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/eddiegulay/tempo/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/eddiegulay/tempo/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/eddiegulay/tempo/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/eddiegulay/tempo/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/eddiegulay/tempo/compare/v0.1.0...v0.2.0

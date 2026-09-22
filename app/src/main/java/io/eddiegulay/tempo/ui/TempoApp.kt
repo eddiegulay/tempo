@@ -18,8 +18,12 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -83,6 +87,10 @@ fun TempoApp(
     val lockedTap by viewModel.lockedTap.collectAsStateWithLifecycle()
     val pendingMode by viewModel.pendingMode.collectAsStateWithLifecycle()
     val calendarEvents by viewModel.calendarEvents.collectAsStateWithLifecycle()
+    var shareRequest by remember { mutableStateOf<NotificationShareRequest?>(null) }
+    LaunchedEffect(screen) {
+        if (screen != Screen.Notifications) shareRequest = null
+    }
 
     val isDark = theme == TempoTheme.Sumi
     val colors = if (isDark) SumiColors else PaperColors
@@ -222,7 +230,17 @@ fun TempoApp(
                                     onToggleTheme = viewModel::toggleTheme,
                                     onOpenFilter = viewModel::goFilter,
                                 )
-                                Screen.Notifications -> NotificationsScreen(viewModel = viewModel)
+                                Screen.Notifications -> NotificationsScreen(
+                                    viewModel = viewModel,
+                                    sharingKey = shareRequest?.notification?.key,
+                                    onShare = { n, bounds ->
+                                        shareRequest = NotificationShareRequest(n, bounds)
+                                    },
+                                    onShareBoundsChange = { bounds ->
+                                        shareRequest = shareRequest?.copy(bounds = bounds)
+                                    },
+                                    onCloseShare = { shareRequest = null },
+                                )
                                 Screen.Filter -> FilterScreen(viewModel = viewModel)
                                 Screen.SearchAreas -> SearchAreasScreen(viewModel = viewModel)
                                 Screen.Calendar -> CalendarScreen(viewModel = viewModel)
@@ -252,6 +270,16 @@ fun TempoApp(
                             // Over a sub-screen the dock becomes frosted "wet paper"; over Home it stays
                             // a faint pill on the wallpaper.
                             frosted = screen != Screen.Home,
+                        )
+                    }
+                    // Above the dock on purpose: a share lift that lives inside NotificationsScreen
+                    // left the pill and すべて消去 live, and a dock tap disposed the overlay mid-save.
+                    shareRequest?.let { req ->
+                        NotificationShareOverlay(
+                            n = req.notification,
+                            cardBoundsInWindow = req.bounds,
+                            onDismiss = { shareRequest = null },
+                            modifier = Modifier.fillMaxSize(),
                         )
                     }
                 }
