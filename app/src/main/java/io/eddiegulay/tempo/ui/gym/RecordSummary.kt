@@ -85,6 +85,7 @@ import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.InkPressIndication
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 import kotlinx.coroutines.delay
 
 /*
@@ -644,7 +645,7 @@ private fun RecordHero(mode: RecordMode, data: RecordSummaryData) {
                     style = TextStyle(
                         fontFamily = Mincho,
                         fontSize = 15.sp,
-                        letterSpacing = 6.sp,
+                        letterSpacing = track(6),
                         color = c.inkFaint,
                     ),
                 )
@@ -656,7 +657,7 @@ private fun RecordHero(mode: RecordMode, data: RecordSummaryData) {
                     style = TextStyle(
                         fontFamily = Gothic,
                         fontSize = 12.sp,
-                        letterSpacing = 3.sp,
+                        letterSpacing = track(3),
                         color = c.inkFaint,
                     ),
                 )
@@ -677,7 +678,7 @@ private fun RecordHero(mode: RecordMode, data: RecordSummaryData) {
                     style = TextStyle(
                         fontFamily = Mincho,
                         fontSize = 12.sp,
-                        letterSpacing = 3.sp,
+                        letterSpacing = track(3),
                         color = c.inkFaint,
                     ),
                 )
@@ -880,7 +881,7 @@ private fun Accolades(accolades: RecordAccolades) {
                     style = TextStyle(
                         fontFamily = Mincho,
                         fontSize = 12.sp,
-                        letterSpacing = 3.sp,
+                        letterSpacing = track(3),
                         // 当時の自己最高 is faint: it was a record when it was set and has since been
                         // beaten, and a chip that keeps the accent keeps claiming the crown (§4 row 6).
                         color = if (chip == PrChip.CURRENT) c.accent else c.inkFaint,
@@ -916,7 +917,7 @@ private fun RatingBlock(
             Text(
                 text = s.gymRecords.ratingPrompt,
                 modifier = Modifier.semantics { heading() },
-                style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 3.sp, color = c.inkFaint),
+                style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = track(3), color = c.inkFaint),
             )
             Spacer(Modifier.height(12.dp))
         }
@@ -979,7 +980,7 @@ private fun SectionLabel(text: String) {
     Text(
         text = text,
         modifier = Modifier.padding(top = 26.dp, bottom = 8.dp).semantics { heading() },
-        style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 3.sp, color = c.inkFaint),
+        style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = track(3), color = c.inkFaint),
     )
 }
 

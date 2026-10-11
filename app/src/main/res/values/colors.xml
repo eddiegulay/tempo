@@ -9,5 +9,5 @@
     <color name="white">#FFFFFFFF</color>
 
     <!-- Window background before Compose paints: washi cream (paper theme). -->
-    <color name="tempo_window">#F2EEE4</color>
+    <color name="tempo_window">#F7F4EE</color>
 </resources>

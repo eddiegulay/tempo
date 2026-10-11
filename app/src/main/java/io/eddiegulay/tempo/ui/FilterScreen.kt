@@ -33,6 +33,7 @@ import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 import kotlin.math.ceil
 
 /**
@@ -58,7 +59,7 @@ fun FilterScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifier) {
             s.filter.kana?.let { kana ->
                 Text(
                     text = kana,
-                    style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 6.sp, color = c.inkFaint),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = track(6), color = c.inkFaint),
                 )
             }
             Box(Modifier.padding(top = 12.dp)) {

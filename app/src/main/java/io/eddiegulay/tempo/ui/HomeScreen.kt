@@ -60,6 +60,7 @@ import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import java.time.LocalDateTime
 import io.eddiegulay.tempo.ui.theme.TempoColors
+import io.eddiegulay.tempo.ui.theme.track
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.material3.Text
 
@@ -150,7 +151,7 @@ fun HomeScreen(
                 style = TextStyle(
                     fontFamily = Mincho,
                     fontSize = 15.sp,
-                    letterSpacing = 3.sp,
+                    letterSpacing = track(3),
                     color = c.inkSoft,
                 ),
             )
@@ -506,7 +507,7 @@ private fun Seal(accent: Color, card: Color, modifier: Modifier) {
             text = "静",
             style = TextStyle(
                 fontFamily = Mincho,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Medium,
                 fontSize = 30.sp,
                 color = accent,
             ),

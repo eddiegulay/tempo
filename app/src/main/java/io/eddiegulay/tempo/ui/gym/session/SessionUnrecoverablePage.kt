@@ -27,6 +27,7 @@ import io.eddiegulay.tempo.ui.faultCopy
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.track
 
 /**
  * A session that exists on disk and cannot be replayed — [SessionScreen.Unrecoverable] drawn.
@@ -86,7 +87,7 @@ fun SessionUnrecoverablePage(
         Text(
             text = state.routineName,
             modifier = Modifier.semantics { heading() },
-            style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
+            style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = track(3), color = c.ink),
         )
         Spacer(Modifier.height(10.dp))
         Text(

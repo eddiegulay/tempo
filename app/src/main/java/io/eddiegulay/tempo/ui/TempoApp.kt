@@ -39,10 +39,14 @@ import io.eddiegulay.tempo.data.TempoTheme
 import io.eddiegulay.tempo.gym.GymViewModel
 import io.eddiegulay.tempo.gym.GymViewModelFactory
 import io.eddiegulay.tempo.ui.gym.GymShell
+import io.eddiegulay.tempo.i18n.Lang
 import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.i18n.stringsFor
 import io.eddiegulay.tempo.ui.theme.InkPress
+import io.eddiegulay.tempo.ui.theme.EnType
+import io.eddiegulay.tempo.ui.theme.JaType
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
+import io.eddiegulay.tempo.ui.theme.LocalTempoType
 import io.eddiegulay.tempo.ui.theme.PaperColors
 import io.eddiegulay.tempo.ui.theme.SumiColors
 
@@ -163,8 +167,10 @@ fun TempoApp(
     // reads, so changing either recomposes this whole content lambda rather than invalidating call
     // sites one at a time. That is what makes a language switch land everywhere in one frame,
     // including inside 鍛錬, which composes within this provider and so inherits both for free.
+    val type = if (lang == Lang.En) EnType else JaType
     CompositionLocalProvider(
         LocalTempoColors provides colors,
+        LocalTempoType provides type,
         LocalStrings provides stringsFor(lang),
         // Tempo sets no Material 3 `ColorScheme` — the palette above *is* the theme — so Material's
         // default indication had no house colour to fall back on and painted every un-styled

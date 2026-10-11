@@ -30,6 +30,7 @@ import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.track
 
 /**
  * 休息 — recovery, with the next movement already promoted to hero
@@ -100,7 +101,7 @@ fun RestPage(state: SessionUiState, actions: SessionActions, modifier: Modifier 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = restLabel(s, kind),
-                    style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = 6.sp, color = c.inkFaint),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = track(6), color = c.inkFaint),
                 )
                 // The added time is visible in the ring's own label, because it has to be visible in
                 // the record's mental model: a rest that ran 0:35 was a rest the user chose to grow.
@@ -121,7 +122,7 @@ fun RestPage(state: SessionUiState, actions: SessionActions, modifier: Modifier 
             )
             Text(
                 text = s.gymSession.restNext,
-                style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 4.sp, color = c.inkFaint),
+                style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = track(4), color = c.inkFaint),
             )
         },
         below = {

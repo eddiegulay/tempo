@@ -61,6 +61,7 @@ import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 
 /*
  * GYM.LIBRARY.EXERCISE_INDEX — 種目. `04-library-records.md` §3's movement catalogue.
@@ -338,12 +339,12 @@ fun ExerciseIndexScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
             Column(Modifier.semantics(mergeDescendants = true) { heading() }) {
                 Text(
                     text = s.gymExercise.indexTitle,
-                    style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = track(3), color = c.ink),
                 )
                 Spacer(Modifier.height(7.dp))
                 Text(
                     text = exerciseIndexSubtitle(catalogue.size, s),
-                    style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 4.sp, color = c.inkFaint),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = track(4), color = c.inkFaint),
                 )
             }
             HeaderAction(
@@ -462,7 +463,7 @@ private fun PatternHeading(pattern: Pattern) {
             .fillMaxWidth()
             .padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 6.dp)
             .semantics { heading() },
-        style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
+        style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = track(3), color = c.inkFaint),
     )
 }
 
@@ -529,12 +530,12 @@ private fun ExerciseCard(copy: ExerciseCardCopy, onOpen: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = true),
-                style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = 3.sp, color = c.inkFaint),
+                style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = track(3), color = c.inkFaint),
             )
             copy.best?.let { best ->
                 Text(
                     text = best,
-                    style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = 3.sp, color = c.accent),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = track(3), color = c.accent),
                 )
             }
         }
@@ -555,7 +556,7 @@ private fun ExerciseNoMatch() {
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
             text = s.gymExercise.noMatch,
-            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = track(4), color = c.inkFaint),
         )
     }
 }

@@ -117,7 +117,7 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         // Pre-Compose window fills; mirror PaperColors.bgSolid / SumiColors.bgSolid.
-        const val WINDOW_PAPER = 0xFFF2EEE4.toInt()
-        const val WINDOW_SUMI = 0xFF1A1814.toInt()
+        const val WINDOW_PAPER = 0xFFF7F4EE.toInt()
+        const val WINDOW_SUMI = 0xFF161513.toInt()
     }
 }

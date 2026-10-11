@@ -31,6 +31,7 @@ import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
+import io.eddiegulay.tempo.ui.theme.track
 
 /**
  * 休止 — the session frozen, honestly (`03-player.md` §A GYM.SESSION.PAUSED).
@@ -97,7 +98,7 @@ fun PausedPage(
         ringContent = {
             Text(
                 text = s.gymSession.pausedTitle,
-                style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = 6.sp, color = c.inkFaint),
+                style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = track(6), color = c.inkFaint),
             )
             Spacer(Modifier.height(4.dp))
             // 「残り 二十三秒、休止中」 spoken against `0:23` drawn — §Q4's sharpest case in Japanese,
@@ -189,7 +190,7 @@ private fun ResumeButton(
             Text(
                 text = s.gymSession.pausedResume,
                 textAlign = TextAlign.Center,
-                style = TextStyle(fontFamily = Mincho, fontSize = 20.sp, letterSpacing = 4.sp, color = c.accent),
+                style = TextStyle(fontFamily = Mincho, fontSize = 20.sp, letterSpacing = track(4), color = c.accent),
             )
             if (needsPrepare) {
                 Text(

@@ -20,7 +20,7 @@ class NotificationCardPngTest {
 
     @Test
     fun `paper fill stays cream and sumi fill stays charcoal`() {
-        // compositeOver of 3.5% ink on #F2EEE4 must remain a light wash, not the ink itself.
+        // compositeOver of 3.5% ink on the ivory ground must remain a light wash, not the ink itself.
         val paper = PaperColors.opaqueCardFill()
         assertTrue("paper red ${paper.red}", paper.red > 0.85f)
         assertTrue("paper green ${paper.green}", paper.green > 0.85f)

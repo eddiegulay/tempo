@@ -80,6 +80,7 @@ import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 
 /**
  * Notifications (通知): a quiet, sparse list of the device's current notifications.
@@ -140,12 +141,12 @@ fun NotificationsScreen(
             Column {
                 Text(
                     text = s.notifications.title,
-                    style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = track(3), color = c.ink),
                 )
                 Spacer(Modifier.height(7.dp))
                 Text(
                     text = s.fmt.era(now) + s.fmt.separator + s.fmt.monthDay(now),
-                    style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 4.sp, color = c.inkFaint),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = track(4), color = c.inkFaint),
                 )
             }
             if (enabled && groups.isNotEmpty() && sharingKey == null) {
@@ -501,7 +502,7 @@ private fun GroupHeader(group: NotificationGroup) {
         }
         Text(
             text = group.appLabel,
-            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = track(3), color = c.inkFaint),
         )
         Text(
             // Left as arabic in both languages, deliberately. `fmt.count` would spell this 三 in
@@ -612,7 +613,7 @@ private fun EnableAccessPrompt(onClick: () -> Unit) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(
                 text = s.notifications.accessTitle,
-                style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, letterSpacing = 4.sp, color = c.inkSoft),
+                style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, letterSpacing = track(4), color = c.inkSoft),
             )
             // Was a bare `clickable` on a 22dp-tall line with no role: a tap target under half the
             // floor, and a screen reader could read the sentence but not learn it was a button. Same
@@ -623,7 +624,7 @@ private fun EnableAccessPrompt(onClick: () -> Unit) {
                     .sizeIn(minHeight = 48.dp)
                     .pressable(TempoShapes.Word, role = Role.Button, onClick = onClick)
                     .padding(horizontal = 16.dp, vertical = 12.dp),
-                style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = 3.sp, color = c.accent),
+                style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = track(3), color = c.accent),
             )
         }
     }
@@ -636,7 +637,7 @@ private fun QuietState() {
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
             text = s.notifications.empty,
-            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = track(4), color = c.inkFaint),
         )
     }
 }

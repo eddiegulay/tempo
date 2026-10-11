@@ -89,6 +89,14 @@ class SpotifySearchTest {
     }
 
     @Test
+    fun `a song title is small letters with a capital on each word`() {
+        assertEquals("Bohemian Rhapsody", songTitle("BOHEMIAN RHAPSODY"))
+        assertEquals("Don't Stop Me Now", songTitle("don't stop me now"))
+        assertEquals("Blinding Lights (Remix)", songTitle("blinding lights (remix)"))
+        assertEquals("花束を君に", songTitle("花束を君に"))
+    }
+
+    @Test
     fun `spotify uris encode the query and keep title with artist`() {
         assertEquals("spotify:search:Bohemian%20Rhapsody", spotifyAppSearchUri("Bohemian Rhapsody"))
         assertEquals(

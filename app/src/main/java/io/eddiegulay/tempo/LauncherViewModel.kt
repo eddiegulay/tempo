@@ -364,10 +364,8 @@ class LauncherViewModel(
     fun launchContactMessage(context: Context, phone: String) =
         startContactMessage(context, phone, stringsFor(lang.value))
 
-    fun launchContactWhatsApp(context: Context, phone: String) {
-        if (handOffAvailability().whatsAppPackage == null) return
+    fun launchContactWhatsApp(context: Context, phone: String) =
         startContactWhatsApp(context, phone, stringsFor(lang.value))
-    }
 
     fun launchSpotifySearch(context: Context, query: String = _searchQuery.value) =
         startSpotifySearch(context, query, stringsFor(lang.value))

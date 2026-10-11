@@ -118,6 +118,7 @@ import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -857,7 +858,7 @@ private fun BuilderHeader(
         Text(
             text = title,
             modifier = Modifier.semantics { heading() },
-            style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
+            style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = track(3), color = c.ink),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             HeaderAction(
@@ -1105,7 +1106,7 @@ private fun NameField(value: String, autoFocus: Boolean, onChange: (String) -> U
     ) {
         Text(
             text = s.gymBuilder.fieldName,
-            style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 3.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = track(3), color = c.inkFaint),
         )
         BasicTextField(
             value = value,
@@ -1160,7 +1161,7 @@ private fun EnginePickerRow(
         ) {
             Text(
                 text = s.gymBuilder.fieldEngine,
-                style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 3.sp, color = c.inkFaint),
+                style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = track(3), color = c.inkFaint),
             )
             Text(
                 text = engine.label(s),
@@ -1581,7 +1582,7 @@ private fun WheelRow(
         ) {
             Text(
                 text = label,
-                style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 3.sp, color = c.inkFaint),
+                style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = track(3), color = c.inkFaint),
             )
             Text(text = value, style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, color = c.ink))
         }
@@ -1625,7 +1626,7 @@ private fun ReadOnlyRow(label: String, value: String) {
     ) {
         Text(
             text = label,
-            style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 3.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = track(3), color = c.inkFaint),
         )
         Text(text = value, style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, color = c.inkSoft))
     }
@@ -1638,7 +1639,7 @@ private fun FieldLabel(label: String) {
     Text(
         text = label,
         modifier = Modifier.padding(top = 18.dp, bottom = 8.dp),
-        style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 3.sp, color = c.inkFaint),
+        style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = track(3), color = c.inkFaint),
     )
 }
 
@@ -1699,7 +1700,7 @@ private fun BuilderLoadingState() {
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
             text = s.gymBuilder.loading,
-            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = track(4), color = c.inkFaint),
         )
     }
 }

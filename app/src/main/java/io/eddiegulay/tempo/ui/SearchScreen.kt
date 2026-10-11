@@ -70,6 +70,7 @@ import io.eddiegulay.tempo.search.isNumberShaped
 import io.eddiegulay.tempo.search.matchAppFields
 import io.eddiegulay.tempo.search.matchCalendarFields
 import io.eddiegulay.tempo.search.shouldOfferSpotify
+import io.eddiegulay.tempo.search.songTitle
 import io.eddiegulay.tempo.search.visibleHandOffs
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
@@ -77,6 +78,7 @@ import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.combinedPressable
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 import java.time.Instant
 import java.time.ZoneId
 
@@ -204,7 +206,7 @@ fun SearchScreen(
             ) {
                 Text(
                     text = s.search.heading,
-                    style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = 6.sp, color = c.inkFaint),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 14.sp, letterSpacing = track(6), color = c.inkFaint),
                 )
                 // Trailing controls: hidden-apps filter page, then the theme toggle (relocated from
                 // the dock). Both stay faint, mirroring the prototype's quiet chrome.
@@ -263,7 +265,7 @@ fun SearchScreen(
                     Box(Modifier.fillMaxWidth().padding(top = 70.dp), contentAlignment = Alignment.Center) {
                         Text(
                             text = if (loading) s.search.loading else s.search.empty,
-                            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
+                            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = track(4), color = c.inkFaint),
                         )
                     }
                 }
@@ -278,7 +280,6 @@ fun SearchScreen(
                     callLabel = s.search.handOffCall,
                     messageLabel = s.search.contactMessage,
                     whatsAppLabel = s.search.handOffWhatsApp,
-                    showWhatsApp = areas.whatsApp && availability.whatsAppPackage != null,
                     afterApps = false,
                     onAllow = contactsPermission.request,
                     onCall = { viewModel.launchContactCall(context, it) },
@@ -308,7 +309,6 @@ fun SearchScreen(
                     callLabel = s.search.handOffCall,
                     messageLabel = s.search.contactMessage,
                     whatsAppLabel = s.search.handOffWhatsApp,
-                    showWhatsApp = areas.whatsApp && availability.whatsAppPackage != null,
                     afterApps = filtered.isNotEmpty(),
                     onAllow = contactsPermission.request,
                     onCall = { viewModel.launchContactCall(context, it) },
@@ -329,7 +329,7 @@ fun SearchScreen(
                 item(key = "handoff:calendar-heading") {
                     Text(
                         text = s.search.handOffCalendarSection,
-                        style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
+                        style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = track(3), color = c.inkFaint),
                         modifier = Modifier
                             .padding(
                                 start = 12.dp,
@@ -476,7 +476,6 @@ private fun LazyListScope.peopleBlock(
     callLabel: String,
     messageLabel: String,
     whatsAppLabel: String,
-    showWhatsApp: Boolean,
     afterApps: Boolean,
     onAllow: () -> Unit,
     onCall: (String) -> Unit,
@@ -487,7 +486,7 @@ private fun LazyListScope.peopleBlock(
     item(key = "people:heading") {
         Text(
             text = section,
-            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = LocalTempoColors.current.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = track(3), color = LocalTempoColors.current.inkFaint),
             modifier = Modifier
                 .padding(start = 12.dp, end = 12.dp, top = if (afterApps) 24.dp else 0.dp, bottom = 6.dp)
                 .semantics { heading() },
@@ -504,7 +503,6 @@ private fun LazyListScope.peopleBlock(
             callLabel = callLabel,
             messageLabel = messageLabel,
             whatsAppLabel = whatsAppLabel,
-            showWhatsApp = showWhatsApp,
             onCall = onCall,
             onMessage = onMessage,
             onWhatsApp = onWhatsApp,
@@ -522,7 +520,7 @@ private fun LazyListScope.handOffBlock(
     item(key = "handoff:heading") {
         Text(
             text = strings.handOffSection,
-            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = LocalTempoColors.current.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = track(3), color = LocalTempoColors.current.inkFaint),
             modifier = Modifier
                 .padding(start = 12.dp, end = 12.dp, top = if (afterApps) 24.dp else 0.dp, bottom = 6.dp)
                 .semantics { heading() },
@@ -626,7 +624,6 @@ private fun ContactHitRow(
     callLabel: String,
     messageLabel: String,
     whatsAppLabel: String,
-    showWhatsApp: Boolean,
     onCall: (String) -> Unit,
     onMessage: (String) -> Unit,
     onWhatsApp: (String) -> Unit,
@@ -666,9 +663,7 @@ private fun ContactHitRow(
                 ) {
                     ContactActionChip(label = callLabel, onClick = { onCall(number) })
                     ContactActionChip(label = messageLabel, onClick = { onMessage(number) })
-                    if (showWhatsApp) {
-                        ContactActionChip(label = whatsAppLabel, onClick = { onWhatsApp(number) })
-                    }
+                    ContactActionChip(label = whatsAppLabel, onClick = { onWhatsApp(number) })
                 }
             }
         }
@@ -702,7 +697,7 @@ private fun LazyListScope.spotifyBlock(
     item(key = "spotify:heading") {
         Text(
             text = section,
-            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = LocalTempoColors.current.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = track(3), color = LocalTempoColors.current.inkFaint),
             modifier = Modifier
                 .padding(start = 12.dp, end = 12.dp, top = if (afterOthers) 24.dp else 0.dp, bottom = 6.dp)
                 .semantics { heading() },
@@ -727,14 +722,14 @@ private fun SpotifyHitRow(hit: SpotifyHit, onClick: () -> Unit) {
             .pressable(
                 shape = TempoShapes.Row,
                 role = Role.Button,
-                onClickLabel = hit.title,
+                onClickLabel = songTitle(hit.title),
                 onClick = onClick,
             )
             .padding(horizontal = 12.dp, vertical = 13.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(
-            text = hit.title,
+            text = songTitle(hit.title),
             style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, letterSpacing = 1.sp, color = c.ink),
         )
         Text(

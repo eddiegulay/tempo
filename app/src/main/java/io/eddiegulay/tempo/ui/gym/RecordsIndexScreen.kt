@@ -78,6 +78,7 @@ import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
@@ -406,12 +407,12 @@ fun RecordsIndexScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
                 Text(
                     text = s.gymRecords.pageTitle,
                     modifier = Modifier.semantics { heading() },
-                    style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = track(3), color = c.ink),
                 )
                 Spacer(Modifier.height(7.dp))
                 Text(
                     text = recordsSubtitle(now, s),
-                    style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 4.sp, color = c.inkFaint),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = track(4), color = c.inkFaint),
                 )
             }
             // 詳しく is offered only over a page that has records behind it: a charts page reached from
@@ -636,7 +637,7 @@ private fun MonthPager(
         Text(
             text = monthPagerLabel(month, currentMonth, s),
             modifier = Modifier.padding(horizontal = 18.dp),
-            style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = 3.sp, color = c.ink),
+            style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = track(3), color = c.ink),
         )
         PagerArrow("›", enabled = canForward, label = monthPagerLabel(month.plusMonths(1), currentMonth, s)) {
             onMonth(month.plusMonths(1))
@@ -988,7 +989,7 @@ private fun RecordsSectionRow(label: String, action: String, onAction: () -> Uni
             modifier = Modifier
                 .padding(top = 18.dp, bottom = 6.dp)
                 .clearAndSetSemantics { heading(); contentDescription = label },
-            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = track(3), color = c.inkFaint),
         )
         HeaderAction(label = action, description = action, color = c.accent, onClick = onAction)
     }
@@ -1036,7 +1037,7 @@ private fun RecentRow(summary: SessionSummary, onClick: () -> Unit) {
             Text(
                 text = it,
                 maxLines = 1,
-                style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = 3.sp, color = c.inkFaint),
+                style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = track(3), color = c.inkFaint),
             )
         }
     }
@@ -1182,7 +1183,7 @@ private fun HistoryLossPanel(onDismiss: () -> Unit) {
             ) {
                 Text(
                     text = s.gymRecords.close,
-                    style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = 3.sp, color = c.accent),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = track(3), color = c.accent),
                 )
             }
         }
@@ -1195,6 +1196,6 @@ private fun RecordsWord(text: String) {
     val c = LocalTempoColors.current
     Text(
         text = text,
-        style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
+        style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = track(4), color = c.inkFaint),
     )
 }

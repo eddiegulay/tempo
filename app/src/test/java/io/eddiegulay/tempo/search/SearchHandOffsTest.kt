@@ -106,6 +106,16 @@ class SearchHandOffsTest {
         val body = intents.substring(start, end)
         assertTrue(body.contains("whatsAppUri"))
         assertFalse("wa.me must not be pinned to a package", body.contains("setPackage"))
+        val row = repoFile("src/main/java/io/eddiegulay/tempo/ui/SearchScreen.kt").readText()
+        val rowStart = row.indexOf("private fun ContactHitRow(")
+        val rowEnd = row.indexOf("\n@Composable\nprivate fun ContactActionChip(", rowStart)
+        val rowBody = row.substring(rowStart, rowEnd)
+        assertTrue(rowBody.contains("onWhatsApp(number)"))
+        assertFalse("contact WhatsApp is a wa.me chip, not an installed-app check", rowBody.contains("whatsAppPackage"))
+        val vm = repoFile("src/main/java/io/eddiegulay/tempo/LauncherViewModel.kt").readText()
+        val vmStart = vm.indexOf("fun launchContactWhatsApp(")
+        val vmEnd = vm.indexOf("\n    fun launchSpotifySearch(", vmStart)
+        assertFalse(vm.substring(vmStart, vmEnd).contains("whatsAppPackage"))
     }
 
     @Test

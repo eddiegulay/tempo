@@ -61,6 +61,7 @@ import io.eddiegulay.tempo.ui.gym.session.SessionScreen
 import io.eddiegulay.tempo.ui.gym.session.SessionUnrecoverablePage
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.track
 
 /**
  * One route plus how deep it sits, which is the pair the route animation needs.
@@ -467,7 +468,7 @@ private fun GymPagePlaceholder(title: String) {
             Text(
                 text = title,
                 modifier = Modifier.semantics { heading() },
-                style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
+                style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = track(3), color = c.ink),
             )
         }
         // The full-width hairline every gym page carries under its header.

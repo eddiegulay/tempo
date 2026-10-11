@@ -84,6 +84,7 @@ import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.combinedPressable
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 
 /*
  * GYM.LIBRARY.INDEX — 型. `04-library-records.md` §3's first page.
@@ -375,12 +376,12 @@ fun LibraryIndexScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
                 Text(
                     text = s.gymLibrary.title,
                     modifier = Modifier.semantics { heading() },
-                    style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = track(3), color = c.ink),
                 )
                 Spacer(Modifier.height(7.dp))
                 Text(
                     text = s.fmt.era(now) + s.fmt.separator + s.fmt.monthDay(now),
-                    style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 4.sp, color = c.inkFaint),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = track(4), color = c.inkFaint),
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -756,7 +757,7 @@ private fun SectionHeading(label: String, count: Int) {
     ) {
         Text(
             text = label,
-            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = track(3), color = c.inkFaint),
         )
     }
 }
@@ -858,13 +859,13 @@ private fun RoutineCardRow(
                                 text = best,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = 3.sp, color = c.accent),
+                                style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = track(3), color = c.accent),
                             )
                         }
                         copy.engine?.let { engine ->
                             Text(
                                 text = engine,
-                                style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = 3.sp, color = c.inkFaint),
+                                style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = track(3), color = c.inkFaint),
                             )
                         }
                     }
@@ -985,7 +986,7 @@ private fun LoadingState() {
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
             text = s.gymLibrary.loading,
-            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = track(4), color = c.inkFaint),
         )
     }
 }
@@ -1005,7 +1006,7 @@ private fun NoMatchState(chipped: Boolean, onClear: () -> Unit) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(
                 text = s.gymLibrary.noMatch,
-                style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
+                style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = track(4), color = c.inkFaint),
             )
             if (chipped) {
                 CenteredAction(label = s.gymLibrary.clearFilters, onClick = onClear)
@@ -1024,7 +1025,7 @@ private fun InlineEmpty(text: String) {
     ) {
         Text(
             text = text,
-            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = track(4), color = c.inkFaint),
         )
     }
 }

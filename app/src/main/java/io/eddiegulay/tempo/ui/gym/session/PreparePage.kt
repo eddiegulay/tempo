@@ -16,6 +16,7 @@ import io.eddiegulay.tempo.gym.displayName
 import io.eddiegulay.tempo.i18n.LocalStrings
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.track
 
 /**
  * 支度 — five seconds to put the phone down and get into position (`03-player.md` §A GYM.SESSION.PREPARE).
@@ -76,7 +77,7 @@ fun PreparePage(state: SessionUiState, actions: SessionActions, modifier: Modifi
         ringContent = {
             Text(
                 text = s.gymSession.prepareTitle,
-                style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = 6.sp, color = c.inkFaint),
+                style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = track(6), color = c.inkFaint),
             )
             Spacer(Modifier.height(6.dp))
             HeroText(

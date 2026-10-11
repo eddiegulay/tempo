@@ -51,6 +51,7 @@ import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 import java.time.LocalDate
 
 /**
@@ -104,12 +105,12 @@ fun CalendarScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifier) 
             Column {
                 Text(
                     text = s.calendar.title,
-                    style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = track(3), color = c.ink),
                 )
                 Spacer(Modifier.height(7.dp))
                 Text(
                     text = s.fmt.era(now) + s.fmt.separator + s.fmt.monthDay(now),
-                    style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 4.sp, color = c.inkFaint),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = track(4), color = c.inkFaint),
                 )
             }
             if (granted) {
@@ -183,7 +184,7 @@ private fun DayHeader(date: LocalDate, today: LocalDate, count: Int) {
     ) {
         Text(
             text = label,
-            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = track(3), color = c.inkFaint),
         )
         Text(
             text = count.toString(),
@@ -297,7 +298,7 @@ private fun EventCard(event: CalendarEvent, nowMillis: Long, onClick: () -> Unit
                         text = source,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = 3.sp, color = c.inkFaint),
+                        style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = track(3), color = c.inkFaint),
                     )
                 }
             }
@@ -350,7 +351,7 @@ private fun AccessPrompt(permanentlyDenied: Boolean, onClick: () -> Unit) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(
                 text = if (permanentlyDenied) s.calendar.accessDeniedTitle else s.calendar.accessTitle,
-                style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, lineHeight = 28.sp, letterSpacing = 4.sp, color = c.inkSoft),
+                style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, lineHeight = 28.sp, letterSpacing = track(4), color = c.inkSoft),
             )
             Text(
                 text = if (permanentlyDenied) s.calendar.accessOpenSettings else s.calendar.accessGrant,
@@ -358,7 +359,7 @@ private fun AccessPrompt(permanentlyDenied: Boolean, onClick: () -> Unit) {
                     .sizeIn(minHeight = 48.dp)
                     .pressable(TempoShapes.Word, role = Role.Button, onClick = onClick)
                     .padding(horizontal = 16.dp, vertical = 12.dp),
-                style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = 3.sp, color = c.accent),
+                style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = track(3), color = c.accent),
             )
         }
     }
@@ -370,7 +371,7 @@ private fun EmptyState(text: String) {
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
             text = text,
-            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = track(4), color = c.inkFaint),
         )
     }
 }

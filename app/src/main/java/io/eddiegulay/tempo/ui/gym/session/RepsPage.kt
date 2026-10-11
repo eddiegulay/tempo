@@ -45,6 +45,7 @@ import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.combinedPressable
+import io.eddiegulay.tempo.ui.theme.track
 
 /**
  * 運動・回数 — a self-paced set (`03-player.md` §A GYM.SESSION.REPS).
@@ -215,7 +216,7 @@ private fun DoneButton(prescribedReps: Int?, onDone: () -> Unit, onAdjust: () ->
     ) {
         Text(
             text = s.gymSession.repsDone,
-            style = TextStyle(fontFamily = Mincho, fontSize = 20.sp, letterSpacing = 4.sp, color = c.accent),
+            style = TextStyle(fontFamily = Mincho, fontSize = 20.sp, letterSpacing = track(4), color = c.accent),
         )
     }
 }

@@ -5,11 +5,10 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 /**
- * The two Tempo palettes, lifted directly from the prototype's `base` object.
+ * The two Tempo palettes.
  *
- *  - "paper" — washi-cream radial wash, sumi-ink text, vermillion accent, faint paper grain.
- *  - "sumi" — dark washi: a warm near-black charcoal wash, warm off-white ink at high
- *    contrast, a slightly brighter vermillion, and a faint light-catching paper tooth.
+ *  - "paper" — 白練 ivory wash, cooler sumi ink, 朱 accent (the only warm mark), faint grain.
+ *  - "sumi" — the same materials on a cool charcoal wash.
  *
  * Colours are exposed through [LocalTempoColors] so every screen reads the active theme without
  * threading it through every call site.
@@ -36,40 +35,34 @@ private val PaperInk = Color(0xFF2B2B2B)
 
 val PaperColors = TempoColors(
     isDark = false,
-    bgSolid = Color(0xFFF2EEE4),
-    bgStops = listOf(Color(0xFFF8F5EF), Color(0xFFF2EEE4), Color(0xFFEBE6DB)),
+    bgSolid = Color(0xFFF7F4EE),
+    bgStops = listOf(Color(0xFFFEFCF7), Color(0xFFF7F4EE), Color(0xFFEEEAE2)),
     card = PaperInk.copy(alpha = 0.035f),
-    // Primary ink is a *toned* warm sumi, not the full #2B2B2B — at full strength the app names and
-    // clock read as hard print-black and fight the washi cream. Secondary tones below stay derived
-    // from the darker base so subtitles, hairlines and the seal keep their tuned weight.
-    ink = Color(0xFF433F38),
-    inkSoft = PaperInk.copy(alpha = 0.56f),
-    inkFaint = PaperInk.copy(alpha = 0.30f),
+    // Cooler sumi so the page is ivory, not peach. Soft/faint stay alpha-of-ink so hairlines and
+    // the seal keep one pigment. Faint cannot hit 4.5:1 without becoming Soft — 0.54 is ~3.3:1.
+    ink = Color(0xFF2F2C28),
+    inkSoft = PaperInk.copy(alpha = 0.66f),
+    inkFaint = PaperInk.copy(alpha = 0.54f),
     hair = PaperInk.copy(alpha = 0.10f),
-    accent = Color(0xFFB5503A),
+    accent = Color(0xFFC24A38),
     enso = PaperInk.copy(alpha = 0.06f),
-    grainOpacity = 0.06f,
+    grainOpacity = 0.05f,
 )
 
 private val SumiInk = Color(0xFFECE7DB)
 
-// Dark washi. Warm charcoal radial wash (top-centre origin, like paper) instead of true black,
-// with ink alphas raised so secondary text — dates, romaji, labels — stays legible on dark
-// (the old AMOLED ran inkFaint at 0.30 over #000, ~2.4:1, which failed). The grain is drawn with
-// a Screen blend in dark mode (see Background.kt) so paper fibres catch light rather than darken.
+// Cool charcoal wash (top-centre, like paper). Grain is a Screen blend in dark mode
+// (see Background.kt) so fibres catch light rather than muddy the ground.
 val SumiColors = TempoColors(
     isDark = true,
-    bgSolid = Color(0xFF1A1814),
-    bgStops = listOf(Color(0xFF211F1B), Color(0xFF1A1814), Color(0xFF141210)),
+    bgSolid = Color(0xFF161513),
+    bgStops = listOf(Color(0xFF1C1B19), Color(0xFF161513), Color(0xFF121110)),
     card = SumiInk.copy(alpha = 0.05f),
-    // Primary ink is a *toned* warm bone, not the full #ECE7DB — at full strength the app names and
-    // clock read as stark white and fight the charcoal. Secondary tones below stay derived from the
-    // brighter base so glyphs and subtitles keep their tuned contrast.
-    ink = Color(0xFFD4CEBF),
+    ink = Color(0xFFE4DFD4),
     inkSoft = SumiInk.copy(alpha = 0.72f),
     inkFaint = SumiInk.copy(alpha = 0.48f),
     hair = SumiInk.copy(alpha = 0.16f),
-    accent = Color(0xFFD2664B),
+    accent = Color(0xFFD45A42),
     enso = SumiInk.copy(alpha = 0.07f),
     grainOpacity = 0.05f,
 )

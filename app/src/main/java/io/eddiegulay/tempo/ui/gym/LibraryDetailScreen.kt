@@ -82,6 +82,7 @@ import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.InkPressIndication
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 import java.time.LocalDate
 
 /*
@@ -716,7 +717,7 @@ private fun DetailHeader(
                         text = title,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
+                        style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = track(3), color = c.ink),
                     )
                 }
                 if (subtitle != null) {
@@ -727,7 +728,7 @@ private fun DetailHeader(
                             style = TextStyle(
                                 fontFamily = Mincho,
                                 fontSize = 13.sp,
-                                letterSpacing = 4.sp,
+                                letterSpacing = track(4),
                                 color = c.inkFaint,
                             ),
                         )
@@ -737,7 +738,7 @@ private fun DetailHeader(
                                 style = TextStyle(
                                     fontFamily = Mincho,
                                     fontSize = 13.sp,
-                                    letterSpacing = 4.sp,
+                                    letterSpacing = track(4),
                                     color = c.inkSoft,
                                 ),
                             )
@@ -901,7 +902,7 @@ private fun DetailBody(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     text = s.gymLibrary.origin,
-                    style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = 3.sp, color = c.inkFaint),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = track(3), color = c.inkFaint),
                 )
                 Text(
                     text = origin,
@@ -1001,7 +1002,7 @@ private fun StartButton(name: String, starting: Boolean, block: StartBlock, onSt
             style = TextStyle(
                 fontFamily = Mincho,
                 fontSize = 20.sp,
-                letterSpacing = 4.sp,
+                letterSpacing = track(4),
                 color = if (enabled) c.accent else c.inkFaint,
             ),
         )
@@ -1144,7 +1145,7 @@ private fun ReadOnlyRow(label: String, value: String) {
     ) {
         Text(
             text = label,
-            style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 3.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = track(3), color = c.inkFaint),
         )
         Text(
             text = value,
@@ -1226,7 +1227,7 @@ private fun AttemptsSection(
         Text(
             text = s.gymLibrary.sectionAttempts,
             modifier = Modifier.semantics { heading() },
-            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = track(3), color = c.inkFaint),
         )
         if (attempts.isNotEmpty()) {
             HeaderAction(
@@ -1241,7 +1242,7 @@ private fun AttemptsSection(
         Text(
             text = s.gymLibrary.noAttempts,
             modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
-            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = track(4), color = c.inkFaint),
         )
     } else {
         attempts.forEach { attempt -> AttemptRow(attempt = attempt, onClick = { onAttempt(attempt) }) }
@@ -1291,7 +1292,7 @@ private fun AttemptRow(attempt: SessionSummary, onClick: () -> Unit) {
                 style = TextStyle(
                     fontFamily = Mincho,
                     fontSize = 11.sp,
-                    letterSpacing = 3.sp,
+                    letterSpacing = track(3),
                     color = if (line.partial) c.inkFaint else c.accent,
                 ),
             )
@@ -1306,7 +1307,7 @@ private fun SectionHeading(text: String) {
     Text(
         text = text,
         modifier = Modifier.padding(top = 18.dp, bottom = 6.dp).semantics { heading() },
-        style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
+        style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = track(3), color = c.inkFaint),
     )
 }
 
@@ -1351,7 +1352,7 @@ private fun DetailNotice(text: String) {
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
             text = text,
-            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = track(4), color = c.inkFaint),
         )
     }
 }

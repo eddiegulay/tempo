@@ -78,6 +78,7 @@ import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -406,7 +407,7 @@ fun NotificationCardFace(
                 style = TextStyle(
                     fontFamily = Mincho,
                     fontSize = 11.sp,
-                    letterSpacing = 3.sp,
+                    letterSpacing = track(3),
                     color = c.inkFaint,
                 ),
             )

@@ -84,6 +84,7 @@ import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 import kotlinx.coroutines.delay
 
 /*
@@ -394,7 +395,7 @@ private fun PickerHeader(canSave: Boolean, onCancel: () -> Unit, onSave: () -> U
         Text(
             text = s.gymExercise.pickerTitle,
             modifier = Modifier.semantics { heading() },
-            style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
+            style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = track(3), color = c.ink),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             HeaderAction(
@@ -540,7 +541,7 @@ private fun PatternHeading(label: String) {
             .fillMaxWidth()
             .padding(top = 18.dp, bottom = 4.dp)
             .semantics { heading() },
-        style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
+        style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = track(3), color = c.inkFaint),
     )
 }
 
@@ -657,7 +658,7 @@ private fun PrescriptionBlock(
     ) {
         Text(
             text = s.gymExercise.measureLabel,
-            style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 3.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = track(3), color = c.inkFaint),
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             measures.forEach { option ->
@@ -830,7 +831,7 @@ private fun NoMatchState() {
     Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
             text = s.gymExercise.noMatch,
-            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = track(4), color = c.inkFaint),
         )
     }
 }

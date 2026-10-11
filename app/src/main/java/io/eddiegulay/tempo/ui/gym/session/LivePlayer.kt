@@ -71,6 +71,7 @@ import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 
 /*
  * The live half of the session player: which of the five pages is on screen, and the chrome all of
@@ -365,7 +366,7 @@ internal fun PlayerFrame(
                     style = TextStyle(
                         fontFamily = Mincho,
                         fontSize = 12.sp,
-                        letterSpacing = 3.sp,
+                        letterSpacing = track(3),
                         color = if (counterAccent) c.accent else c.inkFaint,
                     ),
                 )

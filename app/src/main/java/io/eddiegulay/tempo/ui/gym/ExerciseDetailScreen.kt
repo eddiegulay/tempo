@@ -61,6 +61,7 @@ import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 
 /*
  * GYM.LIBRARY.EXERCISE_DETAIL — 種目の中身. `04-library-records.md` §3's last library page.
@@ -489,12 +490,12 @@ private fun ExerciseHeader(title: String, subtitle: String, onClose: () -> Unit)
                     text = title,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = track(3), color = c.ink),
                 )
                 Spacer(Modifier.height(7.dp))
                 Text(
                     text = subtitle,
-                    style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 4.sp, color = c.inkFaint),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = track(4), color = c.inkFaint),
                 )
             }
             val close = LocalStrings.current.gymExercise.close
@@ -511,7 +512,7 @@ private fun ExerciseSectionHeading(text: String) {
     Text(
         text = text,
         modifier = Modifier.padding(top = 18.dp, bottom = 6.dp).semantics { heading() },
-        style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
+        style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = track(3), color = c.inkFaint),
     )
 }
 
@@ -529,7 +530,7 @@ private fun ExerciseNotice(text: String) {
     Text(
         text = text,
         modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
-        style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
+        style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = track(4), color = c.inkFaint),
     )
 }
 
@@ -664,7 +665,7 @@ private fun LadderRungRow(rung: LadderRung, onClick: () -> Unit) {
             Spacer(Modifier.width(10.dp))
             Text(
                 text = s.gymExercise.ladderCurrent,
-                style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = 3.sp, color = c.accent),
+                style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = track(3), color = c.accent),
             )
         }
     }
@@ -698,7 +699,7 @@ private fun UsedBySection(
         Text(
             text = s.gymExercise.sectionUsedBy,
             modifier = Modifier.semantics { heading() },
-            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = track(3), color = c.inkFaint),
         )
         // The count is drawn only when it is known. A 〇件 over a loading list is a number the page
         // does not have, and this is the one heading in the feature the specs *do* print a count on

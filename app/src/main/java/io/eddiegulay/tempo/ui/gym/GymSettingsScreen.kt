@@ -70,6 +70,7 @@ import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 import java.util.Locale
 
 /*
@@ -292,13 +293,13 @@ internal fun GymBackHeader(title: String, subtitle: String?, onBack: () -> Unit)
             Column(Modifier.semantics(mergeDescendants = true) { heading() }) {
                 Text(
                     text = title,
-                    style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = track(3), color = c.ink),
                 )
                 if (subtitle != null) {
                     Spacer(Modifier.height(7.dp))
                     Text(
                         text = subtitle,
-                        style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 4.sp, color = c.inkFaint),
+                        style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = track(4), color = c.inkFaint),
                     )
                 }
             }
@@ -329,7 +330,7 @@ private fun SettingsCard(
         Text(
             text = section.heading(s),
             modifier = Modifier.padding(start = 18.dp, top = 22.dp, bottom = 6.dp).semantics { heading() },
-            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = track(3), color = c.inkFaint),
         )
         Column(
             Modifier

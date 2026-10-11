@@ -28,6 +28,7 @@ import io.eddiegulay.tempo.ui.cycleDotsOverflow
 import io.eddiegulay.tempo.ui.theme.Gothic
 import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
+import io.eddiegulay.tempo.ui.theme.track
 
 /**
  * 運動 — a time-boxed interval (`03-player.md` §A GYM.SESSION.WORK).
@@ -183,7 +184,7 @@ internal fun RoundIndicator(state: SessionUiState, modifier: Modifier = Modifier
             state.totalRounds <= 1 -> Unit
             cycleDotsOverflow(state.totalRounds) -> Text(
                 text = roundsOverflowLabel(s, state.round, state.totalRounds),
-                style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = 3.sp, color = c.inkFaint),
+                style = TextStyle(fontFamily = Mincho, fontSize = 12.sp, letterSpacing = track(3), color = c.inkFaint),
             )
 
             else -> CycleDots(

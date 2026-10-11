@@ -45,6 +45,23 @@ fun spotifyWebSearchUri(query: String): String =
 
 fun spotifyTrackQuery(hit: SpotifyHit): String = displayQuery("${hit.title} ${hit.artist}")
 
+/** Row label: a capital at the start of each word, the rest small. The search still uses the catalog spelling. */
+fun songTitle(raw: String): String {
+    val lower = raw.lowercase(Locale.ROOT)
+    val out = StringBuilder(lower.length)
+    var cap = true
+    for (ch in lower) {
+        if (!ch.isLetter()) {
+            out.append(ch)
+            if (ch != '\'' && ch != '\u2019') cap = true
+            continue
+        }
+        out.append(if (cap) ch.titlecaseChar() else ch)
+        cap = false
+    }
+    return out.toString()
+}
+
 /** Store and result language for the catalog, keyed on Tempo's UI language, not the device locale. */
 data class CatalogStore(
     val country: String,

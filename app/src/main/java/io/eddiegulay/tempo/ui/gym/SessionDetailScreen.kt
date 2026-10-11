@@ -53,6 +53,7 @@ import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 import kotlinx.coroutines.launch
 
 /*
@@ -490,7 +491,7 @@ private fun RecordHeader(subtitle: String?, note: String?, onClose: () -> Unit) 
                 Text(
                     text = s.gymRecords.detailTitle,
                     modifier = Modifier.semantics { heading() },
-                    style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = track(3), color = c.ink),
                 )
                 if (subtitle != null) {
                     Spacer(Modifier.height(7.dp))
@@ -499,7 +500,7 @@ private fun RecordHeader(subtitle: String?, note: String?, onClose: () -> Unit) 
                         style = TextStyle(
                             fontFamily = Mincho,
                             fontSize = 13.sp,
-                            letterSpacing = 4.sp,
+                            letterSpacing = track(4),
                             color = c.inkFaint,
                         ),
                     )
@@ -584,7 +585,7 @@ private fun RecordLoading() {
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
             text = LocalStrings.current.gymRecords.loading,
-            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = track(4), color = c.inkFaint),
         )
     }
 }

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Window background before Compose paints: warm charcoal (Sumi dark-paper theme). -->
-    <color name="tempo_window">#1A1814</color>
+    <color name="tempo_window">#161513</color>
 </resources>

@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-11
+
+### Changed
+- Paper is a cooler ivory. Sumi is a warmer black. The accent is the only warm mark.
+- Japanese titles use Shippori Mincho B1. English titles and body use Tempo Sans, a Latin cut of
+  Source Sans 3, so English no longer sits on the CJK face. Unused light weights are not in the APK.
+- A contact in Search always offers WhatsApp next to Call and Message. It opens
+  `https://wa.me/<number>`.
+- Spotify song titles are shown with a capital on each word and small letters after, so the list
+  reads the same way.
+
 ## [0.6.0] - 2026-09-22
 
 ### Added
@@ -300,7 +311,8 @@ All notable changes to this project are documented here. The format is based on
 - Open-source scaffolding: README, MIT license, contribution guide, code of conduct, CI, issue/PR
   templates, and editor config.
 
-[Unreleased]: https://github.com/eddiegulay/tempo/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/eddiegulay/tempo/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/eddiegulay/tempo/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/eddiegulay/tempo/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/eddiegulay/tempo/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/eddiegulay/tempo/compare/v0.3.0...v0.4.0

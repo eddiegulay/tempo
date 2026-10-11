@@ -45,6 +45,7 @@ import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 
 /**
  * First-launch gate. Before Tempo reaches Home it names every access it relies on and why, then lets
@@ -112,7 +113,7 @@ fun OnboardingScreen(
 
         Text(
             text = s.onboarding.welcome,
-            style = TextStyle(fontFamily = Mincho, fontSize = 30.sp, letterSpacing = 6.sp, color = c.ink),
+            style = TextStyle(fontFamily = Mincho, fontSize = 30.sp, letterSpacing = track(6), color = c.ink),
         )
         Spacer(Modifier.height(14.dp))
         Text(
@@ -182,7 +183,7 @@ private fun AccessItem(
             StatusDot(active = granted)
             Text(
                 text = title,
-                style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, letterSpacing = 3.sp, color = c.ink),
+                style = TextStyle(fontFamily = Mincho, fontSize = 18.sp, letterSpacing = track(3), color = c.ink),
             )
         }
         Spacer(Modifier.height(10.dp))
@@ -273,7 +274,7 @@ private fun BeginButton(enabled: Boolean, onClick: () -> Unit) {
     ) {
         Text(
             text = s.onboarding.begin,
-            style = TextStyle(fontFamily = Mincho, fontSize = 16.sp, letterSpacing = 6.sp, color = color),
+            style = TextStyle(fontFamily = Mincho, fontSize = 16.sp, letterSpacing = track(6), color = color),
         )
     }
 }

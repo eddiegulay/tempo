@@ -40,6 +40,7 @@ import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 import java.time.LocalDateTime
 
 /**
@@ -234,7 +235,7 @@ fun FaultPanel(fault: TempoFault, onRecover: () -> Unit) {
                         .pressable(TempoShapes.Word, role = Role.Button, onClick = onRecover)
                         .semantics { contentDescription = label }
                         .padding(horizontal = 16.dp, vertical = 12.dp),
-                    style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = 3.sp, color = c.accent),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 15.sp, letterSpacing = track(3), color = c.accent),
                 )
             }
         }

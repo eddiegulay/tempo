@@ -59,6 +59,7 @@ import io.eddiegulay.tempo.ui.theme.LocalTempoColors
 import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
@@ -164,7 +165,7 @@ fun EventComposeScreen(viewModel: LauncherViewModel, modifier: Modifier = Modifi
         ) {
             Text(
                 text = heading,
-                style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
+                style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = track(3), color = c.ink),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 HeaderAction(
@@ -517,7 +518,7 @@ private fun PickerRow(
         ) {
             Text(
                 text = label,
-                style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 3.sp, color = c.inkFaint),
+                style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = track(3), color = c.inkFaint),
             )
             Text(
                 text = value,
@@ -542,7 +543,7 @@ private fun CalendarChips(calendars: List<CalendarInfo>, selectedId: Long, onSel
     Column(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
         Text(
             text = s.calendar.fieldCalendar,
-            style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = 3.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 13.sp, letterSpacing = track(3), color = c.inkFaint),
         )
         Spacer(Modifier.height(10.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {

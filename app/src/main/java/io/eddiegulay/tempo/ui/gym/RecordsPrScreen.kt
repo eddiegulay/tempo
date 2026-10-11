@@ -58,6 +58,7 @@ import io.eddiegulay.tempo.ui.theme.Mincho
 import io.eddiegulay.tempo.ui.theme.InkPressIndication
 import io.eddiegulay.tempo.ui.theme.TempoShapes
 import io.eddiegulay.tempo.ui.theme.pressable
+import io.eddiegulay.tempo.ui.theme.track
 
 /*
  * GYM.RECORDS.PR — 最高. `04-library-records.md` §4's third records page.
@@ -318,7 +319,7 @@ fun RecordsPrScreen(gym: GymViewModel, modifier: Modifier = Modifier) {
             Text(
                 text = s.gymRecords.bests,
                 modifier = Modifier.semantics { heading() },
-                style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = 3.sp, color = c.ink),
+                style = TextStyle(fontFamily = Mincho, fontSize = 26.sp, letterSpacing = track(3), color = c.ink),
             )
             HeaderAction(
                 label = s.gymRecords.close,
@@ -547,7 +548,7 @@ private fun PrRoutineCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = row.copy.meta,
-                    style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = 3.sp, color = c.inkFaint),
+                    style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = track(3), color = c.inkFaint),
                 )
                 // §4's `ArchivedRoutineBest`: the chip appears and the row stays tappable, because
                 // `04` §1 rule 3 keeps an archived routine's detail page reachable from a record.
@@ -685,7 +686,7 @@ private fun PrMovementCard(row: PrMovementRow, onOpen: () -> Unit) {
             Spacer(Modifier.height(4.dp))
             Text(
                 text = row.meta,
-                style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = 3.sp, color = c.inkFaint),
+                style = TextStyle(fontFamily = Mincho, fontSize = 11.sp, letterSpacing = track(3), color = c.inkFaint),
             )
 
             if (row.date != null || row.hardest != null) {
@@ -727,7 +728,7 @@ private fun PrLoading() {
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
             text = LocalStrings.current.gymRecords.loading,
-            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = track(4), color = c.inkFaint),
         )
     }
 }
@@ -739,7 +740,7 @@ private fun PrRoutinesEmpty() {
     Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
             text = LocalStrings.current.gymRecords.recordsEmpty,
-            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
+            style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = track(4), color = c.inkFaint),
         )
     }
 }
@@ -767,7 +768,7 @@ private fun PrMovementsEmpty(onAllExercises: () -> Unit) {
         ) {
             Text(
                 text = s.gymRecords.recordsEmpty,
-                style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = 4.sp, color = c.inkFaint),
+                style = TextStyle(fontFamily = Mincho, fontSize = 17.sp, letterSpacing = track(4), color = c.inkFaint),
             )
             Text(
                 text = s.gymRecords.movementsEmptyWhy,
